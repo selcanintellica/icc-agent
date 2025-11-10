@@ -1,5 +1,5 @@
-from src.ai.prompts.stc_prompt import STCPrompt
+from src.ai.prompts.icc_prompt import ICCPrompt
 
 
 class Prompts:
-    stc_prompt = STCPrompt.get_prompt()
+    icc_prompt = ICCPrompt.get_prompt()
