@@ -16,6 +16,7 @@ class BaseLLMRequest(BaseModel):
     priority: str = "Normal"
     props: Props
     skip: str = "false"
+    folder: str = "3023602439587835"
 
     def ensure_id(self):
         if not self.id:
@@ -29,13 +30,14 @@ class BaseLLMRequest(BaseModel):
 
 
 class SendEmailVariables(BaseModel):
-    sql_query: str
+    query: str
     to: EmailStr
     cc: Optional[str] = ""
     subject: str
     text: str
     attachment: bool = True
-    extra_id: str = "110673709476681"
+    connection: str
+
 class SendEmailLLMRequest(BaseLLMRequest):
     template: str = "110673709194435"
     variables: List[SendEmailVariables]
@@ -46,7 +48,7 @@ class SendEmailLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         return {
             "template": self.template,
-            "extra_id": self.variables.extra_id,
+            "connection": self.variables.connection,
             "sql_query": self.variables.sql_query,
             "to": self.variables.to,
             "cc": self.variables.cc or "",
@@ -59,38 +61,42 @@ class SendEmailLLMRequest(BaseLLMRequest):
 class SelectedColumn(BaseModel):
     columnName: str
 
+class ReadSqlVariables(BaseModel):
+    table_name: str
+    query: str
+    write_count: bool = False
+    write_count_connection: str = ""
+    execute_query: bool = True
+    result_schema: str
+    only_dataset_columns: bool = True
+    write_count_table: str = ""
+    drop_before_create: bool = False
+    # columns: List[SelectedColumn] = Field(default_factory=list)
+
+
 class ReadSqlLLMRequest(BaseLLMRequest):
-    customer_id: str
-    sql: str
-    columns: List[SelectedColumn] = Field(default_factory=list)
-    paginate: bool = False
-    limit: Optional[int] = None
-    output_name: str = ""
-    output_path: str = ""
-    overwrite: bool = False
-    return_json: bool = True
-    return_csv: bool = False
-    opt_a: str = ""
-    opt_b: str = ""
+    template: str = "2223045341865624"
+    variables: List[ReadSqlVariables]
 
     def template_key(self) -> str:
         return "READSQL"
 
     def to_field_values(self) -> Dict[str, Any]:
+        # Returns a list of dicts for each variable in variables
         return {
-            "customer_id": self.customer_id,
-            "sql": self.sql,
-            "columns_json": [c.model_dump() for c in self.columns],
-            "paginate": "true" if self.paginate else "false",
-            "limit": None if self.limit is None else self.limit,
-            "output_name": self.output_name,
-            "output_path": self.output_path,
-            "overwrite": "true" if self.overwrite else "false",
-            "opt_a": self.opt_a,
-            "opt_b": self.opt_b,
-            "return_json": "true" if self.return_json else "false",
-            "return_csv": "true" if self.return_csv else "false",
-        }
+                "template": self.template,
+                "table_name": self.variables.table_name,
+                "query": self.variables.query,
+                "write_count": self.variables.write_count,
+                "write_count_connection": self.variables.write_count_connection,
+                "execute_query": self.variables.execute_query,
+                "result_schema": self.variables.result_schema,
+                "only_dataset_columns": self.variables.only_dataset_columns,
+                "write_count_table": self.variables.write_count_table,
+                "drop_before_create": self.variables.drop_before_create,
+            }
+
+
 
 
 class ColumnSchema(BaseModel):
@@ -99,46 +105,32 @@ class ColumnSchema(BaseModel):
     columnLength: Optional[int] = 2000
     alias: str = ""
 
-class WriteDataLLMRequest(BaseLLMRequest):
-
-    source_job_id: str
-    job_name: str
-    folder: str = "3023602439587835"
-
-    columns_schema: List[ColumnSchema]
-    job_id: Optional[str] = ""
-    customer_id: str
-    database: str
+class WriteDataVariables(BaseModel):
+    only_dataset_columns: bool = True
+    write_count_schema: bool = False
+    #add_columns: List[ColumnSchema] = Field(default_factory=list)
+    #columns: List[ColumnSchema] = Field(default_factory=list)
+    connection: str
+    schemas: str
     table: str
-    write_mode: str = "DROP"
-    use_temp: bool = False
-    create_if_missing: bool = False
-    partitioned: bool = False
-    batch_size: Optional[int] = None
-    note: str = ""
-    tags: str = ""
+    write_count_table: str = ""
+
+
+class WriteDataLLMRequest(BaseLLMRequest):
+    template: str = "28405918884279"
+    variables: List[WriteDataVariables]
 
     def template_key(self) -> str:
         return "WRITEDATA"
 
     def to_field_values(self) -> Dict[str, Any]:
+        # Returns a list of dicts for each variable in variables
         return {
-            # Mixed variable (value + jobName + folder)
-            "job_context": {
-                "value": self.source_job_id,
-                "jobName": self.job_name,
-                "folder": self.folder,
-            },
-            "columns_schema_json": [c.model_dump() for c in self.columns_schema],
-            "job_id": self.job_id or "",
-            "customer_id": self.customer_id,
-            "database": self.database,
-            "table": self.table,
-            "write_mode": self.write_mode,
-            "use_temp": "true" if self.use_temp else "false",
-            "create_if_missing": "true" if self.create_if_missing else "false",
-            "partitioned": "true" if self.partitioned else "false",
-            "batch_size": self.batch_size,
-            "note": self.note,
-            "tags": self.tags,
-        }
+                "template": self.template,
+                "only_dataset_columns": self.variables.only_dataset_columns,
+                "write_count_schema": self.variables.write_count_schema,
+                "connection": self.variables.connection,
+                "schemas": self.variables.schemas,
+                "table": self.variables.table,
+                "write_count_table": self.variables.write_count_table,
+            }

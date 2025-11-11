@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CopilotDiffPersistence">
+    <option name="pendingDiffs">
+      <map>
+        <entry key="$PROJECT_DIR$/README.md">
+          <value>
+            <PendingDiffInfo>
+              <option name="filePath" value="$PROJECT_DIR$/README.md" />
+              <option name="updatedContent" value="# ICC_try&#10;&#10;## Overview&#10;&#10;ICC_try is an AI-driven project structured for modular agent development, configuration management, and toolkit integration. It is organized to support flexible agent workflows, prompt engineering, and model interactions.&#10;&#10;## Folder Structure&#10;&#10;```&#10;src/&#10;  ai/&#10;    agents/         # Agent implementations&#10;    configs/        # Configuration files and classes&#10;    prompts/        # Prompt templates and logic&#10;    toolkits/       # Toolkits for agent capabilities&#10;    models/         # Model definitions and requests&#10;    repositories/   # Data access and repository logic&#10;    utils/          # Utility functions and builders&#10;```&#10;&#10;## Setup&#10;&#10;1. **Clone the repository:**&#10;   ```sh&#10;   git clone &lt;repo-url&gt;&#10;   cd ICC_try&#10;   ```&#10;2. **Install dependencies:**&#10;   ```sh&#10;   pip install -r requirements.txt&#10;   ```&#10;   Or use Poetry:&#10;   ```sh&#10;   poetry install&#10;   ```&#10;&#10;## Usage&#10;&#10;- Main scripts and modules are located in `src/ai/`.&#10;- Agents can be configured via the `configs` module.&#10;- Prompts and toolkits are customizable for different agent tasks.&#10;&#10;## Contributing&#10;&#10;Feel free to open issues or submit pull requests for improvements or bug fixes.&#10;&#10;## License&#10;&#10;See the `LICENSE` file for details.&#10;" />
+            </PendingDiffInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
