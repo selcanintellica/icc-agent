@@ -71,6 +71,7 @@ class ReadSqlVariables(BaseModel):
     only_dataset_columns: bool = True
     write_count_table: str = ""
     drop_before_create: bool = False
+    connection: str
     # columns: List[SelectedColumn] = Field(default_factory=list)
 
 
@@ -94,6 +95,7 @@ class ReadSqlLLMRequest(BaseLLMRequest):
                 "only_dataset_columns": self.variables.only_dataset_columns,
                 "write_count_table": self.variables.write_count_table,
                 "drop_before_create": self.variables.drop_before_create,
+                "connection": self.variables.connection,
             }
 
 
@@ -107,11 +109,15 @@ class ColumnSchema(BaseModel):
 
 class WriteDataVariables(BaseModel):
     only_dataset_columns: bool = True
-    write_count_schema: bool = False
+    write_count_schemas: bool = False
     #add_columns: List[ColumnSchema] = Field(default_factory=list)
     #columns: List[ColumnSchema] = Field(default_factory=list)
     connection: str
     schemas: str
+    data_set: str
+    write_count: str
+    write_count_connection: str
+    drop_or_truncate: str
     table: str
     write_count_table: str = ""
 
@@ -128,9 +134,13 @@ class WriteDataLLMRequest(BaseLLMRequest):
         return {
                 "template": self.template,
                 "only_dataset_columns": self.variables.only_dataset_columns,
-                "write_count_schema": self.variables.write_count_schema,
+                "write_count_schemas": self.variables.write_count_schema,
                 "connection": self.variables.connection,
                 "schemas": self.variables.schemas,
+                "data_set": self.variables.data_set,
+                "write_count": self.variables.write_count,
+                "write_count_connection": self.variables.write_count_connection,
+                "drop_or_truncate": self.variables.drop_or_truncate,
                 "table": self.variables.table,
                 "write_count_table": self.variables.write_count_table,
             }
