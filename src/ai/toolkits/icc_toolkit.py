@@ -23,8 +23,8 @@ async def write_data_job(data: WriteDataLLMRequest) -> dict:
     """
     if not data.id:
         data.id = str(uuid.uuid4())
-    wire = build_wire_payload(data)
-    await JobRepository.write_data_job(wire)
+
+    await JobRepository.write_data_job(data)
     return {"message": "Success", "data": data.model_dump()}
 
 

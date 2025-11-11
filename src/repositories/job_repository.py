@@ -1,7 +1,7 @@
 from src.models.wire import WirePayload
 from src.models.save_job_response import APIResponse
 from src.utils.config import API_CONFIG
-from base_repository import BaseRepository
+from src.repositories.base_repository import BaseRepository
 from loguru import logger
 
 from src.payload_builders.wire_builder import build_wire_payload
