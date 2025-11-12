@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from src.ai.toolkits.toolkits import Toolkits
 from src.ai.prompts.prompts import Prompts
+from langgraph.checkpoint.memory import MemorySaver
 
 load_dotenv()
 
@@ -22,4 +23,5 @@ class ICCAgentConfig:
 				base_url="http://localhost:11434",
 			),
 			"tools": Toolkits.icc_toolkit,
+			"checkpointer": MemorySaver(),
 		}
