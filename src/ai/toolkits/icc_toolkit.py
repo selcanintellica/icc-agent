@@ -11,10 +11,16 @@ from src.repositories.job_repository import JobRepository
 
 
 
+@tool
 async def write_data_job(data: WriteDataLLMRequest) -> dict:
     """
     Create a job to write data using the JobRepository.
     Use this to initiate data writing tasks.
+    
+    IMPORTANT: This tool writes data from a previously executed read_sql_job.
+    - data_set: Should be the job_id returned from read_sql_job
+    - columns: Should match the columns from read_sql_job results
+    
     Args:
         data (WriteDataPayload): Payload containing data to be written.
     Returns:

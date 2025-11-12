@@ -38,18 +38,15 @@ print("\n" + "="*60)
 print("🔍 LOGGING ENABLED - You should see agent actions below")
 print("="*60 + "\n")
 
-# ICC Agent imports
-from langgraph.prebuilt import create_react_agent
-from src.ai.configs.icc_config import ICCAgentConfig
-
+# ICC Agent imports - Using Staged Router
+from src.ai.router import handle_turn, Memory
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.title = "ICC Agent Chat"
 
-# Initialize the ICC agent
-agent_config = ICCAgentConfig.get_config()
-icc_agent = create_react_agent(**agent_config)
+# Session memory storage (in production, use Redis or DB)
+session_memories = {}
 
 
 # App layout
@@ -186,33 +183,48 @@ def format_message(role, content, timestamp=None):
         ], className="mb-3")
 
 
-async def invoke_agent_async(user_message, thread_id="default-session"):
-    """Invoke the agent asynchronously with memory"""
+async def invoke_router_async(user_message, session_id="default-session"):
+    """Invoke the staged router with memory"""
     try:
         # Use both print and logging for maximum visibility
         print("\n" + "="*60)
         print(f"🔵 USER QUERY: {user_message}")
-        print(f"🧵 Thread ID: {thread_id}")
+        print(f"🧵 Session ID: {session_id}")
         print("="*60)
         
         logger.info(f"🔵 User query: {user_message}")
-        logger.info(f"🧵 Thread ID: {thread_id}")
+        logger.info(f"🧵 Session ID: {session_id}")
         
-        response = icc_agent.invoke(
-            {"messages": [{"role": "user", "content": user_message}]},
-            config={"configurable": {"thread_id": thread_id}}
-        )
+        # Get or create memory for this session
+        if session_id not in session_memories:
+            session_memories[session_id] = Memory()
+            logger.info(f"🆕 Created new memory for session: {session_id}")
         
-        print("\n✅ AGENT RESPONSE RECEIVED")
-        print(f"📊 Number of messages: {len(response.get('messages', []))}")
+        memory = session_memories[session_id]
         
-        logger.info(f"✅ Agent response received")
-        logger.info(f"📊 Response structure: {json.dumps(response, indent=2, default=str)}")
+        logger.info(f"📍 Current stage: {memory.stage.value}")
         
-        return response
+        # Call the router
+        updated_memory, response_text = await handle_turn(memory, user_message)
+        
+        # Update session memory
+        session_memories[session_id] = updated_memory
+        
+        print("\n✅ ROUTER RESPONSE:")
+        print(f"� New stage: {updated_memory.stage.value}")
+        print(f"💬 Response: {response_text[:200]}...")
+        
+        logger.info(f"✅ Router completed")
+        logger.info(f"� New stage: {updated_memory.stage.value}")
+        
+        return {
+            "response": response_text,
+            "stage": updated_memory.stage.value,
+            "memory": updated_memory.to_dict()
+        }
     except Exception as e:
         print(f"\n❌ ERROR: {str(e)}")
-        logger.error(f"❌ Error invoking agent: {str(e)}", exc_info=True)
+        logger.error(f"❌ Error in router: {str(e)}", exc_info=True)
         return {"error": str(e)}
 
 
@@ -234,10 +246,10 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_in
     ctx = callback_context
     
     if not ctx.triggered:
-        # Initial load
+        # Initial load - start the conversation
         welcome_message = {
             "role": "agent",
-            "content": "👋 Hello! I'm the ICC Agent. I can help you create database jobs. Try asking me to get data, save results, or send emails!",
+            "content": "👋 Hello! I'm the ICC Agent with staged conversation flow.\n\nI'll guide you through:\n1️⃣ Creating SQL queries\n2️⃣ Executing them\n3️⃣ Writing results or sending emails\n\nWhat SQL query would you like to execute?",
             "timestamp": datetime.now().strftime("%H:%M:%S")
         }
         return [format_message(**welcome_message)], [welcome_message], "", ""
@@ -273,11 +285,10 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_in
     try:
         logger.info(f"💬 Processing user input: {user_input}")
         
-        # Invoke agent with memory (note: Dash doesn't natively support async, using sync wrapper)
-        # Using a single thread_id keeps conversation history across messages
+        # Invoke router with session memory
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(invoke_agent_async(user_input, thread_id="web-chat-session"))
+        response = loop.run_until_complete(invoke_router_async(user_input, session_id="web-chat-session"))
         loop.close()
         
         if "error" in response:
@@ -289,64 +300,23 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_in
             }
             chat_data.append(error_message)
         else:
-            # Parse agent response
-            messages = response.get("messages", [])
-            print(f"\n📨 Processing {len(messages)} messages from agent")
-            logger.info(f"📨 Processing {len(messages)} messages from agent")
+            # Router returns a simple text response
+            response_text = response.get("response", "")
+            current_stage = response.get("stage", "unknown")
             
-            # Extract tool calls and final response
-            for idx, msg in enumerate(messages):
-                # Get message type - LangChain uses 'type' attribute or class name
-                msg_type = getattr(msg, 'type', None) or msg.__class__.__name__.lower()
-                
-                print(f"\n🔍 Message {idx+1}: Type='{msg_type}', HasToolCalls={hasattr(msg, 'tool_calls') and bool(msg.tool_calls)}")
-                
-                # Skip human/user messages (they're echoes of what we sent)
-                if msg_type in ['human', 'humanmessage']:
-                    print(f"  ⏭️  Skipping user message (already displayed)")
-                    continue
-                
-                if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    # Tool call message
-                    print(f"\n🔧 Agent called {len(msg.tool_calls)} tool(s):")
-                    logger.info(f"🔧 Agent called {len(msg.tool_calls)} tool(s)")
-                    for tool_call in msg.tool_calls:
-                        print(f"  🛠️  Tool: {tool_call.get('name', 'unknown')}")
-                        print(f"  📥 Args: {json.dumps(tool_call.get('args', {}), indent=2)}")
-                        logger.info(f"  🛠️  Tool: {tool_call.get('name', 'unknown')}")
-                        logger.info(f"  📥 Args: {json.dumps(tool_call.get('args', {}), indent=2)}")
-                        tool_message = {
-                            "role": "tool",
-                            "content": json.dumps({
-                                "tool": tool_call.get("name", "unknown"),
-                                "args": tool_call.get("args", {})
-                            }, indent=2),
-                            "timestamp": datetime.now().strftime("%H:%M:%S")
-                        }
-                        chat_data.append(tool_message)
-                
-                elif hasattr(msg, "content") and msg.content and msg.content.strip():
-                    # Check if it's actually an AI/agent message
-                    if msg_type in ['ai', 'aimessage', 'assistant']:
-                        print(f"\n💬 Agent response: {msg.content[:200]}...")
-                        logger.info(f"💬 Agent response: {msg.content[:100]}...")
-                        agent_message = {
-                            "role": "agent",
-                            "content": msg.content,
-                            "timestamp": datetime.now().strftime("%H:%M:%S")
-                        }
-                        chat_data.append(agent_message)
-                    else:
-                        print(f"  ⏭️  Skipping message with type '{msg_type}'")
+            print(f"\n� Router response: {response_text[:200]}...")
+            print(f"📍 Current stage: {current_stage}")
             
-            # If no messages added, add a default response
-            if len(chat_data) == len([msg for msg in chat_data if msg["role"] == "user"]) + len([msg for msg in chat_data if msg["role"] == "user"]) - 1:
-                agent_message = {
-                    "role": "agent",
-                    "content": "Task completed! Check the tool calls above for details.",
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
+            logger.info(f"💬 Router response: {response_text[:100]}...")
+            logger.info(f"� Current stage: {current_stage}")
+            
+            # Add agent response
+            agent_message = {
+                "role": "agent",
+                "content": response_text,
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(agent_message)
     
     except Exception as e:
         error_message = {
