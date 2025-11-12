@@ -22,17 +22,29 @@ class JobRepository(BaseRepository):
         return response
 
     @staticmethod
-    async def read_sql_job(self, data) -> APIResponse[JobResponse]:
-
-        query_payload = QueryBuilder.build_send_email_query_payload(data)
-        column_names = QueryRepository.get_column_names(query_payload)
+    async def read_sql_job(self, data) -> tuple[APIResponse[JobResponse], list[str]]:
+        """
+        Execute a read SQL job and return both the job response and column names.
+        
+        Returns:
+            tuple: (APIResponse[JobResponse], list[str]) 
+                   - API response with job_id
+                   - List of column names from the query
+        """
+        query_payload = QueryBuilder.build_read_sql_query_payload(data)
+        column_response = await QueryRepository.get_column_names(self, query_payload)
+        
+        # Extract column names from the response
+        column_names = column_response.data.object.columns if column_response.success else []
 
         wire = build_wire_payload(data, column_names=column_names)
 
         logger.info(f"Creating read SQL job: {data.template}")
         endpoint = f"{API_CONFIG['api_base_url']}"
         response = await self.post_request(endpoint, wire, JobResponse)
-        return response
+        
+        logger.info(f"Read SQL job created. Job ID: {response.data.object_id if response.success else 'N/A'}, Columns: {column_names}")
+        return response, column_names
 
     @staticmethod
     async def send_email_job(self, data) -> APIResponse[JobResponse]:

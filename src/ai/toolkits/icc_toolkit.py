@@ -33,16 +33,40 @@ async def read_sql_job(data: ReadSqlLLMRequest) -> dict:
     """
     Create a job to read SQL data using the JobRepository.
     Use this to initiate SQL data reading tasks.
+    
+    IMPORTANT: This tool returns both a job_id and column names.
+    - job_id: Use this as the 'data_set' parameter when calling write_data_job
+    - columns: Use these as the 'columns' parameter when calling write_data_job
+    
     Args:
         data (ReadSqlPayload): Payload containing SQL read parameters.
     Returns:
-        dict: Confirmation message and job details.
+        dict: Contains:
+            - message: Success status
+            - job_id: The created job ID (use as data_set in write_data_job)
+            - columns: List of column names from the query (use in write_data_job)
+            - query: The SQL query that was executed
 
     """
     if not data.id:
         data.id = str(uuid.uuid4())
-    await JobRepository.read_sql_job(data)
-    return {"message": "Success", "data": data.model_dump()}
+    
+    response, columns = await JobRepository.read_sql_job(data)
+    
+    if response.success:
+        return {
+            "message": "Success",
+            "job_id": response.data.object_id,
+            "columns": columns,
+            "query": data.variables.query,
+            "connection": data.variables.connection
+        }
+    else:
+        return {
+            "message": "Error",
+            "error": response.error,
+            "columns": columns
+        }
 
 
 @tool
