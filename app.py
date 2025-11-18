@@ -44,7 +44,7 @@ print("="*60 + "\n")
 
 # ICC Agent imports - Using Staged Router
 from src.ai.router import handle_turn, Memory
-from src.utils.schema_loader import get_schema_loader
+from src.utils.config_loader import get_config_loader
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -53,15 +53,15 @@ app.title = "ICC Agent Chat"
 # Session memory storage (in production, use Redis or DB)
 session_memories = {}
 
-# Initialize schema loader
-schema_loader = get_schema_loader()
+# Initialize config loader (replaces schema_loader)
+config_loader = get_config_loader()
 
 # Get initial values for dropdowns (pre-populate for first connection)
-initial_connections = schema_loader.get_available_connections()
+initial_connections = config_loader.get_available_connections()
 initial_connection = initial_connections[0] if initial_connections else None
-initial_schemas = schema_loader.get_schemas_for_connection(initial_connection) if initial_connection else []
+initial_schemas = config_loader.get_schemas_for_connection(initial_connection) if initial_connection else []
 initial_schema = initial_schemas[0] if initial_schemas else None
-initial_tables = schema_loader.get_tables_for_schema(initial_connection, initial_schema) if (initial_connection and initial_schema) else []
+initial_tables = config_loader.get_tables_for_schema(initial_connection, initial_schema) if (initial_connection and initial_schema) else []
 initial_table_selection = initial_tables[:2] if len(initial_tables) >= 2 else initial_tables
 
 # App layout
@@ -88,7 +88,7 @@ app.layout = dbc.Container([
                             html.Label("1️⃣ Select Connection:", className="fw-bold"),
                             dcc.Dropdown(
                                 id="connection-dropdown",
-                                options=schema_loader.get_connection_options(),
+                                options=config_loader.get_connection_options(),
                                 value=initial_connection,
                                 clearable=False,
                                 placeholder="Select a database connection...",
@@ -99,7 +99,7 @@ app.layout = dbc.Container([
                             html.Label("2️⃣ Select Schema:", className="fw-bold"),
                             dcc.Dropdown(
                                 id="schema-dropdown",
-                                options=schema_loader.get_schema_options(initial_connection) if initial_connection else [],
+                                options=config_loader.get_schema_options(initial_connection) if initial_connection else [],
                                 value=initial_schema,
                                 clearable=False,
                                 placeholder="First select a connection...",
@@ -110,7 +110,7 @@ app.layout = dbc.Container([
                             html.Label("3️⃣ Select Tables:", className="fw-bold"),
                             dcc.Dropdown(
                                 id="tables-dropdown",
-                                options=schema_loader.get_table_options(initial_connection, initial_schema) if (initial_connection and initial_schema) else [],
+                                options=config_loader.get_table_options(initial_connection, initial_schema) if (initial_connection and initial_schema) else [],
                                 value=initial_table_selection,
                                 multi=True,
                                 placeholder="First select a schema...",
@@ -323,7 +323,7 @@ def update_schema_dropdown(selected_connection):
     if not selected_connection:
         return [], None
     
-    schema_options = schema_loader.get_schema_options(selected_connection)
+    schema_options = config_loader.get_schema_options(selected_connection)
     
     # Auto-select first schema if available
     default_schema = schema_options[0]["value"] if schema_options else None
@@ -345,7 +345,7 @@ def update_tables_dropdown(selected_connection, selected_schema):
     if not selected_connection or not selected_schema:
         return [], []
     
-    table_options = schema_loader.get_table_options(selected_connection, selected_schema)
+    table_options = config_loader.get_table_options(selected_connection, selected_schema)
     
     # Auto-select first two tables if available
     default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]

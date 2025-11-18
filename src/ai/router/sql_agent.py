@@ -1,7 +1,7 @@
 """
 SQL generation agent - converts natural language to SQL queries.
 Uses a small LLM focused only on SQL generation.
-Dynamically loads table schemas from documentation files.
+Dynamically loads table schemas from API.
 """
 import os
 from langchain_ollama import ChatOllama
@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import json
 import logging
 from typing import List, Optional
-from src.utils.schema_loader import load_table_definitions
+from src.utils.table_api_client import fetch_table_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -82,15 +82,16 @@ class SQLAgent:
         logger.info(f"📊 Selected tables: {selected_tables}")
         
         try:
-            # Load table definitions from files
+            # Fetch table definitions from API
             if connection and schema and selected_tables:
-                schema_definitions = load_table_definitions(connection, schema, selected_tables)
+                logger.info(f"🌐 Fetching table definitions from API...")
+                schema_definitions = fetch_table_definitions(connection, schema, selected_tables)
                 
                 if not schema_definitions or schema_definitions.strip() == "":
-                    logger.warning("⚠️ No schema definitions loaded, using fallback")
+                    logger.warning("⚠️ No schema definitions fetched from API, using fallback")
                     schema_definitions = "ERROR: No table definitions found. Using default behavior."
             else:
-                logger.warning("⚠️ Missing connection/schema/tables, cannot load definitions")
+                logger.warning("⚠️ Missing connection/schema/tables, cannot fetch definitions")
                 schema_definitions = "ERROR: Connection, schema, and tables must be provided."
             
             # Build prompt with loaded schema definitions
