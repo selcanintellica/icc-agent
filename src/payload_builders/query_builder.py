@@ -16,8 +16,8 @@ class QueryBuilder:
             QueryPayload: An instance of QueryPayload with the provided parameters.
         """
 
-        connection_id = data.variables.connection
-        sql = data.variables.query
+        connection_id = data.variables[0].connection
+        sql = data.variables[0].query
         folder_id = ""
         return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
 
@@ -34,7 +34,7 @@ class QueryBuilder:
             QueryPayload: An instance of QueryPayload with the provided parameters.
         """
 
-        connection_id = data.variables.connection
-        sql = data.variables.query
+        connection_id = data.variables[0].connection
+        sql = data.variables[0].query
         folder_id = ""
         return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)

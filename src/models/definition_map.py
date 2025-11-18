@@ -6,7 +6,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
         "definitions": {
 
             "connection": "110673709476681",
-            "sql_query": "110673709444744",
+            "query": "110673709444744",
             "to": "110673709461441",
             "cc": "110673709490605",
             "subject": "110673709380478",

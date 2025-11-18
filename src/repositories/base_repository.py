@@ -40,7 +40,11 @@ class BaseRepository:
     ) -> Dict[str, Any]:
         """Make HTTP request to the API. If full_url is provided, it is used directly."""
 
-        url = f"{self.base_url}{endpoint}"
+        # If endpoint is a full URL (starts with http), use it as-is, otherwise concatenate
+        if endpoint and endpoint.startswith("http"):
+            url = endpoint
+        else:
+            url = f"{self.base_url}{endpoint if endpoint else ''}"
         logger.debug(f"Making {method.upper()} request to {url}")
 
         if method.lower() == "post":
@@ -70,9 +74,10 @@ class BaseRepository:
             logger.debug(f"POST request successful at {endpoint}")
             return response
         except HTTPException as e:
+            logger.error(f"HTTP error while sending POST request to {endpoint} - Status: {e.status_code}, Detail: {e.detail}")
             return APIResponse.error_response(error=str(e.detail), status_code=e.status_code)
         except Exception as e:
-            logger.error(f"Unexpected error while sending POST request to {endpoint} - {str(e)}")
+            logger.error(f"Unexpected error while sending POST request to {endpoint} - {type(e).__name__}: {str(e)}", exc_info=True)
             return APIResponse.error_response(error=str(e), status_code=self.INTERNAL_SERVER_ERROR_STATUS_CODE)
 
 
