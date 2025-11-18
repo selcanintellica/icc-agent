@@ -106,7 +106,25 @@ TABLE_API_BASE_URL=http://localhost:8000/api/tables
 
 # API timeout in seconds
 TABLE_API_TIMEOUT=10
+
+# Use mock data instead of real API calls (true/false)
+TABLE_API_MOCK=true
 ```
+
+### Mock Mode
+
+For development and testing before the API is ready, you can enable **mock mode**:
+
+1. Set `TABLE_API_MOCK=true` in your `.env` file
+2. Mock data is provided in `src/utils/mock_table_data.py`
+3. The system will return predefined table definitions without making API calls
+
+**Mock Data Available:**
+- `ORACLE_10.SALES`: customers, orders, order_items, products
+- `ORACLE_10.HR`: employees, departments
+- `POSTGRE_11.PUBLIC`: users
+
+When the real API is ready, simply set `TABLE_API_MOCK=false` to switch to live API calls.
 
 ### API Endpoints Expected
 

@@ -3,6 +3,8 @@ API client for fetching table definitions from external API.
 
 This module replaces the file-based schema_docs system with API calls
 to fetch table definitions dynamically.
+
+Supports mock mode via TABLE_API_MOCK environment variable for testing.
 """
 
 import os
@@ -10,6 +12,7 @@ import logging
 import requests
 from typing import List, Optional, Dict
 from functools import lru_cache
+from src.utils.mock_table_data import get_mock_table_definition
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +20,15 @@ logger = logging.getLogger(__name__)
 class TableAPIClient:
     """Client for fetching table definitions from API."""
     
-    def __init__(self, base_url: Optional[str] = None):
+    def __init__(self, base_url: Optional[str] = None, use_mock: Optional[bool] = None):
         """
         Initialize the API client.
         
         Args:
             base_url: Base URL for the table definitions API. 
                      If None, reads from TABLE_API_BASE_URL environment variable.
+            use_mock: Whether to use mock data instead of API calls.
+                     If None, reads from TABLE_API_MOCK environment variable.
         """
         self.base_url = base_url or os.getenv(
             "TABLE_API_BASE_URL", 
@@ -31,7 +36,17 @@ class TableAPIClient:
         )
         self.timeout = int(os.getenv("TABLE_API_TIMEOUT", "10"))
         
-        logger.info(f"🌐 TableAPIClient initialized with base URL: {self.base_url}")
+        # Check if mock mode is enabled
+        if use_mock is None:
+            mock_env = os.getenv("TABLE_API_MOCK", "false").lower()
+            self.use_mock = mock_env in ("true", "1", "yes")
+        else:
+            self.use_mock = use_mock
+        
+        if self.use_mock:
+            logger.info(f"🎭 TableAPIClient initialized in MOCK mode")
+        else:
+            logger.info(f"🌐 TableAPIClient initialized with base URL: {self.base_url}")
     
     def fetch_table_definition(
         self, 
@@ -40,20 +55,33 @@ class TableAPIClient:
         table: str
     ) -> Optional[str]:
         """
-        Fetch a single table definition from the API.
+        Fetch a single table definition from the API or mock data.
         
         Args:
-            connection: Connection name (e.g., 'oracle_10')
+            connection: Connection name (e.g., 'ORACLE_10')
             schema: Schema name (e.g., 'SALES')
             table: Table name (e.g., 'customers')
             
         Returns:
             String containing the table definition, or None if not found
         """
+        # Use mock data if enabled
+        if self.use_mock:
+            logger.info(f"🎭 Using mock data for: {connection}.{schema}.{table}")
+            definition = get_mock_table_definition(connection, schema, table)
+            
+            if definition:
+                logger.info(f"✅ Mock data found for {table} ({len(definition)} chars)")
+            else:
+                logger.warning(f"⚠️ No mock data found for {connection}.{schema}.{table}")
+            
+            return definition
+        
+        # Real API call
         url = f"{self.base_url}/{connection}/{schema}/{table}"
         
         try:
-            logger.info(f"🔍 Fetching table definition: {connection}.{schema}.{table}")
+            logger.info(f"🔍 Fetching table definition from API: {connection}.{schema}.{table}")
             
             response = requests.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -62,7 +90,7 @@ class TableAPIClient:
             
             # Expected API response format:
             # {
-            #   "connection": "oracle_10",
+            #   "connection": "ORACLE_10",
             #   "schema": "SALES",
             #   "table": "customers",
             #   "definition": "Table: customers\nSchema: SALES\n..."
@@ -133,6 +161,7 @@ class TableAPIClient:
         
         This is more efficient than individual calls if the API supports it.
         Falls back to individual calls if batch endpoint is not available.
+        In mock mode, always uses individual calls.
         
         Args:
             connection: Connection name
@@ -142,6 +171,11 @@ class TableAPIClient:
         Returns:
             Combined string with all table definitions
         """
+        # In mock mode, use individual calls
+        if self.use_mock:
+            logger.info(f"🎭 Mock mode: using individual table fetches")
+            return self.fetch_multiple_tables(connection, schema, tables)
+        
         batch_url = f"{self.base_url}/batch"
         
         try:
