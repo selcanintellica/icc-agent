@@ -45,8 +45,13 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     if memory.stage == Stage.NEED_QUERY:
         logger.info("📝 Generating SQL from natural language...")
         
-        # Generate SQL using SQL agent
-        spec = call_sql_agent(user_utterance)
+        # Generate SQL using SQL agent with selected tables context
+        spec = call_sql_agent(
+            user_utterance, 
+            connection=memory.connection,
+            schema=memory.schema,
+            selected_tables=memory.selected_tables
+        )
         memory.last_sql = spec.sql
         
         # Check if it's a SELECT query
@@ -84,7 +89,8 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     variables=[ReadSqlVariables(
                         query=memory.last_sql,
                         connection=memory.connection,  # Use connection from memory
-                        execute_query=True
+                        execute_query=True,
+                        table_name=""  # Always empty as per requirements
                     )]
                 )
                 
@@ -148,19 +154,30 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 try:
                     params = memory.gathered_params
                     
+                    # Get table name from params (user provides destination table)
+                    table_name = params.get("table", "output_table")
+                    
+                    # Get and validate drop_or_truncate - must be DROP, TRUNCATE, or INSERT
+                    drop_or_truncate = params.get("drop_or_truncate", "INSERT").upper()
+                    if drop_or_truncate not in ["DROP", "TRUNCATE", "INSERT"]:
+                        logger.warning(f"⚠️ Invalid drop_or_truncate value: {drop_or_truncate}, defaulting to INSERT")
+                        drop_or_truncate = "INSERT"
+                    
                     # Convert columns to ColumnSchema format
                     columns = [ColumnSchema(columnName=col) for col in memory.last_columns]
                     
                     request = WriteDataLLMRequest(
                         rights={"owner": "184431757886694"},
-                        props={"active": "true", "name": f"Write_{params.get('table', 'table')}", "description": ""},
+                        props={"active": "true", "name": f"Write_{table_name}", "description": ""},
                         variables=[WriteDataVariables(
-                            connection=params.get("connection", "default"),
-                            table=params.get("table", "output_table"),
-                            data_set=memory.last_job_id,
-                            columns=columns,
-                            drop_or_truncate=params.get("drop_or_truncate", "none"),
-                            only_dataset_columns=True
+                            data_set=memory.last_job_id,  # Job ID from read_sql
+                            columns=columns,  # Columns from read_sql result
+                            add_columns=[],  # Always empty as per requirements
+                            connection=memory.connection,  # Use connection from UI selection
+                            schemas=memory.schema,  # Use schema from UI selection
+                            table=table_name,  # Destination table from user
+                            drop_or_truncate=drop_or_truncate,  # DROP, TRUNCATE, or INSERT
+                            only_dataset_columns=True  # Fixed value
                         )]
                     )
                     
@@ -168,7 +185,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     
                     logger.info(f"📊 write_data_job result: {json.dumps(result, indent=2, default=str)}")
                     
-                    return memory, f"✅ Data written successfully to table '{params.get('table')}'!\nAnything else? (email / done)"
+                    return memory, f"✅ Data written successfully to table '{table_name}' in {memory.schema} schema!\nAnything else? (email / done)"
                     
                 except Exception as e:
                     logger.error(f"❌ Error in write_data: {str(e)}", exc_info=True)
@@ -192,12 +209,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                         rights={"owner": "184431757886694"},
                         props={"active": "true", "name": "Email_Results", "description": ""},
                         variables=[SendEmailVariables(
-                            query=memory.last_sql,
-                            to=params.get("to"),
-                            subject=params.get("subject", "Query Results"),
-                            text=params.get("text", "Please find the query results attached."),
-                            connection=params.get("connection", "default"),
-                            attachment=True
+                            query=memory.last_sql,  # SQL generated by SQL agent
+                            connection=memory.connection,  # Use connection from UI selection
+                            to=params.get("to"),  # Email recipient from user
+                            subject=params.get("subject", "Query Results"),  # Subject from user or default
+                            text=params.get("text", "Please find the query results attached."),  # Message from user or default
+                            attachment=True  # Always attach results
                         )]
                     )
                     

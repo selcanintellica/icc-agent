@@ -1,0 +1,46 @@
+Table: products
+Schema: SALES
+Connection: oracle_10
+
+Description:
+Product catalog with inventory and pricing information.
+
+Columns:
+- product_id (NUMBER, Primary Key): Unique identifier for each product
+- product_name (VARCHAR2(100), NOT NULL): Product name/title
+- product_code (VARCHAR2(50), UNIQUE): SKU or product code
+- category (VARCHAR2(50)): Product category
+- price (NUMBER(10,2), NOT NULL): Current selling price
+- cost (NUMBER(10,2)): Cost price for margin calculation
+- stock_quantity (NUMBER, DEFAULT 0): Current stock level
+- supplier (VARCHAR2(100)): Supplier name
+- description (VARCHAR2(1000)): Product description
+- weight (NUMBER(8,2)): Product weight in kg
+- dimensions (VARCHAR2(50)): Product dimensions (LxWxH)
+- is_active (CHAR(1), DEFAULT 'Y'): Product availability (Y/N)
+- created_date (DATE, DEFAULT SYSDATE): Date added to catalog
+- last_updated (DATE): Last modification date
+
+Indexes:
+- PK_PRODUCTS on product_id
+- UK_PRODUCT_CODE on product_code
+- IDX_PRODUCT_CATEGORY on category
+- IDX_PRODUCT_ACTIVE on is_active
+
+Foreign Keys:
+None
+
+Related Tables:
+- order_items (product_id referenced by)
+- product_reviews (product_id referenced by)
+- inventory_movements (product_id referenced by)
+
+Example Queries:
+-- Get all active products in Electronics category
+SELECT * FROM products WHERE category = 'Electronics' AND is_active = 'Y';
+
+-- Find low stock products
+SELECT product_name, stock_quantity FROM products WHERE stock_quantity < 10 AND is_active = 'Y';
+
+-- Get product with price range
+SELECT * FROM products WHERE price BETWEEN 100 AND 500 ORDER BY price;

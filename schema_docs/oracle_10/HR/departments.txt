@@ -1,0 +1,31 @@
+Table: departments
+Schema: HR
+Connection: oracle_10
+
+Description:
+Department information and organizational structure.
+
+Columns:
+- department_id (NUMBER, Primary Key): Unique department identifier
+- department_name (VARCHAR2(50), NOT NULL, UNIQUE): Department name
+- manager_id (NUMBER, Foreign Key → employees.employee_id): Department manager
+- location (VARCHAR2(100)): Physical location/office
+- budget (NUMBER(12,2)): Annual department budget
+- created_date (DATE, DEFAULT SYSDATE): Department creation date
+
+Indexes:
+- PK_DEPARTMENTS on department_id
+- UK_DEPT_NAME on department_name
+- IDX_DEPT_MANAGER on manager_id
+
+Foreign Keys:
+- FK_DEPT_MANAGER: manager_id → employees.employee_id
+
+Related Tables:
+- employees (manager_id references, department referenced by)
+
+Example Queries:
+-- Get all departments with their managers
+SELECT d.department_name, e.first_name, e.last_name as manager_name
+FROM departments d
+LEFT JOIN employees e ON d.manager_id = e.employee_id;

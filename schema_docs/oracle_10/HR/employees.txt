@@ -1,0 +1,42 @@
+Table: employees
+Schema: HR
+Connection: oracle_10
+
+Description:
+Employee information and organizational structure.
+
+Columns:
+- employee_id (NUMBER, Primary Key): Unique employee identifier
+- first_name (VARCHAR2(50), NOT NULL): Employee's first name
+- last_name (VARCHAR2(50), NOT NULL): Employee's last name
+- email (VARCHAR2(100), UNIQUE): Corporate email address
+- phone (VARCHAR2(20)): Contact phone number
+- hire_date (DATE, NOT NULL): Date of hiring
+- job_title (VARCHAR2(50)): Current job title
+- department (VARCHAR2(50)): Department name
+- manager_id (NUMBER, Foreign Key → employees.employee_id): Reference to manager
+- salary (NUMBER(10,2)): Annual salary
+- commission_pct (NUMBER(2,2)): Commission percentage for sales staff
+- status (VARCHAR2(20), DEFAULT 'active'): Employment status
+
+Indexes:
+- PK_EMPLOYEES on employee_id
+- UK_EMPLOYEE_EMAIL on email
+- IDX_EMPLOYEE_DEPT on department
+- IDX_EMPLOYEE_MANAGER on manager_id
+
+Foreign Keys:
+- FK_EMPLOYEE_MANAGER: manager_id → employees.employee_id (self-reference)
+
+Related Tables:
+- employees (manager_id self-reference)
+- departments (department references)
+
+Example Queries:
+-- Get all employees in Sales department
+SELECT * FROM employees WHERE department = 'Sales' AND status = 'active';
+
+-- Find employee hierarchy
+SELECT e.first_name, e.last_name, m.first_name as manager_first, m.last_name as manager_last
+FROM employees e
+LEFT JOIN employees m ON e.manager_id = m.employee_id;
