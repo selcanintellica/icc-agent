@@ -9,8 +9,12 @@ from typing import Optional, Dict, Any, List
 class Stage(Enum):
     """Conversation stages for the router."""
     START = "start"
-    NEED_QUERY = "need_query"
-    HAVE_SQL = "have_sql"
+    ASK_SQL_METHOD = "ask_sql_method"          # NEW: Ask if user provides SQL or wants it generated
+    NEED_NATURAL_LANGUAGE = "need_natural_language"  # NEW: Waiting for NL query to generate SQL
+    NEED_USER_SQL = "need_user_sql"            # NEW: Waiting for user to provide SQL directly
+    CONFIRM_GENERATED_SQL = "confirm_generated_sql"  # NEW: Show generated SQL, ask for confirmation
+    CONFIRM_USER_SQL = "confirm_user_sql"      # NEW: Show user's SQL, ask for confirmation
+    EXECUTE_SQL = "execute_sql"                # Ready to execute (replaces HAVE_SQL)
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
     DONE = "done"

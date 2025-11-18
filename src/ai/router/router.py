@@ -39,11 +39,29 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     
     # ========== STAGE: START ==========
     if memory.stage == Stage.START:
-        memory.stage = Stage.NEED_QUERY
-        return memory, "What SQL query would you like to execute? (e.g., 'get customers from USA')"
+        memory.stage = Stage.ASK_SQL_METHOD
+        return memory, "How would you like to proceed?\n• Type 'create' - I'll generate SQL from your natural language\n• Type 'provide' - You provide the SQL query directly"
     
-    # ========== STAGE: NEED_QUERY ==========
-    if memory.stage == Stage.NEED_QUERY:
+    # ========== STAGE: ASK_SQL_METHOD ==========
+    if memory.stage == Stage.ASK_SQL_METHOD:
+        user_lower = user_utterance.lower()
+        
+        if "create" in user_lower or "generate" in user_lower:
+            logger.info("📝 User chose: Agent will generate SQL")
+            memory.stage = Stage.NEED_NATURAL_LANGUAGE
+            return memory, "Great! Describe what data you want in natural language. (e.g., 'get all customers from USA')"
+        
+        elif "provide" in user_lower or "write" in user_lower or "my own" in user_lower:
+            logger.info("✍️ User chose: Provide SQL directly")
+            memory.stage = Stage.NEED_USER_SQL
+            return memory, "Please provide your SQL query:"
+        
+        else:
+            # User didn't clearly indicate, ask again
+            return memory, "Please choose:\n• 'create' - I'll generate SQL for you\n• 'provide' - You'll write the SQL"
+    
+    # ========== STAGE: NEED_NATURAL_LANGUAGE ==========
+    if memory.stage == Stage.NEED_NATURAL_LANGUAGE:
         logger.info("📝 Generating SQL from natural language...")
         
         # Generate SQL using SQL agent with selected tables context
@@ -61,15 +79,73 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         else:
             warning = ""
         
-        memory.stage = Stage.HAVE_SQL
+        memory.stage = Stage.CONFIRM_GENERATED_SQL
         
-        response = f"I prepared this SQL:\n```sql\n{spec.sql}\n```{warning}\nShall I execute it?"
+        response = f"I prepared this SQL:\n```sql\n{spec.sql}\n```{warning}\nIs this okay? (yes/no)\nSay 'no' to modify, or 'yes' to execute."
         logger.info(f"✅ SQL generated: {spec.sql}")
         
         return memory, response
     
-    # ========== STAGE: HAVE_SQL ==========
-    if memory.stage == Stage.HAVE_SQL:
+    # ========== STAGE: NEED_USER_SQL ==========
+    if memory.stage == Stage.NEED_USER_SQL:
+        logger.info("✍️ User provided SQL directly")
+        
+        # Store the user's SQL
+        memory.last_sql = user_utterance.strip()
+        
+        # Check if it looks like SQL (basic validation)
+        if not any(keyword in memory.last_sql.lower() for keyword in ["select", "insert", "update", "delete", "create", "drop"]):
+            return memory, "⚠️ That doesn't look like a SQL query. Please provide a valid SQL statement:"
+        
+        # Check if it's a SELECT query
+        if "select" not in memory.last_sql.lower():
+            warning = "\n⚠️ Note: This is a non-SELECT query. "
+        else:
+            warning = ""
+        
+        memory.stage = Stage.CONFIRM_USER_SQL
+        
+        response = f"You provided this SQL:\n```sql\n{memory.last_sql}\n```{warning}\nIs this correct? (yes/no)"
+        logger.info(f"✅ User SQL received: {memory.last_sql}")
+        
+        return memory, response
+    
+    # ========== STAGE: CONFIRM_GENERATED_SQL ==========
+    if memory.stage == Stage.CONFIRM_GENERATED_SQL:
+        user_lower = user_utterance.lower()
+        
+        if "yes" in user_lower or "ok" in user_lower or "correct" in user_lower or "execute" in user_lower:
+            logger.info("✅ User confirmed generated SQL")
+            memory.stage = Stage.EXECUTE_SQL
+            return memory, "Great! Executing the query..."
+        
+        elif "no" in user_lower or "change" in user_lower or "modify" in user_lower:
+            logger.info("🔄 User wants to modify - going back to natural language input")
+            memory.stage = Stage.NEED_NATURAL_LANGUAGE
+            return memory, "No problem! Please describe what you want differently:"
+        
+        else:
+            return memory, "Please confirm: Say 'yes' to execute or 'no' to modify the query."
+    
+    # ========== STAGE: CONFIRM_USER_SQL ==========
+    if memory.stage == Stage.CONFIRM_USER_SQL:
+        user_lower = user_utterance.lower()
+        
+        if "yes" in user_lower or "ok" in user_lower or "correct" in user_lower or "execute" in user_lower:
+            logger.info("✅ User confirmed their SQL")
+            memory.stage = Stage.EXECUTE_SQL
+            return memory, "Great! Executing the query..."
+        
+        elif "no" in user_lower or "change" in user_lower or "modify" in user_lower:
+            logger.info("🔄 User wants to modify their SQL")
+            memory.stage = Stage.NEED_USER_SQL
+            return memory, "Please provide the corrected SQL query:"
+        
+        else:
+            return memory, "Please confirm: Say 'yes' to execute or 'no' to provide a different query."
+    
+    # ========== STAGE: EXECUTE_SQL ==========
+    if memory.stage == Stage.EXECUTE_SQL:
         logger.info("🔧 Gathering parameters for read_sql...")
         
         # Use job agent to gather parameters
