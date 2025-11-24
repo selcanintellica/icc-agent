@@ -1,0 +1,83 @@
+{
+  "connections": [
+    {
+      "name": "ORACLE_10",
+      "label": "Oracle Production (10)",
+      "schemas": [
+        {
+          "name": "SALES",
+          "label": "SALES",
+          "tables": [
+            "customers",
+            "orders",
+            "order_items",
+            "products"
+          ]
+        },
+        {
+          "name": "HR",
+          "label": "HR",
+          "tables": [
+            "departments",
+            "employees"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ORACLE_11",
+      "label": "Oracle Production (11)",
+      "schemas": [
+        {
+          "name": "ICC_META",
+          "label": "ICC_META",
+          "tables": []
+        }
+      ]
+    },
+    {
+      "name": "oracle_18",
+      "label": "Oracle Development (18)",
+      "schemas": [
+        {
+          "name": "ICC_DEV_META",
+          "label": "ICC_DEV_META",
+          "tables": []
+        }
+      ]
+    },
+    {
+      "name": "POSTGRE_11",
+      "label": "PostgreSQL Production (11)",
+      "schemas": [
+        {
+          "name": "PUBLIC",
+          "label": "PUBLIC",
+          "tables": []
+        }
+      ]
+    },
+    {
+      "name": "POSTGRE_14",
+      "label": "PostgreSQL Production (14)",
+      "schemas": [
+        {
+          "name": "PUBLIC",
+          "label": "PUBLIC",
+          "tables": []
+        }
+      ]
+    },
+    {
+      "name": "MSSQL",
+      "label": "SQL Server",
+      "schemas": [
+        {
+          "name": "dbo",
+          "label": "dbo",
+          "tables": []
+        }
+      ]
+    }
+  ]
+}

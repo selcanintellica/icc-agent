@@ -11,7 +11,7 @@ Then open your browser to: http://localhost:8050
 
 # Load environment variables from .env file
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)  # override=True forces .env to override system variables
 
 import dash
 from dash import dcc, html, Input, Output, State, callback_context
@@ -44,6 +44,7 @@ print("="*60 + "\n")
 
 # ICC Agent imports - Using Staged Router
 from src.ai.router import handle_turn, Memory
+from src.utils.config_loader import get_config_loader
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
@@ -52,6 +53,16 @@ app.title = "ICC Agent Chat"
 # Session memory storage (in production, use Redis or DB)
 session_memories = {}
 
+# Initialize config loader (replaces schema_loader)
+config_loader = get_config_loader()
+
+# Get initial values for dropdowns (pre-populate for first connection)
+initial_connections = config_loader.get_available_connections()
+initial_connection = initial_connections[0] if initial_connections else None
+initial_schemas = config_loader.get_schemas_for_connection(initial_connection) if initial_connection else []
+initial_schema = initial_schemas[0] if initial_schemas else None
+initial_tables = config_loader.get_tables_for_schema(initial_connection, initial_schema) if (initial_connection and initial_schema) else []
+initial_table_selection = initial_tables[:2] if len(initial_tables) >= 2 else initial_tables
 
 # App layout
 app.layout = dbc.Container([
@@ -63,6 +74,57 @@ app.layout = dbc.Container([
                 "'Get customers from USA' or 'Email sales data to manager@example.com'",
                 className="text-center text-muted mb-4"
             )
+        ])
+    ]),
+    
+    # Configuration Section
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardHeader(html.H5("⚙️ Database Configuration", className="mb-0")),
+                dbc.CardBody([
+                    dbc.Row([
+                        dbc.Col([
+                            html.Label("1️⃣ Select Connection:", className="fw-bold"),
+                            dcc.Dropdown(
+                                id="connection-dropdown",
+                                options=config_loader.get_connection_options(),
+                                value=initial_connection,
+                                clearable=False,
+                                placeholder="Select a database connection...",
+                                style={"marginBottom": "10px"}
+                            ),
+                        ], md=4),
+                        dbc.Col([
+                            html.Label("2️⃣ Select Schema:", className="fw-bold"),
+                            dcc.Dropdown(
+                                id="schema-dropdown",
+                                options=config_loader.get_schema_options(initial_connection) if initial_connection else [],
+                                value=initial_schema,
+                                clearable=False,
+                                placeholder="First select a connection...",
+                                style={"marginBottom": "10px"}
+                            ),
+                        ], md=4),
+                        dbc.Col([
+                            html.Label("3️⃣ Select Tables:", className="fw-bold"),
+                            dcc.Dropdown(
+                                id="tables-dropdown",
+                                options=config_loader.get_table_options(initial_connection, initial_schema) if (initial_connection and initial_schema) else [],
+                                value=initial_table_selection,
+                                multi=True,
+                                placeholder="First select a schema...",
+                                style={"marginBottom": "10px"}
+                            ),
+                        ], md=4),
+                    ]),
+                    html.Div(
+                        id="config-status",
+                        className="mt-2",
+                        children="👆 Please select connection, schema, and tables to begin"
+                    )
+                ])
+            ], className="mb-3")
         ])
     ]),
     
@@ -116,6 +178,8 @@ app.layout = dbc.Container([
     
     # Hidden div to store chat messages
     dcc.Store(id="chat-store", data=[]),
+    # Store for connection, schema, and table configuration
+    dcc.Store(id="config-store", data={"connection": initial_connection, "schema": initial_schema, "tables": initial_table_selection}),
     
     # Example queries
     dbc.Row([
@@ -187,13 +251,16 @@ def format_message(role, content, timestamp=None):
         ], className="mb-3")
 
 
-async def invoke_router_async(user_message, session_id="default-session"):
+async def invoke_router_async(user_message, session_id="default-session", connection=None, schema=None, selected_tables=None):
     """Invoke the staged router with memory"""
     try:
         # Use both print and logging for maximum visibility
         print("\n" + "="*60)
         print(f"🔵 USER QUERY: {user_message}")
         print(f"🧵 Session ID: {session_id}")
+        print(f"🔌 Connection: {connection}")
+        print(f"📂 Schema: {schema}")
+        print(f"📊 Selected Tables: {selected_tables}")
         print("="*60)
         
         logger.info(f"🔵 User query: {user_message}")
@@ -202,12 +269,22 @@ async def invoke_router_async(user_message, session_id="default-session"):
         # Get or create memory for this session
         if session_id not in session_memories:
             session_memories[session_id] = Memory()
-            # TODO: In production, set connection from UI selection:
-            # session_memories[session_id].connection = selected_connection_from_ui
             logger.info(f"🆕 Created new memory for session: {session_id}")
-            logger.info(f"🔌 Using connection: {session_memories[session_id].connection}")
         
         memory = session_memories[session_id]
+        
+        # Update connection, schema, and tables from UI if provided
+        if connection:
+            memory.connection = connection
+            logger.info(f"🔌 Updated connection: {connection}")
+        
+        if schema:
+            memory.schema = schema
+            logger.info(f"📂 Updated schema: {schema}")
+        
+        if selected_tables:
+            memory.selected_tables = selected_tables
+            logger.info(f"📊 Updated selected tables: {selected_tables}")
         
         logger.info(f"📍 Current stage: {memory.stage.value}")
         
@@ -235,6 +312,78 @@ async def invoke_router_async(user_message, session_id="default-session"):
         return {"error": str(e)}
 
 
+# Callback to update schema dropdown when connection changes
+@app.callback(
+    [Output("schema-dropdown", "options"),
+     Output("schema-dropdown", "value")],
+    [Input("connection-dropdown", "value")]
+)
+def update_schema_dropdown(selected_connection):
+    """Update available schemas based on selected connection"""
+    if not selected_connection:
+        return [], None
+    
+    schema_options = config_loader.get_schema_options(selected_connection)
+    
+    # Auto-select first schema if available
+    default_schema = schema_options[0]["value"] if schema_options else None
+    
+    logger.info(f"📂 Updated schemas for connection {selected_connection}: {[s['value'] for s in schema_options]}")
+    
+    return schema_options, default_schema
+
+
+# Callback to update tables dropdown when schema changes
+@app.callback(
+    [Output("tables-dropdown", "options"),
+     Output("tables-dropdown", "value")],
+    [Input("connection-dropdown", "value"),
+     Input("schema-dropdown", "value")]
+)
+def update_tables_dropdown(selected_connection, selected_schema):
+    """Update available tables based on selected connection and schema"""
+    if not selected_connection or not selected_schema:
+        return [], []
+    
+    table_options = config_loader.get_table_options(selected_connection, selected_schema)
+    
+    # Auto-select first two tables if available
+    default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
+    
+    logger.info(f"📋 Updated tables for {selected_connection}.{selected_schema}: {[t['value'] for t in table_options]}")
+    
+    return table_options, default_tables
+
+
+# Callback to save configuration
+@app.callback(
+    [Output("config-store", "data"),
+     Output("config-status", "children")],
+    [Input("connection-dropdown", "value"),
+     Input("schema-dropdown", "value"),
+     Input("tables-dropdown", "value")]
+)
+def save_configuration(connection, schema, tables):
+    """Save connection, schema, and table configuration"""
+    if not connection:
+        return {"connection": None, "schema": None, "tables": []}, "⚠️ Please select a connection"
+    
+    if not schema:
+        return {"connection": connection, "schema": None, "tables": []}, "⚠️ Please select a schema"
+    
+    if not tables:
+        return {"connection": connection, "schema": schema, "tables": []}, "⚠️ Please select at least one table"
+    
+    config = {"connection": connection, "schema": schema, "tables": tables}
+    status_msg = f"✓ Using {connection}.{schema} with {len(tables)} table(s): {', '.join(tables[:3])}"
+    if len(tables) > 3:
+        status_msg += f" and {len(tables)-3} more"
+    
+    logger.info(f"💾 Configuration saved: {config}")
+    
+    return config, status_msg
+
+
 @app.callback(
     [Output("chat-history", "children"),
      Output("chat-store", "data"),
@@ -246,9 +395,10 @@ async def invoke_router_async(user_message, session_id="default-session"):
      Input("example-3", "n_clicks"),
      Input("user-input", "n_submit")],
     [State("user-input", "value"),
-     State("chat-store", "data")]
+     State("chat-store", "data"),
+     State("config-store", "data")]
 )
-def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_input, chat_data):
+def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_input, chat_data, config):
     """Handle chat interactions"""
     ctx = callback_context
     
@@ -292,10 +442,34 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, user_in
     try:
         logger.info(f"💬 Processing user input: {user_input}")
         
-        # Invoke router with session memory
+        # Get configuration from store
+        connection = config.get("connection")
+        schema = config.get("schema")
+        selected_tables = config.get("tables", [])
+        
+        # Validate configuration
+        if not connection or not schema or not selected_tables:
+            error_message = {
+                "role": "error",
+                "content": "⚠️ Please configure database connection, schema, and select at least one table before starting.",
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(error_message)
+            chat_display = [format_message(**msg) for msg in chat_data]
+            return chat_display, chat_data, "", ""
+        
+        # Invoke router with session memory and configuration
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(invoke_router_async(user_input, session_id="web-chat-session"))
+        response = loop.run_until_complete(
+            invoke_router_async(
+                user_input, 
+                session_id="web-chat-session",
+                connection=connection,
+                schema=schema,
+                selected_tables=selected_tables
+            )
+        )
         loop.close()
         
         if "error" in response:

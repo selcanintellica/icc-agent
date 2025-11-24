@@ -1,6 +1,7 @@
 """
 SQL generation agent - converts natural language to SQL queries.
 Uses a small LLM focused only on SQL generation.
+Dynamically loads table schemas from API.
 """
 import os
 from langchain_ollama import ChatOllama
@@ -8,6 +9,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 import json
 import logging
+from typing import List, Optional
+from src.utils.table_api_client import fetch_table_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -18,71 +21,35 @@ class SQLSpec(BaseModel):
     reasoning: str = ""
 
 
-SQL_GENERATION_PROMPT = """You are a SQL query generator. Convert natural language requests into SQL queries.
+SQL_GENERATION_PROMPT_TEMPLATE = """You are a SQL query generator. Convert natural language requests into SQL queries.
 
-DATABASE SCHEMA:
+You have access to the following database tables with their complete definitions:
 
-Table: customers
-Columns:
-  - customer_id (INT, Primary Key)
-  - first_name (VARCHAR)
-  - last_name (VARCHAR)
-  - email (VARCHAR)
-  - phone (VARCHAR)
-  - country (VARCHAR)
-  - city (VARCHAR)
-  - address (VARCHAR)
-  - created_date (DATE)
+{schema_definitions}
 
-Table: orders
-Columns:
-  - order_id (INT, Primary Key)
-  - customer_id (INT, Foreign Key → customers.customer_id)
-  - order_date (DATE)
-  - total_amount (DECIMAL)
-  - status (VARCHAR) -- values: 'pending', 'completed', 'cancelled'
-  - shipping_address (VARCHAR)
-
-Table: products
-Columns:
-  - product_id (INT, Primary Key)
-  - product_name (VARCHAR)
-  - category (VARCHAR)
-  - price (DECIMAL)
-  - stock_quantity (INT)
-  - supplier (VARCHAR)
-
-Table: order_items
-Columns:
-  - order_item_id (INT, Primary Key)
-  - order_id (INT, Foreign Key → orders.order_id)
-  - product_id (INT, Foreign Key → products.product_id)
-  - quantity (INT)
-  - unit_price (DECIMAL)
-
-Rules:
-- Generate valid SQL queries using the schema above
-- Use proper table and column names from the schema
-- Use JOINs when querying related tables
+IMPORTANT RULES:
+- Generate valid SQL queries using ONLY the tables and columns defined above
+- Use proper table and column names exactly as shown in the schema
+- Pay attention to data types and constraints
+- Use JOINs when querying related tables (check Foreign Keys section)
 - Be conservative - if unclear, use simple SELECT queries
-- Only output the SQL query, no explanations unless asked
+- Qualify table names with schema if provided (e.g., SALES.customers)
+- Only use tables that are listed in the schema above
+- Follow the example queries provided for each table as guidance
 
-Examples:
-User: "get customers from USA"
-SQL: SELECT * FROM customers WHERE country = 'USA'
+RESPONSE FORMAT:
+Respond with JSON only: {{"sql": "YOUR_SQL_HERE", "reasoning": "brief explanation"}}
 
-User: "first 10 orders from today"
-SQL: SELECT * FROM orders WHERE order_date = CURRENT_DATE LIMIT 10
+Examples of good responses:
+{{"sql": "SELECT * FROM customers WHERE country = 'USA'", "reasoning": "Filtering customers by country column"}}
+{{"sql": "SELECT c.first_name, c.last_name, SUM(o.total_amount) as total FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.first_name, c.last_name", "reasoning": "Joining customers with orders to calculate total per customer"}}
 
-User: "show customer names with their total order amounts"
-SQL: SELECT c.first_name, c.last_name, SUM(o.total_amount) as total_spent FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.first_name, c.last_name
-
-Now generate SQL for the user's request. Respond with JSON: {"sql": "YOUR_SQL_HERE", "reasoning": "brief explanation"}
+Now generate SQL for the user's request below:
 """
 
 
 class SQLAgent:
-    """Agent that generates SQL from natural language."""
+    """Agent that generates SQL from natural language using dynamic schema loading."""
     
     def __init__(self):
         self.llm = ChatOllama(
@@ -91,21 +58,47 @@ class SQLAgent:
             base_url="http://localhost:11434",
         )
     
-    def generate_sql(self, user_input: str) -> SQLSpec:
+    def generate_sql(
+        self, 
+        user_input: str, 
+        connection: str = None,
+        schema: str = None,
+        selected_tables: List[str] = None
+    ) -> SQLSpec:
         """
-        Generate SQL query from natural language input.
+        Generate SQL query from natural language input using table definitions from files.
         
         Args:
             user_input: Natural language description of desired query
+            connection: Database connection name
+            schema: Database schema name
+            selected_tables: List of table names to include in context
             
         Returns:
             SQLSpec with generated SQL and reasoning
         """
         logger.info(f"🔮 SQL Agent: Generating SQL from: '{user_input}'")
+        logger.info(f"� Connection: {connection}, Schema: {schema}")
+        logger.info(f"📊 Selected tables: {selected_tables}")
         
         try:
+            # Fetch table definitions from API
+            if connection and schema and selected_tables:
+                logger.info(f"🌐 Fetching table definitions from API...")
+                schema_definitions = fetch_table_definitions(connection, schema, selected_tables)
+                
+                if not schema_definitions or schema_definitions.strip() == "":
+                    logger.warning("⚠️ No schema definitions fetched from API, using fallback")
+                    schema_definitions = "ERROR: No table definitions found. Using default behavior."
+            else:
+                logger.warning("⚠️ Missing connection/schema/tables, cannot fetch definitions")
+                schema_definitions = "ERROR: Connection, schema, and tables must be provided."
+            
+            # Build prompt with loaded schema definitions
+            prompt = SQL_GENERATION_PROMPT_TEMPLATE.format(schema_definitions=schema_definitions)
+            
             messages = [
-                SystemMessage(content=SQL_GENERATION_PROMPT),
+                SystemMessage(content=prompt),
                 HumanMessage(content=user_input)
             ]
             
@@ -151,14 +144,27 @@ class SQLAgent:
 sql_agent = SQLAgent()
 
 
-def call_sql_agent(user_input: str) -> SQLSpec:
+def call_sql_agent(
+    user_input: str, 
+    connection: str = None,
+    schema: str = None,
+    selected_tables: List[str] = None
+) -> SQLSpec:
     """
     Call the SQL generation agent.
     
     Args:
         user_input: Natural language query description
+        connection: Database connection name
+        schema: Database schema name
+        selected_tables: List of table names to include in context
         
     Returns:
         SQLSpec with generated SQL
     """
-    return sql_agent.generate_sql(user_input)
+    return sql_agent.generate_sql(
+        user_input, 
+        connection=connection,
+        schema=schema,
+        selected_tables=selected_tables
+    )

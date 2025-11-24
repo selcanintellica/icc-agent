@@ -9,8 +9,12 @@ from typing import Optional, Dict, Any, List
 class Stage(Enum):
     """Conversation stages for the router."""
     START = "start"
-    NEED_QUERY = "need_query"
-    HAVE_SQL = "have_sql"
+    ASK_SQL_METHOD = "ask_sql_method"          # NEW: Ask if user provides SQL or wants it generated
+    NEED_NATURAL_LANGUAGE = "need_natural_language"  # NEW: Waiting for NL query to generate SQL
+    NEED_USER_SQL = "need_user_sql"            # NEW: Waiting for user to provide SQL directly
+    CONFIRM_GENERATED_SQL = "confirm_generated_sql"  # NEW: Show generated SQL, ask for confirmation
+    CONFIRM_USER_SQL = "confirm_user_sql"      # NEW: Show user's SQL, ask for confirmation
+    EXECUTE_SQL = "execute_sql"                # Ready to execute (replaces HAVE_SQL)
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
     DONE = "done"
@@ -28,7 +32,9 @@ class Memory:
     last_columns: Optional[List[str]] = None
     last_preview: Optional[Dict[str, Any]] = None
     gathered_params: Dict[str, Any] = field(default_factory=dict)
-    connection: str = "oracle_10"  # Default connection, can be set from UI/config
+    connection: str = "ORACLE_10"  # Connection name, set from UI
+    schema: str = "SALES"  # Schema name, set from UI
+    selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])  # Tables selected from UI
     
     def reset(self):
         """Reset memory to start a new conversation."""
@@ -49,7 +55,9 @@ class Memory:
             "last_columns": self.last_columns,
             "last_preview": self.last_preview,
             "gathered_params": self.gathered_params,
-            "connection": self.connection
+            "connection": self.connection,
+            "schema": self.schema,
+            "selected_tables": self.selected_tables
         }
     
     @classmethod
@@ -62,5 +70,7 @@ class Memory:
         memory.last_columns = data.get("last_columns")
         memory.last_preview = data.get("last_preview")
         memory.gathered_params = data.get("gathered_params", {})
-        memory.connection = data.get("connection", "oracle_10")
+        memory.connection = data.get("connection", "ORACLE_10")
+        memory.schema = data.get("schema", "SALES")
+        memory.selected_tables = data.get("selected_tables", ["customers", "orders"])
         return memory

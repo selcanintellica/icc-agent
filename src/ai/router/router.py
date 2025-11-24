@@ -8,6 +8,7 @@ from src.ai.router.memory import Memory, Stage
 from src.ai.router.sql_agent import call_sql_agent
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import read_sql_job, write_data_job, send_email_job
+from src.utils.connections import get_connection_id
 from src.models.natural_language import (
     ReadSqlLLMRequest,
     ReadSqlVariables,
@@ -38,15 +39,38 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     
     # ========== STAGE: START ==========
     if memory.stage == Stage.START:
-        memory.stage = Stage.NEED_QUERY
-        return memory, "What SQL query would you like to execute? (e.g., 'get customers from USA')"
+        memory.stage = Stage.ASK_SQL_METHOD
+        return memory, "How would you like to proceed?\n• Type 'create' - I'll generate SQL from your natural language\n• Type 'provide' - You provide the SQL query directly"
     
-    # ========== STAGE: NEED_QUERY ==========
-    if memory.stage == Stage.NEED_QUERY:
+    # ========== STAGE: ASK_SQL_METHOD ==========
+    if memory.stage == Stage.ASK_SQL_METHOD:
+        user_lower = user_utterance.lower()
+        
+        if "create" in user_lower or "generate" in user_lower:
+            logger.info("📝 User chose: Agent will generate SQL")
+            memory.stage = Stage.NEED_NATURAL_LANGUAGE
+            return memory, "Great! Describe what data you want in natural language. (e.g., 'get all customers from USA')"
+        
+        elif "provide" in user_lower or "write" in user_lower or "my own" in user_lower:
+            logger.info("✍️ User chose: Provide SQL directly")
+            memory.stage = Stage.NEED_USER_SQL
+            return memory, "Please provide your SQL query:"
+        
+        else:
+            # User didn't clearly indicate, ask again
+            return memory, "Please choose:\n• 'create' - I'll generate SQL for you\n• 'provide' - You'll write the SQL"
+    
+    # ========== STAGE: NEED_NATURAL_LANGUAGE ==========
+    if memory.stage == Stage.NEED_NATURAL_LANGUAGE:
         logger.info("📝 Generating SQL from natural language...")
         
-        # Generate SQL using SQL agent
-        spec = call_sql_agent(user_utterance)
+        # Generate SQL using SQL agent with selected tables context
+        spec = call_sql_agent(
+            user_utterance, 
+            connection=memory.connection,
+            schema=memory.schema,
+            selected_tables=memory.selected_tables
+        )
         memory.last_sql = spec.sql
         
         # Check if it's a SELECT query
@@ -55,15 +79,73 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         else:
             warning = ""
         
-        memory.stage = Stage.HAVE_SQL
+        memory.stage = Stage.CONFIRM_GENERATED_SQL
         
-        response = f"I prepared this SQL:\n```sql\n{spec.sql}\n```{warning}\nShall I execute it?"
+        response = f"I prepared this SQL:\n```sql\n{spec.sql}\n```{warning}\nIs this okay? (yes/no)\nSay 'no' to modify, or 'yes' to execute."
         logger.info(f"✅ SQL generated: {spec.sql}")
         
         return memory, response
     
-    # ========== STAGE: HAVE_SQL ==========
-    if memory.stage == Stage.HAVE_SQL:
+    # ========== STAGE: NEED_USER_SQL ==========
+    if memory.stage == Stage.NEED_USER_SQL:
+        logger.info("✍️ User provided SQL directly")
+        
+        # Store the user's SQL
+        memory.last_sql = user_utterance.strip()
+        
+        # Check if it looks like SQL (basic validation)
+        if not any(keyword in memory.last_sql.lower() for keyword in ["select", "insert", "update", "delete", "create", "drop"]):
+            return memory, "⚠️ That doesn't look like a SQL query. Please provide a valid SQL statement:"
+        
+        # Check if it's a SELECT query
+        if "select" not in memory.last_sql.lower():
+            warning = "\n⚠️ Note: This is a non-SELECT query. "
+        else:
+            warning = ""
+        
+        memory.stage = Stage.CONFIRM_USER_SQL
+        
+        response = f"You provided this SQL:\n```sql\n{memory.last_sql}\n```{warning}\nIs this correct? (yes/no)"
+        logger.info(f"✅ User SQL received: {memory.last_sql}")
+        
+        return memory, response
+    
+    # ========== STAGE: CONFIRM_GENERATED_SQL ==========
+    if memory.stage == Stage.CONFIRM_GENERATED_SQL:
+        user_lower = user_utterance.lower()
+        
+        if "yes" in user_lower or "ok" in user_lower or "correct" in user_lower or "execute" in user_lower:
+            logger.info("✅ User confirmed generated SQL")
+            memory.stage = Stage.EXECUTE_SQL
+            return memory, "Great! Executing the query..."
+        
+        elif "no" in user_lower or "change" in user_lower or "modify" in user_lower:
+            logger.info("🔄 User wants to modify - going back to natural language input")
+            memory.stage = Stage.NEED_NATURAL_LANGUAGE
+            return memory, "No problem! Please describe what you want differently:"
+        
+        else:
+            return memory, "Please confirm: Say 'yes' to execute or 'no' to modify the query."
+    
+    # ========== STAGE: CONFIRM_USER_SQL ==========
+    if memory.stage == Stage.CONFIRM_USER_SQL:
+        user_lower = user_utterance.lower()
+        
+        if "yes" in user_lower or "ok" in user_lower or "correct" in user_lower or "execute" in user_lower:
+            logger.info("✅ User confirmed their SQL")
+            memory.stage = Stage.EXECUTE_SQL
+            return memory, "Great! Executing the query..."
+        
+        elif "no" in user_lower or "change" in user_lower or "modify" in user_lower:
+            logger.info("🔄 User wants to modify their SQL")
+            memory.stage = Stage.NEED_USER_SQL
+            return memory, "Please provide the corrected SQL query:"
+        
+        else:
+            return memory, "Please confirm: Say 'yes' to execute or 'no' to provide a different query."
+    
+    # ========== STAGE: EXECUTE_SQL ==========
+    if memory.stage == Stage.EXECUTE_SQL:
         logger.info("🔧 Gathering parameters for read_sql...")
         
         # Use job agent to gather parameters
@@ -77,14 +159,23 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             logger.info("⚡ Executing read_sql_job...")
             
             try:
-                # Build the request - use connection from memory (set externally)
+                # Get connection ID from connection name
+                connection_id = get_connection_id(memory.connection)
+                if not connection_id:
+                    logger.error(f"❌ Unknown connection: {memory.connection}")
+                    return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
+                
+                logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
+                
+                # Build the request - use connection ID for API
                 request = ReadSqlLLMRequest(
                     rights={"owner": "184431757886694"},
                     props={"active": "true", "name": f"Query_{memory.last_sql[:20]}", "description": ""},
                     variables=[ReadSqlVariables(
                         query=memory.last_sql,
-                        connection=memory.connection,  # Use connection from memory
-                        execute_query=True
+                        connection=connection_id,  # Use connection ID for API
+                        execute_query=True,
+                        table_name=""  # Always empty as per requirements
                     )]
                 )
                 
@@ -148,19 +239,38 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 try:
                     params = memory.gathered_params
                     
+                    # Get connection ID from connection name
+                    connection_id = get_connection_id(memory.connection)
+                    if not connection_id:
+                        logger.error(f"❌ Unknown connection: {memory.connection}")
+                        return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
+                    
+                    logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
+                    
+                    # Get table name from params (user provides destination table)
+                    table_name = params.get("table", "output_table")
+                    
+                    # Get and validate drop_or_truncate - must be DROP, TRUNCATE, or INSERT
+                    drop_or_truncate = params.get("drop_or_truncate", "INSERT").upper()
+                    if drop_or_truncate not in ["DROP", "TRUNCATE", "INSERT"]:
+                        logger.warning(f"⚠️ Invalid drop_or_truncate value: {drop_or_truncate}, defaulting to INSERT")
+                        drop_or_truncate = "INSERT"
+                    
                     # Convert columns to ColumnSchema format
                     columns = [ColumnSchema(columnName=col) for col in memory.last_columns]
                     
                     request = WriteDataLLMRequest(
                         rights={"owner": "184431757886694"},
-                        props={"active": "true", "name": f"Write_{params.get('table', 'table')}", "description": ""},
+                        props={"active": "true", "name": f"Write_{table_name}", "description": ""},
                         variables=[WriteDataVariables(
-                            connection=params.get("connection", "default"),
-                            table=params.get("table", "output_table"),
-                            data_set=memory.last_job_id,
-                            columns=columns,
-                            drop_or_truncate=params.get("drop_or_truncate", "none"),
-                            only_dataset_columns=True
+                            data_set=memory.last_job_id,  # Job ID from read_sql
+                            columns=columns,  # Columns from read_sql result
+                            add_columns=[],  # Always empty as per requirements
+                            connection=connection_id,  # Use connection ID for API
+                            schemas=memory.schema,  # Use schema from UI selection
+                            table=table_name,  # Destination table from user
+                            drop_or_truncate=drop_or_truncate,  # DROP, TRUNCATE, or INSERT
+                            only_dataset_columns=True  # Fixed value
                         )]
                     )
                     
@@ -168,7 +278,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     
                     logger.info(f"📊 write_data_job result: {json.dumps(result, indent=2, default=str)}")
                     
-                    return memory, f"✅ Data written successfully to table '{params.get('table')}'!\nAnything else? (email / done)"
+                    return memory, f"✅ Data written successfully to table '{table_name}' in {memory.schema} schema!\nAnything else? (email / done)"
                     
                 except Exception as e:
                     logger.error(f"❌ Error in write_data: {str(e)}", exc_info=True)
@@ -188,16 +298,24 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 try:
                     params = memory.gathered_params
                     
+                    # Get connection ID from connection name
+                    connection_id = get_connection_id(memory.connection)
+                    if not connection_id:
+                        logger.error(f"❌ Unknown connection: {memory.connection}")
+                        return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
+                    
+                    logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
+                    
                     request = SendEmailLLMRequest(
                         rights={"owner": "184431757886694"},
                         props={"active": "true", "name": "Email_Results", "description": ""},
                         variables=[SendEmailVariables(
-                            query=memory.last_sql,
-                            to=params.get("to"),
-                            subject=params.get("subject", "Query Results"),
-                            text=params.get("text", "Please find the query results attached."),
-                            connection=params.get("connection", "default"),
-                            attachment=True
+                            query=memory.last_sql,  # SQL generated by SQL agent
+                            connection=connection_id,  # Use connection ID for API
+                            to=params.get("to"),  # Email recipient from user
+                            subject=params.get("subject", "Query Results"),  # Subject from user or default
+                            text=params.get("text", "Please find the query results attached."),  # Message from user or default
+                            attachment=True  # Always attach results
                         )]
                     )
                     

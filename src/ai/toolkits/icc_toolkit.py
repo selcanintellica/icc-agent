@@ -30,9 +30,16 @@ async def write_data_job(data: WriteDataLLMRequest) -> dict:
     if not data.id:
         data.id = str(uuid.uuid4())
 
-    # Authenticate and create HTTP client with token
-    token = await authenticate()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    # Authenticate and create HTTP client with both Basic Auth and TokenKey headers
+    auth_result = await authenticate()
+    if auth_result:
+        userpass, token = auth_result
+        headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+    else:
+        headers = {}
     
     async with AsyncClient(headers=headers, verify=False) as client:
         repo = JobRepository(client)
@@ -62,9 +69,16 @@ async def read_sql_job(data: ReadSqlLLMRequest) -> dict:
     if not data.id:
         data.id = str(uuid.uuid4())
     
-    # Authenticate and create HTTP client with token
-    token = await authenticate()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    # Authenticate and create HTTP client with both Basic Auth and TokenKey headers
+    auth_result = await authenticate()
+    if auth_result:
+        userpass, token = auth_result
+        headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+    else:
+        headers = {}
     
     async with AsyncClient(headers=headers, verify=False) as client:
         repo = JobRepository(client)
@@ -98,9 +112,16 @@ async def send_email_job(data: SendEmailLLMRequest) -> dict:
     if not data.id:
         data.id = str(uuid.uuid4())
 
-    # Authenticate and create HTTP client with token
-    token = await authenticate()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    # Authenticate and create HTTP client with both Basic Auth and TokenKey headers
+    auth_result = await authenticate()
+    if auth_result:
+        userpass, token = auth_result
+        headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+    else:
+        headers = {}
     
     async with AsyncClient(headers=headers, verify=False) as client:
         repo = JobRepository(client)
