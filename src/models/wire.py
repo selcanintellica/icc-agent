@@ -1,23 +1,42 @@
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, model_serializer
+from pydantic import BaseModel, Field, PrivateAttr
 
 class WireVariable(BaseModel):
     definition: str
     id: str = ""
     value: Optional[Any] = None
-    value2: Optional[Any] = Field(default=None, exclude=True)
-    model_config = {"extra": "allow"}
+    value2: Optional[Any] = None
+    _has_value2: bool = PrivateAttr(default=False)
     
-    @model_serializer
-    def serialize_model(self):
-        """Custom serializer to include value2 only when explicitly set in a dict"""
-        result = {"definition": self.definition, "id": self.id}
+    model_config = {
+        "extra": "allow"
+    }
+    
+    def __init__(self, **data):
+        # Track if value2 was explicitly provided
+        if 'value2' in data:
+            super().__init__(**data)
+            self._has_value2 = True
+        else:
+            super().__init__(**data)
+            self._has_value2 = False
+    
+    def model_dump(self, **kwargs):
+        """Custom dump to include value2 only when explicitly set"""
+        from loguru import logger
+        
+        data = {'definition': self.definition, 'id': self.id}
+        
+        # Add value if it's not None
         if self.value is not None:
-            result["value"] = self.value
-        # Only include value2 if it was explicitly set (not just defaulted to None)
-        if hasattr(self, '__pydantic_fields_set__') and 'value2' in self.__pydantic_fields_set__:
-            result["value2"] = self.value2
-        return result
+            data['value'] = self.value
+        
+        # Add value2 ONLY if it was explicitly provided in constructor (even if None)
+        if self._has_value2:
+            data['value2'] = self.value2
+            logger.debug(f"[WireVariable] Including value2={self.value2} for definition={self.definition}")
+        
+        return data
 
 class WireProps(BaseModel):
     active: str = "true"
@@ -31,3 +50,17 @@ class WirePayload(BaseModel):
     props: WireProps
     skip: str = "false"
     folder: str
+    
+    def model_dump(self, **kwargs):
+        """Override to handle variables with custom serialization"""
+        # Don't pass exclude_none to variables since we handle it custom
+        data = {
+            'template': self.template,
+            'variables': [var.model_dump() for var in self.variables],  # Use our custom dump
+            'rights': self.rights,
+            'priority': self.priority,
+            'props': self.props.model_dump(**kwargs),
+            'skip': self.skip,
+            'folder': self.folder
+        }
+        return data

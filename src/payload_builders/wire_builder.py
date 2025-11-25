@@ -50,6 +50,7 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
                 if k not in ("value", "value2", "definition", "id"):
                     var_dict[k] = v
             var = WireVariable(**var_dict)
+            logger.info(f"[WireBuilder] Created variable with dict, fields_set: {var.__pydantic_fields_set__ if hasattr(var, '__pydantic_fields_set__') else 'N/A'}, var_dict: {var_dict}")
             variables.append(var)
         elif isinstance(value, (list, tuple)):
             var = WireVariable(definition=def_id, id="", value=value)
@@ -60,10 +61,13 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
             variables.append(var)
 
     if template_id == "2223045341865624": # READSQL template
+        import json
         formated_column_names = [
             {"columnName": name} for name in column_names
         ]
-        var = WireVariable(definition=defs_map["columns"], id="", value=formated_column_names)
+        # Convert to JSON string to match API expectation
+        columns_json_string = json.dumps(formated_column_names)
+        var = WireVariable(definition=defs_map["columns"], id="", value=columns_json_string)
         variables.append(var)
 
     wire = WirePayload(

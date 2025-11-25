@@ -198,17 +198,17 @@ class ReadSqlLLMRequest(BaseLLMRequest):
         
         return {
                 "template": self.template,
-                "table_name": table_name,
+                "connection": var.connection,
                 "query": var.query,
-                "write_count": var.write_count,
+                "write_count": "true" if var.write_count else "false",
                 "write_count_connection": write_count_connection,
                 "write_count_schema": write_count_schema,
-                "execute_query": var.execute_query,
-                "result_schema": result_schema,
-                "only_dataset_columns": only_dataset_columns,
                 "write_count_table": write_count_table,
-                "drop_before_create": drop_before_create,
-                "connection": var.connection,
+                "execute_query": "true" if var.execute_query else "false",
+                "result_schema": result_schema,
+                "table_name": table_name,
+                "drop_before_create": "true" if drop_before_create else "false",
+                "only_dataset_columns": "true" if only_dataset_columns else "false",
             }
 
 

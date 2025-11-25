@@ -31,7 +31,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
             "only_dataset_columns": "284961720526",
             "columns": "2223045341958051",
         },
-        "props_name": "readsql",
+        "props_name": "readsql10",
     },
     "WRITEDATA": {
         "template_id": "28405918884279",
