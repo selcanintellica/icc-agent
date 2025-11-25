@@ -35,9 +35,9 @@ read_sql (ONLY these parameters):
 - Do NOT ask for anything, always return action "TOOL"
 
 write_data (ONLY these parameters):
-- connection (database connection name) - REQUIRED
 - table (table name to write to) - REQUIRED
 - drop_or_truncate ("drop", "truncate", or "none") - REQUIRED
+- connection (database connection name) - already available in memory (same as read_sql), do NOT ask for it
 - data_set (job_id from previous read_sql) - already available in memory, do NOT ask for it
 - columns (from previous read_sql) - already available in memory, do NOT ask for it
 - only_dataset_columns (true/false) - defaults to true, do NOT ask for it
@@ -177,11 +177,9 @@ class JobAgent:
                     "action": "ASK",
                     "question": "What table should I write the data to?"
                 }
+            # Connection is inherited from memory (same as read_sql), not asked from user
             if not params.get("connection"):
-                return {
-                    "action": "ASK",
-                    "question": "What database connection should I use for writing?"
-                }
+                params["connection"] = memory.connection
             if not params.get("drop_or_truncate"):
                 return {
                     "action": "ASK",
