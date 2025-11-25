@@ -22,6 +22,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
             "query": "2223045341935949",
             "write_count": "28405919373737",
             "write_count_connection": "28405919100373",
+            "write_count_schema": "28405919737373",
             "write_count_table": "28405919059373",
             "execute_query": "28405919526172",
             "result_schema": "284961720523",

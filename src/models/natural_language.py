@@ -121,9 +121,14 @@ class ReadSqlVariables(BaseModel):
         description="Connection identifier for writing row count. Only needed if write_count is True.",
         field_id="28405919100373"
     )
+    write_count_schema: Optional[str] = Field(
+        None,
+        description="Schema name where row count will be written. Only needed if write_count is True.",
+        field_id="28405919737373"
+    )
     execute_query: Optional[bool] = Field(
-        True,
-        description="Whether to execute the query immediately. True by default. Set False to validate only.",
+        False,
+        description="Whether to save query results to database. False by default (query runs but results are not saved). Set True to save results to the specified table.",
         field_id="28405919526172"
     )
     result_schema: Optional[str] = Field(
@@ -168,17 +173,41 @@ class ReadSqlLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         # Access first variable since it's a list
         var = self.variables[0]
+        
+        # Conditional logic based on write_count
+        if not var.write_count:
+            write_count_schema = ""
+            write_count_table = ""
+            write_count_connection = {"definition": "28405919100373", "id": "", "value2": None}
+        else:
+            write_count_schema = var.write_count_schema
+            write_count_table = var.write_count_table
+            write_count_connection = var.write_count_connection
+        
+        # Conditional logic based on execute_query
+        if not var.execute_query:
+            result_schema = ""
+            table_name = ""
+            drop_before_create = True
+            only_dataset_columns = False
+        else:
+            result_schema = var.result_schema
+            table_name = var.table_name
+            drop_before_create = var.drop_before_create
+            only_dataset_columns = var.only_dataset_columns
+        
         return {
                 "template": self.template,
-                "table_name": var.table_name,
+                "table_name": table_name,
                 "query": var.query,
                 "write_count": var.write_count,
-                "write_count_connection": var.write_count_connection,
+                "write_count_connection": write_count_connection,
+                "write_count_schema": write_count_schema,
                 "execute_query": var.execute_query,
-                "result_schema": var.result_schema,
-                "only_dataset_columns": var.only_dataset_columns,
-                "write_count_table": var.write_count_table,
-                "drop_before_create": var.drop_before_create,
+                "result_schema": result_schema,
+                "only_dataset_columns": only_dataset_columns,
+                "write_count_table": write_count_table,
+                "drop_before_create": drop_before_create,
                 "connection": var.connection,
             }
 
