@@ -17,6 +17,9 @@ class JobRepository(BaseRepository):
         wire = build_wire_payload(data)
 
         logger.info(f"Creating write data job: {data.template}")
+        logger.info(f"📦 Wire payload being sent to API:")
+        logger.info(f"{wire.model_dump(exclude_none=True, by_alias=True)}")
+        
         endpoint = ""  # Empty string since base_url already contains the full path
         response = await self.post_request(endpoint, wire, JobResponse)
         return response

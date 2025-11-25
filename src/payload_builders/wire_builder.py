@@ -27,10 +27,15 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
     meta = TEMPLATES[template_key]
     template_id: str = meta["template_id"]
     defs_map: Dict[str, str] = meta["definitions"]
-    props_name: str = meta["props_name"]
 
     fields: Dict[str, Any] = request.to_field_values()
     logger.info(f"[WireBuilder] Template: {template_key}, Fields from to_field_values(): {fields}")
+    
+    # Get props name from request.props if it exists, otherwise use default from template
+    if hasattr(request, 'props') and isinstance(request.props, dict) and 'name' in request.props:
+        props_name: str = request.props['name']
+    else:
+        props_name: str = meta["props_name"]
 
     variables: List[WireVariable] = []
     for field_name, value in fields.items():
@@ -69,6 +74,56 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
         columns_json_string = json.dumps(formated_column_names)
         var = WireVariable(definition=defs_map["columns"], id="", value=columns_json_string)
         variables.append(var)
+    
+    elif template_id == "28405918884279": # WRITEDATA template
+        import json
+        
+        # Get data_set metadata from the request variables
+        data_set_job_name = None
+        data_set_folder = None
+        if hasattr(request, 'variables') and len(request.variables) > 0:
+            var = request.variables[0]
+            data_set_job_name = getattr(var, 'data_set_job_name', None)
+            data_set_folder = getattr(var, 'data_set_folder', None)
+        
+        # 1. Update data_set variable to add jobName and folder from ReadSQL job
+        for i, var in enumerate(variables):
+            if var.definition == defs_map.get("data_set"):
+                job_id = getattr(var, 'value', '')
+                variables[i] = WireVariable(
+                    definition=var.definition,
+                    id=var.id,
+                    value=job_id,
+                    jobName=data_set_job_name or "readsql",
+                    folder=data_set_folder or DEFAULT_FOLDER
+                )
+                logger.info(f"[WireBuilder] Updated data_set: value={job_id}, jobName={data_set_job_name}, folder={data_set_folder}")
+                break
+        
+        # 2. Convert columns to JSON string (same as ReadSQL format)
+        for i, var in enumerate(variables):
+            if var.definition == defs_map.get("columns"):
+                columns_value = getattr(var, 'value', [])
+                if isinstance(columns_value, list):
+                    columns_dict = []
+                    for col in columns_value:
+                        if hasattr(col, 'model_dump'):
+                            columns_dict.append(col.model_dump())
+                        elif hasattr(col, 'dict'):
+                            columns_dict.append(col.dict())
+                        elif isinstance(col, dict):
+                            columns_dict.append(col)
+                    columns_json_string = json.dumps(columns_dict)
+                    variables[i] = WireVariable(definition=var.definition, id=var.id, value=columns_json_string)
+                    logger.info(f"[WireBuilder] Converted columns to JSON: {columns_json_string[:100]}...")
+                break
+        
+        # 3. Ensure add_columns is empty string (not empty list)
+        for i, var in enumerate(variables):
+            if var.definition == defs_map.get("add_columns"):
+                variables[i] = WireVariable(definition=var.definition, id="", value="")
+                logger.info(f"[WireBuilder] Set add_columns to empty string")
+                break
 
     wire = WirePayload(
         template=template_id,
@@ -82,6 +137,11 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
     
     logger.info(f"[WireBuilder] Built WirePayload with {len(variables)} variables")
     for var in variables:
-        logger.info(f"[WireBuilder] Variable: definition={var.definition}, id={var.id}, value={getattr(var, 'value', 'N/A')}, value2={getattr(var, 'value2', 'N/A')}")
+        # Check for extra fields
+        extra_fields = {}
+        for field in ['jobName', 'folder']:
+            if hasattr(var, field):
+                extra_fields[field] = getattr(var, field)
+        logger.info(f"[WireBuilder] Variable: definition={var.definition}, id={var.id}, value={getattr(var, 'value', 'N/A')[:50] if isinstance(getattr(var, 'value', 'N/A'), str) else getattr(var, 'value', 'N/A')}, extra_fields={extra_fields}")
     
     return wire

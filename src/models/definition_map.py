@@ -43,6 +43,7 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
             "schemas": "28405919042037",
             "table": "28405919059935",
             "drop_or_truncate": "28405919008625",
+            "report_format": "28405919087238",
             "only_dataset_columns": "28405919100737",
             "write_count": "28405919839465",
             "write_count_connection": "28405919193743",

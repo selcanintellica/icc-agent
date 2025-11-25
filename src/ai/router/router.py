@@ -157,6 +157,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         
         if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
             logger.info("⚡ Executing read_sql_job...")
+            params = action.get("params", {})
             
             try:
                 # Get connection ID from connection name
@@ -167,10 +168,10 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 
                 logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
                 
-                # Build the request - use connection ID for API
+                # Build the request - use connection ID for API and name from params
                 request = ReadSqlLLMRequest(
                     rights={"owner": "184431757886694"},
-                    props={"active": "true", "name": f"Query_{memory.last_sql[:20]}", "description": ""},
+                    props={"active": "true", "name": params.get("name", "ReadSQL_Job"), "description": ""},
                     variables=[ReadSqlVariables(
                         query=memory.last_sql,
                         connection=connection_id  # Use connection ID for API
@@ -183,8 +184,10 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 logger.info(f"📊 read_sql_job result: {json.dumps(result, indent=2)}")
                 
                 if result.get("message") == "Success":
-                    # Save job_id and columns for later use
+                    # Save job_id, name, folder, and columns for later use in WriteData
                     memory.last_job_id = result.get("job_id")
+                    memory.last_job_name = params.get("name", "ReadSQL_Job")
+                    memory.last_job_folder = "3023602439587835"  # Default folder from definition_map
                     memory.last_columns = result.get("columns", [])
                     memory.stage = Stage.SHOW_RESULTS
                     
@@ -207,6 +210,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     if memory.stage == Stage.SHOW_RESULTS:
         memory.stage = Stage.NEED_WRITE_OR_EMAIL
         memory.gathered_params = {}  # Reset for next operation
+        memory.current_tool = None  # Reset current tool
         
         return memory, "What would you like to do next?\n• 'write' - Save results to a table\n• 'email' - Send results via email\n• 'both' - Write and email\n• 'done' - Finish"
     
@@ -219,24 +223,32 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             memory.stage = Stage.DONE
             return memory, "✅ All done! Say 'new query' to start again."
         
-        # Determine which tool to use
-        wants_write = "write" in user_lower or "save" in user_lower or "store" in user_lower
-        wants_email = "email" in user_lower or "send" in user_lower
+        # Determine which tool to use OR continue with the current tool if params are being gathered
+        # If we're already gathering params for a tool, continue with that tool
+        if memory.current_tool:
+            wants_write = memory.current_tool == "write_data"
+            wants_email = memory.current_tool == "send_email"
+        else:
+            # First time - detect from user input
+            wants_write = "write" in user_lower or "save" in user_lower or "store" in user_lower
+            wants_email = "email" in user_lower or "send" in user_lower
         
         if wants_write:
+            memory.current_tool = "write_data"  # Track that we're gathering params for write_data
             logger.info("📝 Processing write_data request...")
             
             action = call_job_agent(memory, user_utterance, tool_name="write_data")
+            logger.info(f"🔍 Job agent returned: action={action.get('action')}, tool={action.get('tool_name')}")
             
             if action.get("action") == "ASK":
+                logger.info(f"❓ Asking user: {action['question']}")
                 return memory, action["question"]
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
                 logger.info("⚡ Executing write_data_job...")
+                params = action.get("params", {})
                 
                 try:
-                    params = memory.gathered_params
-                    
                     # Get connection ID from connection name
                     connection_id = get_connection_id(memory.connection)
                     if not connection_id:
@@ -257,15 +269,20 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # Convert columns to ColumnSchema format
                     columns = [ColumnSchema(columnName=col) for col in memory.last_columns]
                     
+                    # Get schema from params (user provided via job_agent)
+                    schemas = params.get("schemas", memory.schema)  # Fallback to UI schema if not provided
+                    
                     request = WriteDataLLMRequest(
                         rights={"owner": "184431757886694"},
-                        props={"active": "true", "name": f"Write_{table_name}", "description": ""},
+                        props={"active": "true", "name": params.get("name", "WriteData_Job"), "description": ""},
                         variables=[WriteDataVariables(
                             data_set=memory.last_job_id,  # Job ID from read_sql
-                            columns=columns,  # Columns from read_sql result
+                            data_set_job_name=memory.last_job_name,  # ReadSQL job name
+                            data_set_folder=memory.last_job_folder,  # ReadSQL job folder
+                            columns=columns,  # Columns from read_sql result (same as ReadSQL)
                             add_columns=[],  # Always empty as per requirements
                             connection=connection_id,  # Use connection ID for API
-                            schemas=memory.schema,  # Use schema from UI selection
+                            schemas=schemas,  # Use schema from user (via job_agent params)
                             table=table_name,  # Destination table from user
                             drop_or_truncate=drop_or_truncate  # DROP, TRUNCATE, or INSERT
                             # only_dataset_columns defaults to False
@@ -277,13 +294,18 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     
                     logger.info(f"📊 write_data_job result: {json.dumps(result, indent=2, default=str)}")
                     
-                    return memory, f"✅ Data written successfully to table '{table_name}' in {memory.schema} schema!\nAnything else? (email / done)"
+                    # Reset params and tool after successful write
+                    memory.gathered_params = {}
+                    memory.current_tool = None
+                    
+                    return memory, f"✅ Data written successfully to table '{table_name}' in {schemas} schema!\nAnything else? (email / done)"
                     
                 except Exception as e:
                     logger.error(f"❌ Error in write_data: {str(e)}", exc_info=True)
                     return memory, f"❌ Error: {str(e)}\nPlease try again."
         
         elif wants_email:
+            memory.current_tool = "send_email"  # Track that we're gathering params for send_email
             logger.info("📧 Processing send_email request...")
             
             action = call_job_agent(memory, user_utterance, tool_name="send_email")
@@ -321,6 +343,10 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     result = await send_email_job(request)
                     
                     logger.info(f"📊 send_email_job result: {json.dumps(result, indent=2, default=str)}")
+                    
+                    # Reset params and tool after successful email
+                    memory.gathered_params = {}
+                    memory.current_tool = None
                     
                     return memory, f"✅ Email sent to {params.get('to')}!\nAnything else? (write / done)"
                     

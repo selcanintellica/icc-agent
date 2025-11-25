@@ -21,20 +21,25 @@ You are given:
 3. User's latest message
 
 Your task:
-- Extract any NEW parameters from the user's message
-- Identify which REQUIRED parameters are still missing FOR THE CURRENT TOOL ONLY
+- CAREFULLY READ the user's message and extract ANY parameters they mention
+- Look for patterns like "name is X", "table is Y", "schema is Z", "insert/drop/truncate"
+- Check which REQUIRED parameters are STILL missing FOR THE CURRENT TOOL ONLY
 - If parameters are missing, ask ONE clear question
-- If all required parameters are present, output the action
+- If all required parameters are present, return action "TOOL"
 
-IMPORTANT: ONLY check for parameters that belong to the current tool!
+IMPORTANT: 
+- ONLY check for parameters that belong to the current tool!
+- ALWAYS extract parameters from the user's message into the "params" field
+- Even if asking a question, include any extracted params in your response
 
 Required parameters by tool:
 
 read_sql (ONLY these parameters):
-- NO PARAMETERS NEEDED - query and connection are provided automatically
-- Do NOT ask for anything, always return action "TOOL"
+- name (job name for props.name) - REQUIRED
+- NO OTHER PARAMETERS NEEDED - query and connection are provided automatically
 
 write_data (ONLY these parameters):
+- name (job name for props.name) - REQUIRED
 - table (table name to write to) - REQUIRED
 - schemas (schema name) - REQUIRED
 - drop_or_truncate ("drop", "truncate", or "none") - REQUIRED
@@ -61,8 +66,23 @@ Response format (JSON):
   "params": {...extracted params...}
 }
 
+EXAMPLES:
+
+Example 1 - Extracting multiple params:
+User: "name of the job is writedata_ss, target table is target_tt, schema name is target_ss, you can insert the table"
+Response: {"action": "TOOL", "tool_name": "write_data", "params": {"name": "writedata_ss", "table": "target_tt", "schemas": "target_ss", "drop_or_truncate": "none"}}
+
+Example 2 - Extracting partial params:
+User: "call it my_job and write to users table"
+Response: {"action": "ASK", "question": "What schema should I write to?", "params": {"name": "my_job", "table": "users"}}
+
+Example 3 - User provides just one param:
+User: "writedata_ss"
+Response: {"action": "ASK", "question": "What table should I write the data to?", "params": {"name": "writedata_ss"}}
+
 Be conversational but concise. Ask for ONE missing parameter at a time.
 DO NOT ask for parameters that belong to a different tool!
+ALWAYS include extracted params in your response!
 """
 
 
@@ -137,12 +157,17 @@ class JobAgent:
                     # Only update with non-None values
                     new_params = {k: v for k, v in result["params"].items() if v is not None}
                     memory.gathered_params.update(new_params)
+                    logger.info(f"📝 Updated gathered_params: {memory.gathered_params}")
                 
                 # For read_sql, always use fallback to ensure we use memory.connection
                 if tool_name == "read_sql":
                     return self._fallback_param_check(memory, tool_name, user_input)
                 
-                logger.info(f"✅ Job Agent action: {result.get('action')}")
+                logger.info(f"✅ Job Agent action: {result.get('action')}, params: {result.get('params')}")
+                
+                # For write_data, use fallback to ensure proper validation
+                if tool_name == "write_data":
+                    return self._fallback_param_check(memory, tool_name, user_input)
                 
                 return result
                 
@@ -160,27 +185,56 @@ class JobAgent:
     def _fallback_param_check(self, memory: Memory, tool_name: str, user_input: str = "") -> Dict[str, Any]:
         """Fallback parameter checking if LLM fails."""
         params = memory.gathered_params
+        logger.info(f"🔧 Fallback check for {tool_name}, current params: {params}")
+        
+        # Simple heuristic: if user gives a single word answer, try to match it to missing params
+        if user_input and tool_name == "write_data":
+            user_lower = user_input.strip().lower()
+            
+            # Check for drop_or_truncate values
+            if not params.get("drop_or_truncate"):
+                if user_lower in ["drop", "truncate", "none", "insert", "append"]:
+                    # Map user input to expected values
+                    if user_lower in ["insert", "append"]:
+                        params["drop_or_truncate"] = "none"
+                    else:
+                        params["drop_or_truncate"] = user_lower
+                    logger.info(f"✅ Detected drop_or_truncate from user input: {params['drop_or_truncate']}")
         
         if tool_name == "read_sql":
-            # read_sql: query from SQL agent, connection from memory (external)
-            # No need to ask user for anything
+            # Check if we have name parameter from user
+            if not params.get("name"):
+                return {
+                    "action": "ASK",
+                    "question": "What should I name this read_sql job?"
+                }
+            # Have all params
             return {
                 "action": "TOOL",
                 "tool_name": "read_sql",
                 "params": {
                     "query": memory.last_sql,
                     "connection": memory.connection,  # From memory, not LLM
-                    "template": "2223045341865624"
+                    "template": "2223045341865624",
+                    "name": params["name"]
                 }
             }
         
         elif tool_name == "write_data":
+            if not params.get("name"):
+                logger.info("❌ Missing: name")
+                return {
+                    "action": "ASK",
+                    "question": "What should I name this write_data job?"
+                }
             if not params.get("table"):
+                logger.info("❌ Missing: table")
                 return {
                     "action": "ASK",
                     "question": "What table should I write the data to?"
                 }
             if not params.get("schemas"):
+                logger.info("❌ Missing: schemas")
                 return {
                     "action": "ASK",
                     "question": "What schema should I write the data to?"
@@ -189,11 +243,13 @@ class JobAgent:
             if not params.get("connection"):
                 params["connection"] = memory.connection
             if not params.get("drop_or_truncate"):
+                logger.info("❌ Missing: drop_or_truncate")
                 return {
                     "action": "ASK",
                     "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
                 }
             # Have all params
+            logger.info(f"✅ All write_data params present: {params}")
             return {
                 "action": "TOOL",
                 "tool_name": "write_data",

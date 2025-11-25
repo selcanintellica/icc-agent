@@ -22,7 +22,7 @@ class WireVariable(BaseModel):
             self._has_value2 = False
     
     def model_dump(self, **kwargs):
-        """Custom dump to include value2 only when explicitly set"""
+        """Custom dump to include value2 only when explicitly set and include extra fields"""
         from loguru import logger
         
         data = {'definition': self.definition, 'id': self.id}
@@ -35,6 +35,14 @@ class WireVariable(BaseModel):
         if self._has_value2:
             data['value2'] = self.value2
             logger.debug(f"[WireVariable] Including value2={self.value2} for definition={self.definition}")
+        
+        # Add any extra fields (like jobName, folder) from __pydantic_extra__
+        if hasattr(self, '__pydantic_extra__') and self.__pydantic_extra__:
+            logger.debug(f"[WireVariable] Found extra fields: {self.__pydantic_extra__} for definition={self.definition}")
+            for field_name, value in self.__pydantic_extra__.items():
+                if value is not None:
+                    data[field_name] = value
+                    logger.debug(f"[WireVariable] Including extra field {field_name}={value}")
         
         return data
 

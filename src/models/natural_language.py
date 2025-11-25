@@ -232,6 +232,14 @@ class WriteDataVariables(BaseModel):
         description="Dataset identifier containing the data to write. IMPORTANT: This should be the job ID (object_id) returned from a previously executed read_sql_job.",
         field_id="28405919074002"
     )
+    data_set_job_name: Optional[str] = Field(
+        default=None,
+        description="Name of the ReadSQL job that produced the data_set. Used for API payload.",
+    )
+    data_set_folder: Optional[str] = Field(
+        default=None,
+        description="Folder ID of the ReadSQL job that produced the data_set. Used for API payload.",
+    )
     drop_or_truncate: str = Field(
         ...,
         description="Strategy for existing table: 'drop' to remove and recreate, 'truncate' to clear data only, 'none' to append.",
@@ -323,14 +331,17 @@ class WriteDataLLMRequest(BaseLLMRequest):
         
         return {
                 "template": self.template,
-                "only_dataset_columns": "true" if var.only_dataset_columns else "false",
-                "write_count_schemas": write_count_schemas,
+                "data_set": var.data_set,
+                "columns": var.columns,
+                "add_columns": var.add_columns,
                 "connection": var.connection,
                 "schemas": var.schemas,
-                "data_set": var.data_set,
+                "table": var.table,
+                "drop_or_truncate": var.drop_or_truncate,
+                "report_format": "false",  # ReportFormat field - defaults to false
+                "only_dataset_columns": "true" if var.only_dataset_columns else "false",
                 "write_count": "true" if var.write_count else "false",
                 "write_count_connection": write_count_connection,
-                "drop_or_truncate": var.drop_or_truncate,
-                "table": var.table,
+                "write_count_schemas": write_count_schemas,
                 "write_count_table": write_count_table,
             }
