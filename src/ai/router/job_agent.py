@@ -51,8 +51,10 @@ write_data (ONLY these parameters):
 - write_count_connection, write_count_schemas, write_count_table - only needed if write_count is true, do NOT ask for these
 
 send_email (ONLY these parameters):
+- name (job name for props.name) - REQUIRED
 - to (recipient email) - REQUIRED
 - subject (email subject) - REQUIRED
+- cc (CC email addresses) - OPTIONAL (if user says no/none, leave empty)
 - query (SQL query) - already available in memory
 - text (email body) - optional
 - connection (database connection) - optional
@@ -257,17 +259,38 @@ class JobAgent:
             }
         
         elif tool_name == "send_email":
+            if not params.get("name"):
+                logger.info("❌ Missing: name")
+                return {
+                    "action": "ASK",
+                    "question": "What should I name this email job?"
+                }
             if not params.get("to"):
+                logger.info("❌ Missing: to")
                 return {
                     "action": "ASK",
                     "question": "Who should I send the email to?"
                 }
             if not params.get("subject"):
+                logger.info("❌ Missing: subject")
                 return {
                     "action": "ASK",
                     "question": "What should the email subject be?"
                 }
-            # Have enough params
+            # Check for CC only if not already asked
+            if "cc" not in params:
+                logger.info("❓ Asking for CC (optional)")
+                return {
+                    "action": "ASK",
+                    "question": "Would you like to add any CC email addresses? (Say 'no' or 'none' to skip, or provide email addresses)"
+                }
+            # Normalize CC: if user said no/none, set to empty string
+            cc_value = params.get("cc", "")
+            if isinstance(cc_value, str) and cc_value.lower().strip() in ["no", "none", "skip", "n/a"]:
+                params["cc"] = ""
+                logger.info("📧 CC normalized to empty string (user declined)")
+            # Have all required params (cc might be empty string if user said no)
+            logger.info(f"✅ All send_email params present: {params}")
             return {
                 "action": "TOOL",
                 "tool_name": "send_email",
