@@ -173,9 +173,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     props={"active": "true", "name": f"Query_{memory.last_sql[:20]}", "description": ""},
                     variables=[ReadSqlVariables(
                         query=memory.last_sql,
-                        connection=connection_id,  # Use connection ID for API
-                        execute_query=True,
-                        table_name=""  # Always empty as per requirements
+                        connection=connection_id  # Use connection ID for API
                     )]
                 )
                 

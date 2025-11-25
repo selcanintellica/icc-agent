@@ -42,7 +42,7 @@ CONNECTIONS: Dict[str, Dict[str, Any]] = {
         "user": "admin",
     },
     "ORACLE_10": {
-        "id": "955448816772621",
+        "id": "4976629955435844",
         "db_type": "Oracle",
         "url": "jdbc:oracle:thin:@172.16.44.10:1521:ORCL19C",
         "user": "icc_test",

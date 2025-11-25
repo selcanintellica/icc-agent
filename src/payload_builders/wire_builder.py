@@ -18,6 +18,8 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
     Converts an object derived from BaseLLMRequest (with LLM-friendly field names)
     into a wire payload (using definition IDs).
     """
+    from loguru import logger
+    
     template_key = request.template_key()
     if template_key not in TEMPLATES:
         raise UnknownTemplateKey(f"Unknown template key: {template_key}")
@@ -28,6 +30,7 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
     props_name: str = meta["props_name"]
 
     fields: Dict[str, Any] = request.to_field_values()
+    logger.info(f"[WireBuilder] Template: {template_key}, Fields from to_field_values(): {fields}")
 
     variables: List[WireVariable] = []
     for field_name, value in fields.items():
@@ -36,14 +39,17 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
         def_id = defs_map[field_name]
 
         if isinstance(value, dict):
-            var = WireVariable(definition=def_id, id="")
+            # When value is a dict, pass all fields to constructor to ensure proper tracking
+            var_dict = {"definition": def_id, "id": ""}
             if "value" in value:
-                var.value = value["value"]
+                var_dict["value"] = value["value"]
             if "value2" in value:
-                var.value2 = value["value2"]
+                var_dict["value2"] = value["value2"]
+            # Add any other custom fields
             for k, v in value.items():
-                if k not in ("value", "value2"):
-                    setattr(var, k, v)
+                if k not in ("value", "value2", "definition", "id"):
+                    var_dict[k] = v
+            var = WireVariable(**var_dict)
             variables.append(var)
         elif isinstance(value, (list, tuple)):
             var = WireVariable(definition=def_id, id="", value=value)
@@ -69,4 +75,9 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
         skip=DEFAULT_SKIP,
         folder=getattr(request, "folder", DEFAULT_FOLDER),
     )
+    
+    logger.info(f"[WireBuilder] Built WirePayload with {len(variables)} variables")
+    for var in variables:
+        logger.info(f"[WireBuilder] Variable: definition={var.definition}, id={var.id}, value={getattr(var, 'value', 'N/A')}, value2={getattr(var, 'value2', 'N/A')}")
+    
     return wire
