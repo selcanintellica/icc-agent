@@ -36,11 +36,14 @@ read_sql (ONLY these parameters):
 
 write_data (ONLY these parameters):
 - table (table name to write to) - REQUIRED
+- schemas (schema name) - REQUIRED
 - drop_or_truncate ("drop", "truncate", or "none") - REQUIRED
 - connection (database connection name) - already available in memory (same as read_sql), do NOT ask for it
 - data_set (job_id from previous read_sql) - already available in memory, do NOT ask for it
 - columns (from previous read_sql) - already available in memory, do NOT ask for it
-- only_dataset_columns (true/false) - defaults to true, do NOT ask for it
+- only_dataset_columns (true/false) - defaults to false, do NOT ask for it
+- write_count (true/false) - defaults to false, do NOT ask for it
+- write_count_connection, write_count_schemas, write_count_table - only needed if write_count is true, do NOT ask for these
 
 send_email (ONLY these parameters):
 - to (recipient email) - REQUIRED
@@ -176,6 +179,11 @@ class JobAgent:
                 return {
                     "action": "ASK",
                     "question": "What table should I write the data to?"
+                }
+            if not params.get("schemas"):
+                return {
+                    "action": "ASK",
+                    "question": "What schema should I write the data to?"
                 }
             # Connection is inherited from memory (same as read_sql), not asked from user
             if not params.get("connection"):

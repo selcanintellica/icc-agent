@@ -222,11 +222,6 @@ class ColumnSchema(BaseModel):
 
 class WriteDataVariables(BaseModel):
     # REQUIRED FIELDS
-    only_dataset_columns: bool = Field(
-        ...,
-        description="Whether to write only columns present in the dataset. True restricts to dataset columns only.",
-        field_id="28405919100737"
-    )
     connection: str = Field(
         ...,
         description="Database connection identifier. Required to establish connection for writing data.",
@@ -252,8 +247,18 @@ class WriteDataVariables(BaseModel):
         description="Target table name where data will be written. Must be a valid table name.",
         field_id="28405919059935"
     )
+    schemas: str = Field(
+        ...,
+        description="Schema name for organizing the table. REQUIRED database schema identifier.",
+        field_id="28405919042037"
+    )
     
     # OPTIONAL FIELDS
+    only_dataset_columns: Optional[bool] = Field(
+        False,
+        description="Whether to write only columns present in the dataset. False by default.",
+        field_id="28405919100737"
+    )
     write_count_schemas: Optional[bool] = Field(
         False,
         description="Whether to write count information to schemas. False by default.",
@@ -264,24 +269,19 @@ class WriteDataVariables(BaseModel):
         description="Additional columns to add to the table beyond dataset columns. Empty list by default.",
         field_id="28405918976213"
     )
-    schemas: Optional[str] = Field(
-        None,
-        description="Schema name for organizing the table. Optional database schema identifier.",
-        field_id="28405919042037"
-    )
-    write_count: Optional[str] = Field(
-        None,
-        description="Whether to write row count after data write. Specify 'true' or 'false'.",
+    write_count: Optional[bool] = Field(
+        False,
+        description="Whether to write row count after data write. False by default.",
         field_id="28405919839465"
     )
     write_count_connection: Optional[str] = Field(
         None,
-        description="Connection identifier for writing row count. Only needed if write_count is enabled.",
+        description="Connection identifier for writing row count. Only needed if write_count is True.",
         field_id="28405919193743"
     )
     write_count_table: Optional[str] = Field(
         None,
-        description="Table name where row count will be written. Only needed if write_count is enabled.",
+        description="Table name where row count will be written. Only needed if write_count is True.",
         field_id="28405919372169"
     )
 
@@ -310,16 +310,27 @@ class WriteDataLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         # Access first variable since it's a list
         var = self.variables[0]
+        
+        # Conditional logic based on write_count
+        if not var.write_count:
+            write_count_schemas = ""
+            write_count_table = ""
+            write_count_connection = {"definition": "28405919193743", "id": "", "value2": None}
+        else:
+            write_count_schemas = var.write_count_schemas
+            write_count_table = var.write_count_table
+            write_count_connection = var.write_count_connection
+        
         return {
                 "template": self.template,
-                "only_dataset_columns": var.only_dataset_columns,
-                "write_count_schemas": var.write_count_schemas,
+                "only_dataset_columns": "true" if var.only_dataset_columns else "false",
+                "write_count_schemas": write_count_schemas,
                 "connection": var.connection,
                 "schemas": var.schemas,
                 "data_set": var.data_set,
-                "write_count": var.write_count,
-                "write_count_connection": var.write_count_connection,
+                "write_count": "true" if var.write_count else "false",
+                "write_count_connection": write_count_connection,
                 "drop_or_truncate": var.drop_or_truncate,
                 "table": var.table,
-                "write_count_table": var.write_count_table,
+                "write_count_table": write_count_table,
             }

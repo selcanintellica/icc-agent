@@ -267,8 +267,9 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                             connection=connection_id,  # Use connection ID for API
                             schemas=memory.schema,  # Use schema from UI selection
                             table=table_name,  # Destination table from user
-                            drop_or_truncate=drop_or_truncate,  # DROP, TRUNCATE, or INSERT
-                            only_dataset_columns=True  # Fixed value
+                            drop_or_truncate=drop_or_truncate  # DROP, TRUNCATE, or INSERT
+                            # only_dataset_columns defaults to False
+                            # write_count defaults to False
                         )]
                     )
                     
