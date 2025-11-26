@@ -56,7 +56,7 @@ write_data (ONLY these parameters):
 - table (table name to write to) - REQUIRED
 - schemas (schema name) - REQUIRED
 - drop_or_truncate ("drop", "truncate", or "none") - REQUIRED
-- connection (database connection name) - already available in memory (same as read_sql), do NOT ask for it
+- connection (database connection name) - Ask user to select from available connections - REQUIRED
 - data_set (job_id from previous read_sql) - already available in memory, do NOT ask for it
 - columns (from previous read_sql) - already available in memory, do NOT ask for it
 - only_dataset_columns (true/false) - defaults to false, do NOT ask for it
@@ -299,23 +299,24 @@ class JobAgent:
                     params["drop_before_create"] = drop_value
                     logger.info(f"📝 Normalized drop_before_create to: {drop_value}")
             
-            # Normalize write_count first if it exists (handle user input like "no")
+            # Check user_input directly FIRST for yes/no responses (more reliable than LLM extraction)
+            if user_input and "write_count" not in params:
+                user_lower = user_input.lower().strip()
+                if user_lower in ["yes", "y", "true", "1"]:
+                    params["write_count"] = True
+                    logger.info("📝 Set write_count=True from direct user input")
+                elif user_lower in ["no", "n", "false", "0"]:
+                    params["write_count"] = False
+                    logger.info("📝 Set write_count=False from direct user input")
+            
+            # Normalize write_count if it exists from LLM extraction
             if "write_count" in params:
-                write_count_value = params.get("write_count", False)
+                write_count_value = params.get("write_count")
                 if isinstance(write_count_value, str):
                     user_lower = write_count_value.lower().strip()
                     write_count_value = user_lower in ["yes", "true", "y", "1"]
                     params["write_count"] = write_count_value
-                    logger.info(f"📝 Normalized write_count to: {write_count_value}")
-            # Also check user_input directly for yes/no to write_count
-            elif user_input:
-                user_lower = user_input.lower().strip()
-                if user_lower in ["yes", "y", "true", "1"]:
-                    params["write_count"] = True
-                    logger.info("📝 Set write_count to True from user input")
-                elif user_lower in ["no", "n", "false", "0"]:
-                    params["write_count"] = False
-                    logger.info("📝 Set write_count to False from user input")
+                    logger.info(f"📝 Normalized write_count from LLM extraction to: {write_count_value}")
             
             # Check if we should ask about write_count
             if "write_count" not in params:
@@ -378,9 +379,20 @@ class JobAgent:
                     "action": "ASK",
                     "question": "What schema should I write the data to?"
                 }
-            # Connection is inherited from memory (same as read_sql), not asked from user
+            # Ask user for connection from available dynamic connections
             if not params.get("connection"):
-                params["connection"] = memory.connection
+                logger.info("❌ Missing: connection for write_data")
+                # Get available connections from memory
+                connection_list = memory.get_connection_list_for_llm()
+                if connection_list:
+                    return {
+                        "action": "ASK",
+                        "question": f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
+                    }
+                else:
+                    # Fallback: use the same connection as read_sql
+                    params["connection"] = memory.connection
+                    logger.info(f"⚠️ No dynamic connections available, using read_sql connection: {memory.connection}")
             if not params.get("drop_or_truncate"):
                 logger.info("❌ Missing: drop_or_truncate")
                 return {
@@ -388,23 +400,24 @@ class JobAgent:
                     "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
                 }
             
-            # Normalize write_count first if it exists (handle user input like "no")
+            # Check user_input directly FIRST for yes/no responses (more reliable than LLM extraction)
+            if user_input and "write_count" not in params:
+                user_lower = user_input.lower().strip()
+                if user_lower in ["yes", "y", "true", "1"]:
+                    params["write_count"] = True
+                    logger.info("📝 Set write_count=True from direct user input")
+                elif user_lower in ["no", "n", "false", "0"]:
+                    params["write_count"] = False
+                    logger.info("📝 Set write_count=False from direct user input")
+            
+            # Normalize write_count if it exists from LLM extraction
             if "write_count" in params:
-                write_count_value = params.get("write_count", False)
+                write_count_value = params.get("write_count")
                 if isinstance(write_count_value, str):
                     user_lower = write_count_value.lower().strip()
                     write_count_value = user_lower in ["yes", "true", "y", "1"]
                     params["write_count"] = write_count_value
-                    logger.info(f"📝 Normalized write_count to: {write_count_value}")
-            # Also check user_input directly for yes/no to write_count
-            elif user_input:
-                user_lower = user_input.lower().strip()
-                if user_lower in ["yes", "y", "true", "1"]:
-                    params["write_count"] = True
-                    logger.info("📝 Set write_count to True from user input")
-                elif user_lower in ["no", "n", "false", "0"]:
-                    params["write_count"] = False
-                    logger.info("📝 Set write_count to False from user input")
+                    logger.info(f"📝 Normalized write_count from LLM extraction to: {write_count_value}")
             
             # Check if we should ask about write_count
             if "write_count" not in params:

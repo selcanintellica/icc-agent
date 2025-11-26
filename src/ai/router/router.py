@@ -548,8 +548,9 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     # ========== STAGE: SHOW_RESULTS ==========
     if memory.stage == Stage.SHOW_RESULTS:
         memory.stage = Stage.NEED_WRITE_OR_EMAIL
-        memory.gathered_params = {}  # Reset for next operation
-        memory.current_tool = None  # Reset current tool
+        # DON'T reset gathered_params here - only reset after completing write/email
+        # memory.gathered_params = {}  # Will be reset after completing the operation
+        memory.current_tool = None  # Reset current tool tracker
 
         # If execute_query was enabled, data was already written by the API
         if memory.execute_query_enabled:

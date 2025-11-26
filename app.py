@@ -45,6 +45,7 @@ print("="*60 + "\n")
 # ICC Agent imports - Using Staged Router
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
+from src.utils.fetch_connections import populate_memory_connections
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
@@ -359,6 +360,15 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         if session_id not in session_memories:
             session_memories[session_id] = Memory()
             logger.info(f"🆕 Created new memory for session: {session_id}")
+            
+            # Populate connections from API (falls back to static if fails)
+            try:
+                if populate_memory_connections(session_memories[session_id]):
+                    logger.info(f"✅ Populated {len(session_memories[session_id].connections)} connections from API")
+                else:
+                    logger.warning("⚠️ Could not fetch connections from API, will use static connections.py as fallback")
+            except Exception as e:
+                logger.error(f"❌ Error fetching connections: {e}, will use static connections.py as fallback")
         
         memory = session_memories[session_id]
         
