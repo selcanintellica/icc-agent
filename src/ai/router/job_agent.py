@@ -60,8 +60,12 @@ write_data (ONLY these parameters):
 - data_set (job_id from previous read_sql) - already available in memory, do NOT ask for it
 - columns (from previous read_sql) - already available in memory, do NOT ask for it
 - only_dataset_columns (true/false) - defaults to false, do NOT ask for it
-- write_count (true/false) - defaults to false, do NOT ask for it
-- write_count_connection, write_count_schemas, write_count_table - only needed if write_count is true, do NOT ask for these
+- write_count (true/false) - Ask: "Would you like to track the row count for this write operation?" - REQUIRED
+  * If user says yes/true: set write_count=true and ask for write_count_schemas, write_count_table, write_count_connection
+  * If user says no/false: set write_count=false, skip write_count-related questions
+- write_count_schemas (schema name) - REQUIRED only if write_count=true
+- write_count_table (table name) - REQUIRED only if write_count=true
+- write_count_connection (connection name) - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
 
 send_email (ONLY these parameters):
 - name (job name for props.name) - REQUIRED
@@ -106,6 +110,10 @@ Response: {"action": "ASK", "question": "Would you like to track the row count o
 Example 6 - ReadSQL with write_count flow:
 User: "yes" (answering if they want to track row count)
 Response: {"action": "ASK", "question": "What schema should I write the row count to?", "params": {"write_count": true}}
+
+Example 7 - WriteData with write_count:
+User: "yes" (answering if they want to track row count for write operation)
+Response: {"action": "ASK", "question": "What schema should I write the row count to?", "params": {"name": "my_write_job", "table": "dest_table", "schemas": "dest_schema", "drop_or_truncate": "none", "write_count": true}}
 
 Be conversational but concise. Ask for ONE missing parameter at a time.
 DO NOT ask for parameters that belong to a different tool!
@@ -357,6 +365,48 @@ class JobAgent:
                     "action": "ASK",
                     "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
                 }
+            
+            # Check if we should ask about write_count
+            if "write_count" not in params:
+                logger.info("❓ Asking about write_count for write_data")
+                return {
+                    "action": "ASK",
+                    "question": "Would you like to track the row count for this write operation? (yes/no)"
+                }
+            
+            # Normalize write_count response
+            write_count_value = params.get("write_count", False)
+            if isinstance(write_count_value, str):
+                write_count_value = write_count_value.lower().strip() in ["yes", "true", "y", "1"]
+                params["write_count"] = write_count_value
+                logger.info(f"📝 Normalized write_count to: {write_count_value}")
+            
+            # If write_count is true, we need additional parameters
+            if params.get("write_count"):
+                if not params.get("write_count_schemas"):
+                    logger.info("❌ Missing: write_count_schemas (write_count=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What schema should I write the row count to?"
+                    }
+                if not params.get("write_count_table"):
+                    logger.info("❌ Missing: write_count_table (write_count=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What table should I write the row count to?"
+                    }
+                if not params.get("write_count_connection"):
+                    logger.info(f"❌ Missing: write_count_connection (write_count=true), suggesting: {memory.connection}")
+                    return {
+                        "action": "ASK",
+                        "question": f"What connection should I use for the row count? (Press enter for '{memory.connection}')"
+                    }
+                
+                # If user just pressed enter or said "same", use memory.connection
+                if params.get("write_count_connection", "").strip() in ["", "same", "default"]:
+                    params["write_count_connection"] = memory.connection
+                    logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+            
             # Have all params
             logger.info(f"✅ All write_data params present: {params}")
             return {

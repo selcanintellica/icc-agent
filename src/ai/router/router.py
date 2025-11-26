@@ -315,22 +315,40 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # Get schema from params (user provided via job_agent)
                     schemas = params.get("schemas", memory.schema)  # Fallback to UI schema if not provided
                     
+                    # Get write_count and related parameters
+                    write_count = params.get("write_count", False)
+                    
+                    # Create WriteDataVariables with all parameters
+                    write_data_vars = WriteDataVariables(
+                        data_set=memory.last_job_id,  # Job ID from read_sql
+                        data_set_job_name=memory.last_job_name,  # ReadSQL job name
+                        data_set_folder=memory.last_job_folder,  # ReadSQL job folder
+                        columns=columns,  # Columns from read_sql result (same as ReadSQL)
+                        add_columns=[],  # Always empty as per requirements
+                        connection=connection_id,  # Use connection ID for API
+                        schemas=schemas,  # Use schema from user (via job_agent params)
+                        table=table_name,  # Destination table from user
+                        drop_or_truncate=drop_or_truncate,  # DROP, TRUNCATE, or INSERT
+                        write_count=write_count
+                    )
+                    
+                    # If write_count is true, add the write_count-related fields
+                    if write_count:
+                        write_count_conn_name = params.get("write_count_connection", memory.connection)
+                        write_count_conn_id = get_connection_id(write_count_conn_name)
+                        if not write_count_conn_id:
+                            logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
+                            return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
+                        
+                        write_data_vars.write_count_connection = write_count_conn_id
+                        write_data_vars.write_count_schemas = params.get("write_count_schemas")
+                        write_data_vars.write_count_table = params.get("write_count_table")
+                        logger.info(f"📊 WriteData with write_count=true: schema={write_data_vars.write_count_schemas}, table={write_data_vars.write_count_table}, connection={write_count_conn_name}")
+                    
                     request = WriteDataLLMRequest(
                         rights={"owner": "184431757886694"},
                         props={"active": "true", "name": params.get("name", "WriteData_Job"), "description": ""},
-                        variables=[WriteDataVariables(
-                            data_set=memory.last_job_id,  # Job ID from read_sql
-                            data_set_job_name=memory.last_job_name,  # ReadSQL job name
-                            data_set_folder=memory.last_job_folder,  # ReadSQL job folder
-                            columns=columns,  # Columns from read_sql result (same as ReadSQL)
-                            add_columns=[],  # Always empty as per requirements
-                            connection=connection_id,  # Use connection ID for API
-                            schemas=schemas,  # Use schema from user (via job_agent params)
-                            table=table_name,  # Destination table from user
-                            drop_or_truncate=drop_or_truncate  # DROP, TRUNCATE, or INSERT
-                            # only_dataset_columns defaults to False
-                            # write_count defaults to False
-                        )]
+                        variables=[write_data_vars]
                     )
                     
                     result = await write_data_job(request)
