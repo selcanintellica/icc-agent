@@ -307,7 +307,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 if not connection_id:
                     return memory, f"❌ Error: Unknown connection '{memory.connection}'."
                 
-                from src.payload_builders.query_builder import QueryBuilder
+                from src.models.query import QueryPayload
                 from src.repositories.query_repository import QueryRepository
                 from httpx import AsyncClient
                 from src.utils.auth import authenticate
@@ -323,12 +323,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     repo = QueryRepository(client)
                     
                     # Fetch first query columns
-                    query_payload1 = await QueryBuilder.build_query_payload(connection_id, memory.first_sql)
+                    query_payload1 = QueryPayload(connectionId=connection_id, sql=memory.first_sql, folderId="")
                     col_resp1 = await QueryRepository.get_column_names(repo, query_payload1)
                     memory.first_columns = col_resp1.data.object.columns if col_resp1.success else []
                     
                     # Fetch second query columns
-                    query_payload2 = await QueryBuilder.build_query_payload(connection_id, memory.second_sql)
+                    query_payload2 = QueryPayload(connectionId=connection_id, sql=memory.second_sql, folderId="")
                     col_resp2 = await QueryRepository.get_column_names(repo, query_payload2)
                     memory.second_columns = col_resp2.data.object.columns if col_resp2.success else []
                 

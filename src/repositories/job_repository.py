@@ -1,6 +1,7 @@
 import json
 import logging
 from src.models.wire import WirePayload
+from src.models.query import QueryPayload
 from src.models.save_job_response import APIResponse, JobResponse
 from src.utils.config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
@@ -72,13 +73,13 @@ class JobRepository(BaseRepository):
         
         # Fetch columns only if not already provided
         if not var.first_table_columns:
-            query_payload1 = await QueryBuilder.build_query_payload(conn_id, sql1)
+            query_payload1 = QueryPayload(connectionId=conn_id, sql=sql1, folderId="")
             col_resp1 = await QueryRepository.get_column_names(self, query_payload1)
             cols1 = col_resp1.data.object.columns if col_resp1.success else []
             var.first_table_columns = ",".join(cols1)
         
         if not var.second_table_columns:
-            query_payload2 = await QueryBuilder.build_query_payload(conn_id, sql2)
+            query_payload2 = QueryPayload(connectionId=conn_id, sql=sql2, folderId="")
             col_resp2 = await QueryRepository.get_column_names(self, query_payload2)
             cols2 = col_resp2.data.object.columns if col_resp2.success else []
             var.second_table_columns = ",".join(cols2)
