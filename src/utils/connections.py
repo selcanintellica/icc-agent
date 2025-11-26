@@ -3,7 +3,7 @@ Connection configuration mapping connection names to their IDs and metadata.
 Used for API calls that require connection IDs.
 """
 from typing import Dict, Any, Optional
-
+ 
 CONNECTIONS: Dict[str, Dict[str, Any]] = {
     "Cassandra": {
         "id": "5861393593217446",
@@ -42,7 +42,7 @@ CONNECTIONS: Dict[str, Dict[str, Any]] = {
         "user": "admin",
     },
     "ORACLE_10": {
-        "id": "955448816772621",
+        "id": "4976629955435844",
         "db_type": "Oracle",
         "url": "jdbc:oracle:thin:@172.16.44.10:1521:ORCL19C",
         "user": "icc_test",
@@ -108,8 +108,8 @@ CONNECTIONS: Dict[str, Dict[str, Any]] = {
         "user": "icc-no-reply@intellica.net",
     },
 }
-
-
+ 
+ 
 def get_connection_id(connection_name: str) -> Optional[str]:
     """
     Get connection ID for a given connection name.
@@ -124,8 +124,8 @@ def get_connection_id(connection_name: str) -> Optional[str]:
     if conn:
         return conn["id"]
     return None
-
-
+ 
+ 
 def get_connection_info(connection_name: str) -> Optional[Dict[str, Any]]:
     """
     Get full connection information for a given connection name.
@@ -137,8 +137,8 @@ def get_connection_info(connection_name: str) -> Optional[Dict[str, Any]]:
         Dictionary with connection info or None if not found
     """
     return CONNECTIONS.get(connection_name)
-
-
+ 
+ 
 def list_connections() -> Dict[str, Dict[str, Any]]:
     """
     Get all available connections.
@@ -147,3 +147,4 @@ def list_connections() -> Dict[str, Dict[str, Any]]:
         Dictionary of all connections
     """
     return CONNECTIONS
+ 

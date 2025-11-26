@@ -50,6 +50,26 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
         },
         "props_name": "writedata",
     },
+    "COMPARESQL": {
+        "template_id": "1236441135395",
+        "definitions": {
+            "connection": "729110340002981",
+            "first_sql_query": "530459168004987",
+            "first_table_keys": "530459168112986",
+            "first_table_columns": "729110340002978",
+            "second_sql_query": "530459168003985",
+            "second_table_keys": "530412368194984",
+            "second_table_columns": "729110340002977",
+            "case_sensitive": "729110349001983",
+            "reporting": "729110340002982",
+            "calculate_difference": "1614692916",
+            "drop_before_create": "729110349001984",
+            "schemas": "729110340002980",
+            "table_name": "729110340002979",
+            "columns_output": "530451118194737",
+        },
+        "props_name": "comparesql",
+    },
 }
 
 

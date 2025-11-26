@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 PARAMETER_EXTRACTION_PROMPT = """You are a parameter extraction assistant. Your job is to extract required parameters from user input or ask for missing ones.
 
 You are given:
-1. The current tool we need to execute (read_sql, write_data, or send_email)
+1. The current tool we need to execute (read_sql, write_data, send_email, or compare_sql)
 2. Parameters we already have
 3. User's latest message
 
@@ -50,11 +50,20 @@ send_email (ONLY these parameters):
 - connection (database connection) - optional
 - attachment (true/false) - defaults to true
 
+compare_sql (ONLY these parameters):
+- first_table_keys (comma separated columns for first table key) - REQUIRED
+- second_table_keys (comma separated columns for second table key) - REQUIRED
+- case_sensitive (true/false) - optional, default false
+- reporting (identical, difference, etc.) - optional, default identical
+- drop_before_create (true/false) - optional, default true
+- calculate_difference (true/false) - optional, default false
+- connection - optional, uses context
+
 Response format (JSON):
 {
   "action": "ASK" or "TOOL",
   "question": "your question if ASK",
-  "tool_name": "read_sql|write_data|send_email if TOOL",
+  "tool_name": "read_sql|write_data|send_email|compare_sql if TOOL",
   "params": {...extracted params...}
 }
 
@@ -98,6 +107,8 @@ class JobAgent:
             "tool_name": tool_name,
             "already_have": memory.gathered_params,
             "last_sql": memory.last_sql,
+            "first_sql": memory.first_sql,
+            "second_sql": memory.second_sql,
             "last_job_id": memory.last_job_id,
             "last_columns": memory.last_columns
         }
@@ -209,6 +220,24 @@ class JobAgent:
             return {
                 "action": "TOOL",
                 "tool_name": "send_email",
+                "params": params
+            }
+
+        elif tool_name == "compare_sql":
+            if not params.get("first_table_keys"):
+                return {
+                    "action": "ASK",
+                    "question": "What are the key columns for the first query? (comma separated)"
+                }
+            if not params.get("second_table_keys"):
+                return {
+                    "action": "ASK",
+                    "question": "What are the key columns for the second query? (comma separated)"
+                }
+            # Have enough params
+            return {
+                "action": "TOOL",
+                "tool_name": "compare_sql",
                 "params": params
             }
         

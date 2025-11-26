@@ -38,3 +38,4 @@ class QueryBuilder:
         sql = data.variables[0].query
         folder_id = ""
         return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
+

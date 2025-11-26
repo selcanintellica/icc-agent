@@ -183,8 +183,6 @@ class ReadSqlLLMRequest(BaseLLMRequest):
             }
 
 
-
-
 class ColumnSchema(BaseModel):
     columnName: str = Field(..., description="Name of the column")
     columnType: Optional[str] = Field(None, description="Data type of the column (e.g., VARCHAR, INT, DATE)")
@@ -294,3 +292,95 @@ class WriteDataLLMRequest(BaseLLMRequest):
                 "table": var.table,
                 "write_count_table": var.write_count_table,
             }
+
+class CompareSqlVariables(BaseModel):
+    connection: str = Field(
+        ...,
+        description="Database connection identifier. Required to establish database connection for query execution."
+    )
+    first_sql_query: str = Field(
+        ...,
+        description="First SQL query to execute for comparison."
+    )
+    second_sql_query: str = Field(
+        ...,
+        description="Second SQL query to execute for comparison."
+    )
+    first_table_keys: str = Field(
+        ...,
+        description="Key columns for first table (comma separated)."
+    )
+    second_table_keys: str = Field(
+        ...,
+        description="Key columns for second table (comma separated)."
+    )
+    first_table_columns: Optional[str] = Field(
+        None,
+        description="First table columns (comma separated). Auto-populated from query."
+    )
+    second_table_columns: Optional[str] = Field(
+        None,
+        description="Second table columns (comma separated). Auto-populated from query."
+    )
+    case_sensitive: bool = Field(
+        False,
+        description="Whether comparison should be case sensitive. False by default."
+    )
+    reporting: str = Field(
+        "identical",
+        description="Reporting mode. Options: 'identical', 'onlyDifference', 'onlyInTheFirstDataset', 'onlyInTheSecondDataset', 'allDifference'. Default 'identical'."
+    )
+    table_name: str = Field(
+        "cache",
+        description="Target table name for results. Default 'cache'."
+    )
+    schemas: str = Field(
+        "cache",
+        description="Schema name for organizing results. Default 'cache'."
+    )
+    drop_before_create: bool = Field(
+        True,
+        description="Whether to drop existing table before creating. True by default."
+    )
+    calculate_difference: bool = Field(
+        False,
+        description="Whether to calculate differences. False by default."
+    )
+    columns_output: Optional[str] = Field(
+        None,
+        description="Columns output definition (JSON string). Auto-generated if not provided."
+    )
+    keys_mapping: Optional[str] = Field(
+        None,
+        description="JSON array of key pairs. E.g., [{\"FirstKey\":\"NAME\",\"SecondKey\":\"NAME\"}]"
+    )
+    column_mapping: Optional[str] = Field(
+        None,
+        description="JSON array of mapped column pairs. E.g., [{\"FirstMappedColumn\":\"ID\",\"SecondMappedColumn\":\"ID\"}]"
+    )
+
+class CompareSqlLLMRequest(BaseLLMRequest):
+    template: str = "1236441135395"
+    variables: List[CompareSqlVariables]
+
+    def template_key(self) -> str:
+        return "COMPARESQL"
+
+    def to_field_values(self) -> Dict[str, Any]:
+        var = self.variables[0]
+        return {
+            "connection": var.connection,
+            "first_sql_query": var.first_sql_query,
+            "second_sql_query": var.second_sql_query,
+            "first_table_keys": var.first_table_keys,
+            "second_table_keys": var.second_table_keys,
+            "first_table_columns": var.first_table_columns,
+            "second_table_columns": var.second_table_columns,
+            "case_sensitive": var.case_sensitive,
+            "reporting": var.reporting,
+            "table_name": var.table_name,
+            "schemas": var.schemas,
+            "drop_before_create": var.drop_before_create,
+            "calculate_difference": var.calculate_difference,
+            "columns_output": var.columns_output,
+        }

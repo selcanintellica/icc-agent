@@ -104,10 +104,40 @@ class ConfigLoader:
                 for sch in conn.get("schemas", []):
                     if sch["name"] == schema:
                         tables = sch.get("tables", [])
-                        logger.info(f"Found tables for {connection}.{schema}: {tables}")
-                        return tables
+                        # Handle both dict format (with columns) and list format
+                        if isinstance(tables, dict):
+                            table_names = list(tables.keys())
+                        else:
+                            table_names = tables
+                        logger.info(f"Found tables for {connection}.{schema}: {table_names}")
+                        return table_names
         
         logger.warning(f"Schema not found: {connection}.{schema}")
+        return []
+    
+    def get_columns_for_table(self, connection: str, schema: str, table: str) -> List[str]:
+        """
+        Get list of columns for a specific table.
+        
+        Args:
+            connection: Connection name
+            schema: Schema name
+            table: Table name
+            
+        Returns:
+            List of column names
+        """
+        for conn in self._config.get("connections", []):
+            if conn["name"] == connection:
+                for sch in conn.get("schemas", []):
+                    if sch["name"] == schema:
+                        tables = sch.get("tables", {})
+                        if isinstance(tables, dict) and table in tables:
+                            columns = tables[table]
+                            logger.info(f"Found columns for {connection}.{schema}.{table}: {columns}")
+                            return columns
+        
+        logger.warning(f"Table not found: {connection}.{schema}.{table}")
         return []
     
     def get_connection_structure(self) -> Dict[str, Dict[str, List[str]]]:

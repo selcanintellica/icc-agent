@@ -7,20 +7,20 @@
         {
           "name": "SALES",
           "label": "SALES",
-          "tables": [
-            "customers",
-            "orders",
-            "order_items",
-            "products"
-          ]
+          "tables": {
+            "customers": ["CUSTOMER_ID", "FIRST_NAME", "LAST_NAME", "EMAIL", "PHONE", "ADDRESS", "CITY", "STATE", "ZIP_CODE", "CREATED_AT"],
+            "orders": ["ORDER_ID", "CUSTOMER_ID", "ORDER_DATE", "STATUS", "TOTAL_AMOUNT", "SHIPPING_ADDRESS", "CREATED_AT"],
+            "order_items": ["ITEM_ID", "ORDER_ID", "PRODUCT_ID", "QUANTITY", "UNIT_PRICE", "DISCOUNT"],
+            "products": ["PRODUCT_ID", "PRODUCT_NAME", "DESCRIPTION", "CATEGORY", "UNIT_PRICE", "STOCK_QUANTITY", "CREATED_AT"]
+          }
         },
         {
           "name": "HR",
           "label": "HR",
-          "tables": [
-            "departments",
-            "employees"
-          ]
+          "tables": {
+            "departments": ["DEPARTMENT_ID", "DEPARTMENT_NAME", "MANAGER_ID", "LOCATION_ID", "BUDGET", "CREATED_AT"],
+            "employees": ["EMPLOYEE_ID", "FIRST_NAME", "LAST_NAME", "EMAIL", "PHONE_NUMBER", "HIRE_DATE", "JOB_ID", "SALARY", "COMMISSION_PCT", "MANAGER_ID", "DEPARTMENT_ID"]
+          }
         }
       ]
     },
@@ -31,7 +31,10 @@
         {
           "name": "ICC_META",
           "label": "ICC_META",
-          "tables": []
+          "tables": {
+            "jobs": ["JOB_ID", "JOB_NAME", "TEMPLATE_ID", "STATUS", "CREATED_BY", "CREATED_AT", "UPDATED_AT"],
+            "job_logs": ["LOG_ID", "JOB_ID", "LOG_LEVEL", "MESSAGE", "TIMESTAMP"]
+          }
         }
       ]
     },
@@ -42,7 +45,9 @@
         {
           "name": "ICC_DEV_META",
           "label": "ICC_DEV_META",
-          "tables": []
+          "tables": {
+            "test_data": ["ID", "NAME", "VALUE", "CREATED_AT"]
+          }
         }
       ]
     },
@@ -53,7 +58,10 @@
         {
           "name": "PUBLIC",
           "label": "PUBLIC",
-          "tables": []
+          "tables": {
+            "users": ["id", "username", "email", "password_hash", "created_at", "updated_at"],
+            "sessions": ["session_id", "user_id", "token", "expires_at"]
+          }
         }
       ]
     },
@@ -64,7 +72,10 @@
         {
           "name": "PUBLIC",
           "label": "PUBLIC",
-          "tables": []
+          "tables": {
+            "inventory": ["id", "product_code", "warehouse_id", "quantity", "last_updated"],
+            "warehouses": ["id", "name", "location", "capacity"]
+          }
         }
       ]
     },
@@ -75,7 +86,10 @@
         {
           "name": "dbo",
           "label": "dbo",
-          "tables": []
+          "tables": {
+            "accounts": ["AccountID", "AccountName", "AccountType", "Balance", "CreatedDate"],
+            "transactions": ["TransactionID", "AccountID", "Amount", "TransactionType", "TransactionDate"]
+          }
         }
       ]
     }
