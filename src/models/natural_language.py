@@ -383,6 +383,4 @@ class CompareSqlLLMRequest(BaseLLMRequest):
             "drop_before_create": var.drop_before_create,
             "calculate_difference": var.calculate_difference,
             "columns_output": var.columns_output,
-            "keys_mapping": var.keys_mapping,
-            "column_mapping": var.column_mapping,
         }

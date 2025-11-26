@@ -67,8 +67,6 @@ TEMPLATES: Dict[str, Dict[str, Any]] = {
             "schemas": "729110340002980",
             "table_name": "729110340002979",
             "columns_output": "530451118194737",
-            "keys_mapping": "530459168178029",
-            "column_mapping": "530459168194725",
         },
         "props_name": "comparesql",
     },
