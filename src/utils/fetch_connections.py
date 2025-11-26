@@ -22,7 +22,8 @@ def fetch_connection_list() -> Dict[str, Any]:
 
 def infer_db_type(name: str, database_url: Optional[str], connection_type: str) -> str:
     """
-    
+    Verilen isim, database_url ve connection_type bilgilerine göre
+    bağlantının DB tipini tahmin eder.
     """
     url = (database_url or "").lower()
     name_lower = name.lower()
@@ -140,6 +141,14 @@ def save_connections_to_json(config: Dict[str, Dict[str, Any]], filename: str = 
         json.dump(config, f, indent=2, ensure_ascii=False)
 
     print(f"[OK] Saved {len(config)} connections to {output_path}")
+
+def fetch_and_map_connections() -> Dict[str, Dict[str, Any]]:
+    """
+    ICC endpoint'inden connection list'i çekip, map_connection_list_to_config
+    ile internal formata çevirip dict olarak döner.
+    """
+    raw = fetch_connection_list()
+    return map_connection_list_to_config(raw)
 
 
 if __name__ == "__main__":
