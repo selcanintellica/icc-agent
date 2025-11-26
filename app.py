@@ -68,7 +68,7 @@ initial_table_selection = initial_tables[:2] if len(initial_tables) >= 2 else in
 def create_map_table_modal():
     """Create the Map Table modal component"""
     return dbc.Modal([
-        dbc.ModalHeader(dbc.ModalTitle("🗺️ Map Table - Column Mapping")),
+        dbc.ModalHeader(dbc.ModalTitle("Map Table - Column Mapping")),
         dbc.ModalBody([
             # Instructions
             html.P("Map columns between the two queries. Check the 'Key' checkbox for columns used to match rows.", className="text-muted mb-3"),
