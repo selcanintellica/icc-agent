@@ -436,12 +436,19 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             return memory, "Please provide a table name to save the results:"
         
         memory.gathered_params["table_name"] = table_name
-        memory.stage = Stage.EXECUTE_COMPARE_SQL
-        return memory, f"Table name set to '{table_name}'.\n\nExecuting compare SQL job..."
+        memory.stage = Stage.ASK_COMPARE_JOB_NAME
+        return memory, f"Table name set to '{table_name}'.\n\nFinally, what would you like to name this job? (This will help you find it easily in ICC)"
 
-    # ========== STAGE: EXECUTE_COMPARE_SQL ==========
-    if memory.stage == Stage.EXECUTE_COMPARE_SQL:
-        logger.info("⚡ Executing compare_sql_job...")
+    # ========== STAGE: ASK_COMPARE_JOB_NAME ==========
+    if memory.stage == Stage.ASK_COMPARE_JOB_NAME:
+        job_name = user_utterance.strip()
+        if not job_name:
+            return memory, "Please provide a name for this job:"
+        
+        memory.gathered_params["job_name"] = job_name
+        
+        # Execute the job immediately after getting the name
+        logger.info(f"⚡ Executing compare_sql_job with name '{job_name}'...")
         try:
             connection_id = get_connection_id(memory.connection)
             if not connection_id:
@@ -453,15 +460,10 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             first_keys = params.get("first_table_keys", "")
             second_keys = params.get("second_table_keys", "")
             
-            # Convert mappings to JSON strings for the payload
-            import json
-            keys_mapping_json = json.dumps(memory.key_mappings) if memory.key_mappings else None
-            column_mapping_json = json.dumps(memory.column_mappings) if memory.column_mappings else None
-            
-            # Build request with gathered params and mappings
+            # Build request with gathered params
             request = CompareSqlLLMRequest(
                 rights={"owner": "184431757886694"},
-                props={"active": "false", "name": "Compare_Job", "description": ""},
+                props={"active": "true", "name": job_name, "description": ""},
                 variables=[CompareSqlVariables(
                     connection=connection_id,
                     first_sql_query=memory.first_sql,
@@ -475,9 +477,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     schemas=params.get("schemas", "cache"),
                     table_name=params.get("table_name", "cache"),
                     drop_before_create=params.get("drop_before_create", True),
-                    calculate_difference=params.get("calculate_difference", False),
-                    keys_mapping=keys_mapping_json,
-                    column_mapping=column_mapping_json
+                    calculate_difference=params.get("calculate_difference", False)
                 )]
             )
             
@@ -487,13 +487,26 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 memory.last_job_id = result.get("job_id")
                 memory.stage = Stage.NEED_WRITE_OR_EMAIL
                 memory.gathered_params = {}  # Reset for next steps
-                return memory, f"✅ Compare Job executed! Job ID: {memory.last_job_id}\nWhat next? (email / done)"
+                return memory, f"✅ Compare Job '{job_name}' created successfully!\n🆔 Job ID: {memory.last_job_id}\n\nWhat next? (email / done)"
             else:
-                return memory, f"❌ Error: {result.get('error')}"
+                error = result.get('error', 'Unknown error')
+                # Check for duplicate name error
+                if "same name" in str(error).lower():
+                    return memory, f"❌ A job named '{job_name}' already exists in this folder.\nPlease provide a different name:"
+                return memory, f"❌ Error: {error}"
         
         except Exception as e:
             logger.error(f"❌ Error in compare_sql: {str(e)}", exc_info=True)
+            # Check for duplicate name error in exception
+            if "same name" in str(e).lower():
+                return memory, f"❌ A job named '{job_name}' already exists in this folder.\nPlease provide a different name:"
             return memory, f"❌ Error: {str(e)}"
+
+    # ========== STAGE: EXECUTE_COMPARE_SQL (kept for backward compatibility) ==========
+    if memory.stage == Stage.EXECUTE_COMPARE_SQL:
+        # Redirect to ask for job name if not provided
+        memory.stage = Stage.ASK_COMPARE_JOB_NAME
+        return memory, "What would you like to name this job? (This will help you find it easily in ICC)"
 
 
     # ========== STAGE: SHOW_RESULTS ==========

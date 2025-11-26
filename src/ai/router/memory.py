@@ -39,6 +39,7 @@ class Stage(Enum):
     ASK_REPORTING_TYPE = "ask_reporting_type"
     ASK_COMPARE_SCHEMA = "ask_compare_schema"
     ASK_COMPARE_TABLE_NAME = "ask_compare_table_name"
+    ASK_COMPARE_JOB_NAME = "ask_compare_job_name"
     EXECUTE_COMPARE_SQL = "execute_compare_sql"
 
     SHOW_RESULTS = "show_results"
