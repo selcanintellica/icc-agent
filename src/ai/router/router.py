@@ -168,14 +168,44 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 
                 logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
                 
+                # Get execute_query and write_count parameters
+                execute_query = params.get("execute_query", False)
+                write_count = params.get("write_count", False)
+                
+                # Create ReadSQL variables with all gathered params
+                read_sql_vars = ReadSqlVariables(
+                    query=memory.last_sql,
+                    connection=connection_id,  # Use connection ID for API
+                    execute_query=execute_query,
+                    write_count=write_count
+                )
+                
+                # If execute_query is true, add the write-related fields
+                if execute_query:
+                    read_sql_vars.result_schema = params.get("result_schema")
+                    read_sql_vars.table_name = params.get("table_name")
+                    read_sql_vars.drop_before_create = params.get("drop_before_create", False)
+                    read_sql_vars.only_dataset_columns = params.get("only_dataset_columns", False)
+                    logger.info(f"📝 ReadSQL with execute_query=true: schema={read_sql_vars.result_schema}, table={read_sql_vars.table_name}, drop={read_sql_vars.drop_before_create}")
+                
+                # If write_count is true, add the write_count-related fields
+                if write_count:
+                    write_count_conn_name = params.get("write_count_connection", memory.connection)
+                    write_count_conn_id = get_connection_id(write_count_conn_name)
+                    if not write_count_conn_id:
+                        logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
+                        return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
+                    
+                    read_sql_vars.write_count_connection = write_count_conn_id
+                    read_sql_vars.write_count_schema = params.get("write_count_schema")
+                    read_sql_vars.write_count_table = params.get("write_count_table")
+                    logger.info(f"📊 ReadSQL with write_count=true: schema={read_sql_vars.write_count_schema}, table={read_sql_vars.write_count_table}, connection={write_count_conn_name}")
+                
                 # Build the request - use connection ID for API and name from params
                 request = ReadSqlLLMRequest(
                     rights={"owner": "184431757886694"},
                     props={"active": "true", "name": params.get("name", "ReadSQL_Job"), "description": ""},
-                    variables=[ReadSqlVariables(
-                        query=memory.last_sql,
-                        connection=connection_id  # Use connection ID for API
-                    )]
+                    variables=[read_sql_vars]
                 )
                 
                 # Execute the tool directly (no @tool decorator)
@@ -184,18 +214,23 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 logger.info(f"📊 read_sql_job result: {json.dumps(result, indent=2)}")
                 
                 if result.get("message") == "Success":
-                    # Save job_id, name, folder, and columns for later use in WriteData
+                    # Save job_id, name, folder, columns, and execute_query status
                     memory.last_job_id = result.get("job_id")
                     memory.last_job_name = params.get("name", "ReadSQL_Job")
                     memory.last_job_folder = "3023602439587835"  # Default folder from definition_map
                     memory.last_columns = result.get("columns", [])
+                    memory.execute_query_enabled = execute_query  # Track if data was auto-written
                     memory.stage = Stage.SHOW_RESULTS
                     
                     cols_str = ", ".join(memory.last_columns[:5])
                     if len(memory.last_columns) > 5:
                         cols_str += f"... ({len(memory.last_columns)} total)"
                     
-                    return memory, f"✅ Query executed successfully!\n📊 Columns: {cols_str}\n🆔 Job ID: {memory.last_job_id}"
+                    # Show different message based on whether data was written
+                    if execute_query:
+                        return memory, f"✅ Query executed and data saved to {params.get('result_schema')}.{params.get('table_name')}!\n📊 Columns: {cols_str}\n🆔 Job ID: {memory.last_job_id}"
+                    else:
+                        return memory, f"✅ Query executed successfully!\n📊 Columns: {cols_str}\n🆔 Job ID: {memory.last_job_id}"
                 else:
                     error_msg = result.get("error", "Unknown error")
                     return memory, f"❌ Error executing query: {error_msg}\nWould you like to try a different query?"
@@ -212,7 +247,11 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         memory.gathered_params = {}  # Reset for next operation
         memory.current_tool = None  # Reset current tool
         
-        return memory, "What would you like to do next?\n• 'write' - Save results to a table\n• 'email' - Send results via email\n• 'both' - Write and email\n• 'done' - Finish"
+        # If execute_query was enabled, data was already written by the API
+        if memory.execute_query_enabled:
+            return memory, "✅ Data has been written to the table automatically!\n\nWhat would you like to do next?\n• 'email' - Send results via email\n• 'done' - Finish"
+        else:
+            return memory, "What would you like to do next?\n• 'write' - Save results to a table\n• 'email' - Send results via email\n• 'both' - Write and email\n• 'done' - Finish"
     
     # ========== STAGE: NEED_WRITE_OR_EMAIL ==========
     if memory.stage == Stage.NEED_WRITE_OR_EMAIL:
@@ -222,6 +261,10 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         if "done" in user_lower or "finish" in user_lower or "complete" in user_lower:
             memory.stage = Stage.DONE
             return memory, "✅ All done! Say 'new query' to start again."
+        
+        # If execute_query was enabled, data was already written - skip write_data
+        if memory.execute_query_enabled and ("write" in user_lower or "save" in user_lower or "store" in user_lower):
+            return memory, "⚠️ Data was already written to the table by the ReadSQL job (execute_query=true).\n\nWould you like to:\n• 'email' - Send results via email\n• 'done' - Finish"
         
         # Determine which tool to use OR continue with the current tool if params are being gathered
         # If we're already gathering params for a tool, continue with that tool

@@ -36,7 +36,20 @@ Required parameters by tool:
 
 read_sql (ONLY these parameters):
 - name (job name for props.name) - REQUIRED
-- NO OTHER PARAMETERS NEEDED - query and connection are provided automatically
+- execute_query (true/false) - Ask: "Would you like to save the query results to the database?" - REQUIRED
+  * If user says yes/true: set execute_query=true and ask for result_schema, table_name, drop_before_create
+  * If user says no/false: set execute_query=false, skip other write-related questions
+- result_schema (target schema name) - REQUIRED only if execute_query=true
+- table_name (target table name) - REQUIRED only if execute_query=true  
+- drop_before_create (true/false) - REQUIRED only if execute_query=true. Ask: "Should I drop the table before creating it? (yes/no)"
+- only_dataset_columns (true/false) - defaults to false if execute_query=true, do NOT ask
+- write_count (true/false) - Ask: "Would you like to track the row count?" - REQUIRED
+  * If user says yes/true: set write_count=true and ask for write_count_schema, write_count_table, write_count_connection
+  * If user says no/false: set write_count=false, skip write_count-related questions
+- write_count_schema (schema name) - REQUIRED only if write_count=true
+- write_count_table (table name) - REQUIRED only if write_count=true
+- write_count_connection (connection name) - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
+- query and connection are provided automatically
 
 write_data (ONLY these parameters):
 - name (job name for props.name) - REQUIRED
@@ -81,6 +94,18 @@ Response: {"action": "ASK", "question": "What schema should I write to?", "param
 Example 3 - User provides just one param:
 User: "writedata_ss"
 Response: {"action": "ASK", "question": "What table should I write the data to?", "params": {"name": "writedata_ss"}}
+
+Example 4 - ReadSQL with execute_query flow:
+User: "yes" (answering if they want to save results)
+Response: {"action": "ASK", "question": "What schema should I write the results to?", "params": {"execute_query": true}}
+
+Example 5 - ReadSQL without saving:
+User: "no" (answering if they want to save results)
+Response: {"action": "ASK", "question": "Would you like to track the row count of the query results? (yes/no)", "params": {"execute_query": false, "name": "my_readsql_job"}}
+
+Example 6 - ReadSQL with write_count flow:
+User: "yes" (answering if they want to track row count)
+Response: {"action": "ASK", "question": "What schema should I write the row count to?", "params": {"write_count": true}}
 
 Be conversational but concise. Ask for ONE missing parameter at a time.
 DO NOT ask for parameters that belong to a different tool!
@@ -206,20 +231,102 @@ class JobAgent:
         if tool_name == "read_sql":
             # Check if we have name parameter from user
             if not params.get("name"):
+                logger.info("❌ Missing: name")
                 return {
                     "action": "ASK",
                     "question": "What should I name this read_sql job?"
                 }
-            # Have all params
+            
+            # Check if we should ask about execute_query
+            if "execute_query" not in params:
+                logger.info("❓ Asking about execute_query")
+                return {
+                    "action": "ASK",
+                    "question": "Would you like to save the query results to the database? (yes/no)"
+                }
+            
+            # Normalize execute_query response
+            execute_query_value = params.get("execute_query", False)
+            if isinstance(execute_query_value, str):
+                execute_query_value = execute_query_value.lower().strip() in ["yes", "true", "y", "1"]
+                params["execute_query"] = execute_query_value
+                logger.info(f"📝 Normalized execute_query to: {execute_query_value}")
+            
+            # If execute_query is true, we need additional parameters
+            if params.get("execute_query"):
+                if not params.get("result_schema"):
+                    logger.info("❌ Missing: result_schema (execute_query=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What schema should I write the results to?"
+                    }
+                if not params.get("table_name"):
+                    logger.info("❌ Missing: table_name (execute_query=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What table should I write the results to?"
+                    }
+                if "drop_before_create" not in params:
+                    logger.info("❓ Asking about drop_before_create")
+                    return {
+                        "action": "ASK",
+                        "question": "Should I drop the table before creating it? (yes/no)"
+                    }
+                
+                # Normalize drop_before_create response
+                drop_value = params.get("drop_before_create", False)
+                if isinstance(drop_value, str):
+                    drop_value = drop_value.lower().strip() in ["yes", "true", "y", "1", "drop"]
+                    params["drop_before_create"] = drop_value
+                    logger.info(f"📝 Normalized drop_before_create to: {drop_value}")
+            
+            # Check if we should ask about write_count
+            if "write_count" not in params:
+                logger.info("❓ Asking about write_count")
+                return {
+                    "action": "ASK",
+                    "question": "Would you like to track the row count of the query results? (yes/no)"
+                }
+            
+            # Normalize write_count response
+            write_count_value = params.get("write_count", False)
+            if isinstance(write_count_value, str):
+                write_count_value = write_count_value.lower().strip() in ["yes", "true", "y", "1"]
+                params["write_count"] = write_count_value
+                logger.info(f"📝 Normalized write_count to: {write_count_value}")
+            
+            # If write_count is true, we need additional parameters
+            if params.get("write_count"):
+                if not params.get("write_count_schema"):
+                    logger.info("❌ Missing: write_count_schema (write_count=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What schema should I write the row count to?"
+                    }
+                if not params.get("write_count_table"):
+                    logger.info("❌ Missing: write_count_table (write_count=true)")
+                    return {
+                        "action": "ASK",
+                        "question": "What table should I write the row count to?"
+                    }
+                if not params.get("write_count_connection"):
+                    logger.info(f"❌ Missing: write_count_connection (write_count=true), suggesting: {memory.connection}")
+                    return {
+                        "action": "ASK",
+                        "question": f"What connection should I use for the row count? (Press enter for '{memory.connection}')"
+                    }
+                
+                # If user just pressed enter or said "same", use memory.connection
+                if params.get("write_count_connection", "").strip() in ["", "same", "default"]:
+                    params["write_count_connection"] = memory.connection
+                    logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+            
+            # Have all required params
+            logger.info(f"✅ All read_sql params present: {params}")
             return {
                 "action": "TOOL",
                 "tool_name": "read_sql",
-                "params": {
-                    "query": memory.last_sql,
-                    "connection": memory.connection,  # From memory, not LLM
-                    "template": "2223045341865624",
-                    "name": params["name"]
-                }
+                "params": params
             }
         
         elif tool_name == "write_data":
