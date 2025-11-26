@@ -5,6 +5,7 @@ from src.models.natural_language import (
     SendEmailLLMRequest,
     ReadSqlLLMRequest,
     WriteDataLLMRequest,
+    CompareSqlLLMRequest,
 )
 from src.payload_builders.wire_builder import build_wire_payload
 from src.repositories.job_repository import JobRepository
@@ -129,6 +130,45 @@ async def send_email_job(data: SendEmailLLMRequest) -> dict:
     return {"message": "Success", "data": data.model_dump()}
 
 
+async def compare_sql_job(data: CompareSqlLLMRequest) -> dict:
+    """
+    Create a job to compare two SQL queries using the JobRepository.
+    
+    Args:
+        data (CompareSqlLLMRequest): Payload containing compare SQL parameters.
+    Returns:
+        dict: Confirmation message and job details.
+    """
+    if not data.id:
+        data.id = str(uuid.uuid4())
+
+    auth_result = await authenticate()
+    if auth_result:
+        userpass, token = auth_result
+        headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+    else:
+        headers = {}
+    
+    async with AsyncClient(headers=headers, verify=False) as client:
+        repo = JobRepository(client)
+        response = await JobRepository.compare_sql_job(repo, data)
+        
+    if response.success:
+        return {
+            "message": "Success",
+            "job_id": response.data.object_id,
+            "data": data.model_dump()
+        }
+    else:
+        return {
+            "message": "Error",
+            "error": response.error
+        }
+
+
 class ICCToolkit:
     @staticmethod
     def get_tools() -> List:
@@ -142,4 +182,5 @@ class ICCToolkit:
             write_data_job,
             read_sql_job,
             send_email_job,
+            compare_sql_job,
         ]

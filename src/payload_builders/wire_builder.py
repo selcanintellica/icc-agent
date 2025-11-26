@@ -125,12 +125,19 @@ def build_wire_payload(request: BaseModel, column_names = "") -> WirePayload:
                 logger.info(f"[WireBuilder] Set add_columns to empty string")
                 break
 
+    # Use job name from request.props if provided, otherwise use template default
+    job_name = props_name  # Default from template
+    job_active = DEFAULT_ACTIVE
+    if hasattr(request, 'props') and request.props:
+        job_name = request.props.get("name", props_name)
+        job_active = request.props.get("active", DEFAULT_ACTIVE)
+    
     wire = WirePayload(
         template=template_id,
         variables=variables,
         rights={"owner": getattr(request, "owner", DEFAULT_RIGHTS_OWNER)},
         priority=getattr(request, "priority", DEFAULT_PRIORITY),
-        props=WireProps(active=DEFAULT_ACTIVE, name=props_name),
+        props=WireProps(active=job_active, name=job_name),
         skip=DEFAULT_SKIP,
         folder=getattr(request, "folder", DEFAULT_FOLDER),
     )

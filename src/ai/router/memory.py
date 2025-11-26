@@ -9,12 +9,39 @@ from typing import Optional, Dict, Any, List
 class Stage(Enum):
     """Conversation stages for the router."""
     START = "start"
-    ASK_SQL_METHOD = "ask_sql_method"          # NEW: Ask if user provides SQL or wants it generated
-    NEED_NATURAL_LANGUAGE = "need_natural_language"  # NEW: Waiting for NL query to generate SQL
-    NEED_USER_SQL = "need_user_sql"            # NEW: Waiting for user to provide SQL directly
-    CONFIRM_GENERATED_SQL = "confirm_generated_sql"  # NEW: Show generated SQL, ask for confirmation
-    CONFIRM_USER_SQL = "confirm_user_sql"      # NEW: Show user's SQL, ask for confirmation
-    EXECUTE_SQL = "execute_sql"                # Ready to execute (replaces HAVE_SQL)
+    
+    # New Initial Stage
+    ASK_JOB_TYPE = "ask_job_type"
+    
+    # Read SQL Flow
+    ASK_SQL_METHOD = "ask_sql_method"
+    NEED_NATURAL_LANGUAGE = "need_natural_language"
+    NEED_USER_SQL = "need_user_sql"
+    CONFIRM_GENERATED_SQL = "confirm_generated_sql"
+    CONFIRM_USER_SQL = "confirm_user_sql"
+    EXECUTE_SQL = "execute_sql"
+    
+    # Compare SQL Flow
+    ASK_FIRST_SQL_METHOD = "ask_first_sql_method"
+    NEED_FIRST_NATURAL_LANGUAGE = "need_first_natural_language"
+    NEED_FIRST_USER_SQL = "need_first_user_sql"
+    CONFIRM_FIRST_GENERATED_SQL = "confirm_first_generated_sql"
+    CONFIRM_FIRST_USER_SQL = "confirm_first_user_sql"
+    
+    ASK_SECOND_SQL_METHOD = "ask_second_sql_method"
+    NEED_SECOND_NATURAL_LANGUAGE = "need_second_natural_language"
+    NEED_SECOND_USER_SQL = "need_second_user_sql"
+    CONFIRM_SECOND_GENERATED_SQL = "confirm_second_generated_sql"
+    CONFIRM_SECOND_USER_SQL = "confirm_second_user_sql"
+    
+    ASK_AUTO_MATCH = "ask_auto_match"
+    WAITING_MAP_TABLE = "waiting_map_table"
+    ASK_REPORTING_TYPE = "ask_reporting_type"
+    ASK_COMPARE_SCHEMA = "ask_compare_schema"
+    ASK_COMPARE_TABLE_NAME = "ask_compare_table_name"
+    ASK_COMPARE_JOB_NAME = "ask_compare_job_name"
+    EXECUTE_COMPARE_SQL = "execute_compare_sql"
+
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
     DONE = "done"
@@ -27,7 +54,18 @@ class Memory:
     Stores state, last SQL, job results, and any gathered parameters.
     """
     stage: Stage = Stage.START
+    job_type: str = "readsql"  # readsql or comparesql
+    
     last_sql: Optional[str] = None
+    first_sql: Optional[str] = None
+    second_sql: Optional[str] = None
+    
+    # Compare SQL specific fields
+    first_columns: Optional[List[str]] = None
+    second_columns: Optional[List[str]] = None
+    column_mappings: Optional[List[Dict[str, str]]] = None  # [{FirstMappedColumn, SecondMappedColumn}]
+    key_mappings: Optional[List[Dict[str, str]]] = None  # [{FirstKey, SecondKey}]
+    
     last_job_id: Optional[str] = None
     last_job_name: Optional[str] = None  # ReadSQL job name
     last_job_folder: Optional[str] = None  # ReadSQL job folder
@@ -43,7 +81,14 @@ class Memory:
     def reset(self):
         """Reset memory to start a new conversation."""
         self.stage = Stage.START
+        self.job_type = "readsql"
         self.last_sql = None
+        self.first_sql = None
+        self.second_sql = None
+        self.first_columns = None
+        self.second_columns = None
+        self.column_mappings = None
+        self.key_mappings = None
         self.last_job_id = None
         self.last_job_name = None
         self.last_job_folder = None
@@ -58,7 +103,14 @@ class Memory:
         """Convert memory to dictionary for serialization."""
         return {
             "stage": self.stage.value,
+            "job_type": self.job_type,
             "last_sql": self.last_sql,
+            "first_sql": self.first_sql,
+            "second_sql": self.second_sql,
+            "first_columns": self.first_columns,
+            "second_columns": self.second_columns,
+            "column_mappings": self.column_mappings,
+            "key_mappings": self.key_mappings,
             "last_job_id": self.last_job_id,
             "last_job_name": self.last_job_name,
             "last_job_folder": self.last_job_folder,
@@ -77,7 +129,14 @@ class Memory:
         """Create Memory from dictionary."""
         memory = cls()
         memory.stage = Stage(data.get("stage", "start"))
+        memory.job_type = data.get("job_type", "readsql")
         memory.last_sql = data.get("last_sql")
+        memory.first_sql = data.get("first_sql")
+        memory.second_sql = data.get("second_sql")
+        memory.first_columns = data.get("first_columns")
+        memory.second_columns = data.get("second_columns")
+        memory.column_mappings = data.get("column_mappings")
+        memory.key_mappings = data.get("key_mappings")
         memory.last_job_id = data.get("last_job_id")
         memory.last_job_name = data.get("last_job_name")
         memory.last_job_folder = data.get("last_job_folder")

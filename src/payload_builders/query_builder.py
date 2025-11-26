@@ -36,15 +36,15 @@ class QueryBuilder:
             QueryPayload: An instance of QueryPayload with the provided parameters.
         """
         from loguru import logger
-        
+
         connection_name = data.variables[0].connection
         connection_id = get_connection_id(connection_name) or connection_name
         logger.info(f"[QueryBuilder] Connection name: '{connection_name}' -> Connection ID: '{connection_id}'")
-        
+
         sql = data.variables[0].query
         folder_id = ""
-        
+
         payload = QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
         logger.info(f"[QueryBuilder] Built QueryPayload: connectionId='{payload.connectionId}', sql='{sql[:100]}...', folderId='{folder_id}'")
-        
+
         return payload
