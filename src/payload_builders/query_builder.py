@@ -38,3 +38,18 @@ class QueryBuilder:
         sql = data.variables[0].query
         folder_id = ""
         return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
+
+    @staticmethod
+    async def build_query_payload(connection_id: str, sql: str) -> QueryPayload:
+        """
+        Create a generic QueryPayload instance.
+
+        Args:
+            connection_id (str): The connection identifier.
+            sql (str): The SQL query.
+
+        Returns:
+            QueryPayload: An instance of QueryPayload.
+        """
+        folder_id = ""
+        return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
