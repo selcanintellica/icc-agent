@@ -215,7 +215,6 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
                 # If write_count is true, add the write_count-related fields
                 if write_count:
-                    from src.utils.connections import get_connection_id
                     write_count_conn_name = params.get("write_count_connection", memory.connection)
                     write_count_conn_id = get_connection_id(write_count_conn_name)
                     if not write_count_conn_id:
@@ -408,14 +407,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     auto_mappings.append({"FirstMappedColumn": col, "SecondMappedColumn": col})
             response_data["pre_mappings"] = auto_mappings
 
-        import json
         return memory, f"MAP_TABLE_POPUP:{json.dumps(response_data)}"
 
     # ========== STAGE: WAITING_MAP_TABLE ==========
     if memory.stage == Stage.WAITING_MAP_TABLE:
         # Frontend sends back mapping data as JSON
         try:
-            import json
             mapping_data = json.loads(user_utterance)
 
             # Extract key mappings and column mappings
@@ -600,12 +597,18 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
                 try:
                     # Get connection ID from connection name
+                    # Try dynamic connections first, fallback to static if not available
                     connection_id = memory.get_connection_id(memory.connection)
                     if not connection_id:
-                        logger.error(f"❌ Unknown connection: {memory.connection}")
-                        return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
-                    
-                    logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
+                        # Fallback to static connections.py
+                        from src.utils.connections import get_connection_id
+                        connection_id = get_connection_id(memory.connection)
+                        if not connection_id:
+                            logger.error(f"❌ Unknown connection: {memory.connection}")
+                            return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
+                        logger.info(f"🔌 Using connection from static file: {memory.connection} (ID: {connection_id})")
+                    else:
+                        logger.info(f"🔌 Using connection from memory: {memory.connection} (ID: {connection_id})")
                     
                     # Get table name from params (user provides destination table)
                     table_name = params.get("table", "output_table")
@@ -648,8 +651,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                         write_count_conn_name = params.get("write_count_connection", memory.connection)
                         write_count_conn_id = memory.get_connection_id(write_count_conn_name)
                         if not write_count_conn_id:
-                            logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
-                            return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
+                            # Fallback to static connections.py
+                            from src.utils.connections import get_connection_id as get_conn_id_static
+                            write_count_conn_id = get_conn_id_static(write_count_conn_name)
+                            if not write_count_conn_id:
+                                logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
+                                return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
 
                         write_data_vars.write_count_connection = write_count_conn_id
                         write_data_vars.write_count_schemas = params.get("write_count_schemas")
