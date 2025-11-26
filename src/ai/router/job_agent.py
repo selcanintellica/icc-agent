@@ -299,6 +299,24 @@ class JobAgent:
                     params["drop_before_create"] = drop_value
                     logger.info(f"📝 Normalized drop_before_create to: {drop_value}")
             
+            # Normalize write_count first if it exists (handle user input like "no")
+            if "write_count" in params:
+                write_count_value = params.get("write_count", False)
+                if isinstance(write_count_value, str):
+                    user_lower = write_count_value.lower().strip()
+                    write_count_value = user_lower in ["yes", "true", "y", "1"]
+                    params["write_count"] = write_count_value
+                    logger.info(f"📝 Normalized write_count to: {write_count_value}")
+            # Also check user_input directly for yes/no to write_count
+            elif user_input:
+                user_lower = user_input.lower().strip()
+                if user_lower in ["yes", "y", "true", "1"]:
+                    params["write_count"] = True
+                    logger.info("📝 Set write_count to True from user input")
+                elif user_lower in ["no", "n", "false", "0"]:
+                    params["write_count"] = False
+                    logger.info("📝 Set write_count to False from user input")
+            
             # Check if we should ask about write_count
             if "write_count" not in params:
                 logger.info("❓ Asking about write_count")
@@ -306,13 +324,6 @@ class JobAgent:
                     "action": "ASK",
                     "question": "Would you like to track the row count of the query results? (yes/no)"
                 }
-            
-            # Normalize write_count response
-            write_count_value = params.get("write_count", False)
-            if isinstance(write_count_value, str):
-                write_count_value = write_count_value.lower().strip() in ["yes", "true", "y", "1"]
-                params["write_count"] = write_count_value
-                logger.info(f"📝 Normalized write_count to: {write_count_value}")
             
             # If write_count is true, we need additional parameters
             if params.get("write_count"):
@@ -377,6 +388,24 @@ class JobAgent:
                     "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
                 }
             
+            # Normalize write_count first if it exists (handle user input like "no")
+            if "write_count" in params:
+                write_count_value = params.get("write_count", False)
+                if isinstance(write_count_value, str):
+                    user_lower = write_count_value.lower().strip()
+                    write_count_value = user_lower in ["yes", "true", "y", "1"]
+                    params["write_count"] = write_count_value
+                    logger.info(f"📝 Normalized write_count to: {write_count_value}")
+            # Also check user_input directly for yes/no to write_count
+            elif user_input:
+                user_lower = user_input.lower().strip()
+                if user_lower in ["yes", "y", "true", "1"]:
+                    params["write_count"] = True
+                    logger.info("📝 Set write_count to True from user input")
+                elif user_lower in ["no", "n", "false", "0"]:
+                    params["write_count"] = False
+                    logger.info("📝 Set write_count to False from user input")
+            
             # Check if we should ask about write_count
             if "write_count" not in params:
                 logger.info("❓ Asking about write_count for write_data")
@@ -384,13 +413,6 @@ class JobAgent:
                     "action": "ASK",
                     "question": "Would you like to track the row count for this write operation? (yes/no)"
                 }
-            
-            # Normalize write_count response
-            write_count_value = params.get("write_count", False)
-            if isinstance(write_count_value, str):
-                write_count_value = write_count_value.lower().strip() in ["yes", "true", "y", "1"]
-                params["write_count"] = write_count_value
-                logger.info(f"📝 Normalized write_count to: {write_count_value}")
             
             # If write_count is true, we need additional parameters
             if params.get("write_count"):

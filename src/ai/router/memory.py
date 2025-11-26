@@ -77,6 +77,39 @@ class Memory:
     connection: str = "ORACLE_10"  # Connection name, set from UI
     schema: str = "SALES"  # Schema name, set from UI
     selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])  # Tables selected from UI
+    connections: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Dynamic connection list from API
+    
+    def get_connection_id(self, connection_name: str) -> Optional[str]:
+        """
+        Get connection ID from stored connections.
+        
+        Args:
+            connection_name: Name of the connection
+            
+        Returns:
+            Connection ID string or None if not found
+        """
+        conn = self.connections.get(connection_name)
+        if conn:
+            return conn.get("id")
+        return None
+    
+    def get_connection_list_for_llm(self) -> str:
+        """
+        Format connection list for LLM to present to user.
+        
+        Returns:
+            Formatted string with available connections
+        """
+        if not self.connections:
+            return "No connections available."
+        
+        conn_list = []
+        for name, info in self.connections.items():
+            db_type = info.get("db_type", "Unknown")
+            conn_list.append(f"• {name} ({db_type})")
+        
+        return "\n".join(conn_list)
     
     def reset(self):
         """Reset memory to start a new conversation."""
@@ -97,7 +130,7 @@ class Memory:
         self.gathered_params = {}
         self.current_tool = None
         self.execute_query_enabled = False
-        # Keep connection as it's set externally
+        # Keep connection and connections as they're set externally
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert memory to dictionary for serialization."""
@@ -121,7 +154,8 @@ class Memory:
             "execute_query_enabled": self.execute_query_enabled,
             "connection": self.connection,
             "schema": self.schema,
-            "selected_tables": self.selected_tables
+            "selected_tables": self.selected_tables,
+            "connections": self.connections
         }
     
     @classmethod
@@ -148,4 +182,5 @@ class Memory:
         memory.connection = data.get("connection", "ORACLE_10")
         memory.schema = data.get("schema", "SALES")
         memory.selected_tables = data.get("selected_tables", ["customers", "orders"])
+        memory.connections = data.get("connections", {})
         return memory

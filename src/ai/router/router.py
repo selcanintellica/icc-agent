@@ -8,7 +8,6 @@ from src.ai.router.memory import Memory, Stage
 from src.ai.router.sql_agent import call_sql_agent
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import read_sql_job, write_data_job, send_email_job, compare_sql_job
-from src.utils.connections import get_connection_id
 from src.models.natural_language import (
     ReadSqlLLMRequest,
     ReadSqlVariables,
@@ -186,6 +185,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
             try:
                 # Get connection ID from connection name
+                from src.utils.connections import get_connection_id
                 connection_id = get_connection_id(memory.connection)
                 if not connection_id:
                     logger.error(f"❌ Unknown connection: {memory.connection}")
@@ -215,6 +215,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
                 # If write_count is true, add the write_count-related fields
                 if write_count:
+                    from src.utils.connections import get_connection_id
                     write_count_conn_name = params.get("write_count_connection", memory.connection)
                     write_count_conn_id = get_connection_id(write_count_conn_name)
                     if not write_count_conn_id:
@@ -339,6 +340,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             # Fetch columns for both queries before showing map table
             logger.info("📊 Fetching columns for both queries...")
             try:
+                from src.utils.connections import get_connection_id
                 connection_id = get_connection_id(memory.connection)
                 if not connection_id:
                     return memory, f"❌ Error: Unknown connection '{memory.connection}'."
@@ -486,6 +488,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         # Execute the job immediately after getting the name
         logger.info(f"⚡ Executing compare_sql_job with name '{job_name}'...")
         try:
+            from src.utils.connections import get_connection_id
             connection_id = get_connection_id(memory.connection)
             if not connection_id:
                 return memory, f"❌ Error: Unknown connection '{memory.connection}'."
@@ -597,7 +600,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
                 try:
                     # Get connection ID from connection name
-                    connection_id = get_connection_id(memory.connection)
+                    connection_id = memory.get_connection_id(memory.connection)
                     if not connection_id:
                         logger.error(f"❌ Unknown connection: {memory.connection}")
                         return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
@@ -643,7 +646,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # If write_count is true, add the write_count-related fields
                     if write_count:
                         write_count_conn_name = params.get("write_count_connection", memory.connection)
-                        write_count_conn_id = get_connection_id(write_count_conn_name)
+                        write_count_conn_id = memory.get_connection_id(write_count_conn_name)
                         if not write_count_conn_id:
                             logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
                             return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
@@ -689,6 +692,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     params = memory.gathered_params
                     
                     # Get connection ID from connection name
+                    from src.utils.connections import get_connection_id
                     connection_id = get_connection_id(memory.connection)
                     if not connection_id:
                         logger.error(f"❌ Unknown connection: {memory.connection}")
