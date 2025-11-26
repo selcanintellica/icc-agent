@@ -124,9 +124,13 @@ Example 7 - WriteData with write_count:
 User: "yes" (answering if they want to track row count for write operation)
 Response: {"action": "ASK", "question": "What schema should I write the row count to?", "params": {"name": "my_write_job", "table": "dest_table", "schemas": "dest_schema", "drop_or_truncate": "none", "write_count": true}}
 
-Be conversational but concise. Ask for ONE missing parameter at a time.
-DO NOT ask for parameters that belong to a different tool!
-ALWAYS include extracted params in your response!
+CRITICAL RULES:
+- Output ONLY valid, complete JSON with proper closing braces
+- Keep questions under 80 characters for speed
+- No markdown, no explanations, just JSON
+- Always include extracted params
+- Ask for ONE missing parameter at a time
+- DO NOT ask for parameters that belong to a different tool!
 """
 
 
@@ -136,8 +140,9 @@ class JobAgent:
     def __init__(self):
         self.llm = ChatOllama(
             model=os.getenv("MODEL_NAME", "qwen3:1.7b"),
-            temperature=0.3,
+            temperature=0.1,  # Lower temperature for more consistent JSON
             base_url="http://localhost:11434",
+            num_predict=800,  # Allow space for thinking + JSON (qwen3:8b thinks out loud)
         )
     
     def gather_params(
@@ -160,29 +165,44 @@ class JobAgent:
         logger.info(f"🔍 Job Agent: Gathering params for '{tool_name}'")
         logger.info(f"📋 Current params: {memory.gathered_params}")
         
-        # Build context
+        # Build minimal context (avoid overwhelming small models)
         context = {
             "tool_name": tool_name,
-            "already_have": memory.gathered_params,
-            "last_sql": memory.last_sql,
-            "first_sql": memory.first_sql,
-            "second_sql": memory.second_sql,
-            "last_job_id": memory.last_job_id,
-            "last_columns": memory.last_columns
+            "already_have": memory.gathered_params
         }
+        
+        # Only add relevant context for specific tools
+        if tool_name in ["write_data", "send_email"]:
+            if memory.last_job_id:
+                context["has_previous_job"] = True
         
         context_str = json.dumps(context, indent=2)
         
         try:
+            # Simplified prompt for better LLM performance
+            prompt_text = f"""Tool: {tool_name}
+Current params: {json.dumps(memory.gathered_params)}
+User said: "{user_input}"
+
+IMPORTANT: Output ONLY the JSON response. Do NOT include any thinking, explanation, or commentary.
+Just output the JSON object directly.
+
+Extract parameters or ask for missing ones."""
+            
             messages = [
                 SystemMessage(content=PARAMETER_EXTRACTION_PROMPT),
-                HumanMessage(content=f"Context:\n{context_str}\n\nUser input: {user_input}")
+                HumanMessage(content=prompt_text)
             ]
             
             response = self.llm.invoke(messages)
             content = response.content.strip()
             
             logger.info(f"🤖 Job Agent raw response: {content[:300]}...")
+            
+            # Check for empty response
+            if not content:
+                logger.error("❌ LLM returned empty response, using fallback")
+                return self._fallback_param_check(memory, tool_name, user_input)
             
             # Parse JSON response
             try:
@@ -191,6 +211,38 @@ class JobAgent:
                     content = content.split("```json")[1].split("```")[0].strip()
                 elif "```" in content:
                     content = content.split("```")[1].split("```")[0].strip()
+                
+                # qwen3:8b often includes thinking before/after JSON - extract just the JSON
+                if "{" in content:
+                    # Find the first { and last } to extract complete JSON
+                    start_idx = content.find("{")
+                    # Find matching closing brace
+                    brace_count = 0
+                    end_idx = start_idx
+                    for i in range(start_idx, len(content)):
+                        if content[i] == "{":
+                            brace_count += 1
+                        elif content[i] == "}":
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_idx = i + 1
+                                break
+                    content = content[start_idx:end_idx]
+                    logger.info(f"📝 Extracted JSON from {start_idx} to {end_idx}")
+                
+                # Handle truncated JSON by attempting to complete it
+                content = content.strip()
+                if content and not content.endswith("}"):
+                    # Try to close unterminated JSON
+                    open_braces = content.count("{") - content.count("}")
+                    open_brackets = content.count("[") - content.count("]")
+                    # Close any unterminated strings
+                    if content.count('"') % 2 != 0:
+                        content += '"'
+                    # Close brackets and braces
+                    content += "]" * open_brackets
+                    content += "}" * open_braces
+                    logger.warning(f"⚠️ Attempted to fix truncated JSON")
                 
                 result = json.loads(content)
                 
@@ -248,6 +300,28 @@ class JobAgent:
                     logger.info(f"✅ Detected drop_or_truncate from user input: {params['drop_or_truncate']}")
         
         if tool_name == "read_sql":
+            # Direct parameter extraction ONLY for non-confirmation words
+            if user_input and user_input.strip() and len(user_input.strip().split()) == 1:
+                user_value = user_input.strip().lower()
+                # Skip common confirmation/filler words that aren't actual parameters
+                skip_words = ["yes", "y", "no", "n", "ok", "okay", "sure", "fine", "done", "next"]
+                
+                if user_value not in skip_words:
+                    user_value = user_input.strip()  # Preserve original case
+                    # Determine which single parameter is currently missing
+                    missing_params = []
+                    if not params.get("name"): missing_params.append("name")
+                    if params.get("execute_query") and not params.get("result_schema"): missing_params.append("result_schema")
+                    if params.get("execute_query") and not params.get("table_name"): missing_params.append("table_name")
+                    if params.get("write_count") and not params.get("write_count_schema"): missing_params.append("write_count_schema")
+                    if params.get("write_count") and not params.get("write_count_table"): missing_params.append("write_count_table")
+                    
+                    # Only use direct extraction if exactly ONE param is missing
+                    if len(missing_params) == 1:
+                        param_name = missing_params[0]
+                        params[param_name] = user_value
+                        logger.info(f"📝 Direct extraction (single missing): {param_name}={user_value}")
+            
             # Check if we have name parameter from user
             if not params.get("name"):
                 logger.info("❌ Missing: name")
@@ -361,6 +435,32 @@ class JobAgent:
             }
         
         elif tool_name == "write_data":
+            # Direct parameter extraction ONLY for non-confirmation words
+            if user_input and user_input.strip() and len(user_input.strip().split()) == 1:
+                user_value = user_input.strip().lower()
+                # Skip common confirmation/filler words that aren't actual parameters
+                skip_words = ["yes", "y", "no", "n", "ok", "okay", "sure", "fine", "done", "next", "write", "both", "email"]
+                
+                if user_value not in skip_words:
+                    user_value = user_input.strip()  # Preserve original case
+                    # If we're missing ONE parameter and user gives ONE word, it's likely the answer
+                    missing_params = []
+                    if not params.get("name"): missing_params.append("name")
+                    if not params.get("table"): missing_params.append("table")
+                    if not params.get("schemas"): missing_params.append("schemas")
+                    if not params.get("connection"): missing_params.append("connection")
+                    if not params.get("drop_or_truncate"): missing_params.append("drop_or_truncate")
+                    
+                    # Only use direct extraction if exactly ONE param is missing
+                    if len(missing_params) == 1:
+                        param_name = missing_params[0]
+                        if param_name == "drop_or_truncate" and user_value.lower() in ["drop", "truncate", "none", "insert"]:
+                            params[param_name] = user_value.upper()
+                            logger.info(f"📝 Direct extraction (single missing): {param_name}={params[param_name]}")
+                        elif param_name != "drop_or_truncate":
+                            params[param_name] = user_value
+                            logger.info(f"📝 Direct extraction (single missing): {param_name}={user_value}")
+            
             if not params.get("name"):
                 logger.info("❌ Missing: name")
                 return {
