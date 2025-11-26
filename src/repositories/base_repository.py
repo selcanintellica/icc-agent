@@ -46,6 +46,7 @@ class BaseRepository:
         else:
             url = f"{self.base_url}{endpoint if endpoint else ''}"
         logger.debug(f"Making {method.upper()} request to {url}")
+        logger.info(f"[BaseRepository] Request payload being sent: {data}")
 
         if method.lower() == "post":
             response = await self.client.post(url, json=data, params=params)

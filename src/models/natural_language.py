@@ -121,9 +121,14 @@ class ReadSqlVariables(BaseModel):
         description="Connection identifier for writing row count. Only needed if write_count is True.",
         field_id="28405919100373"
     )
+    write_count_schema: Optional[str] = Field(
+        None,
+        description="Schema name where row count will be written. Only needed if write_count is True.",
+        field_id="28405919737373"
+    )
     execute_query: Optional[bool] = Field(
-        True,
-        description="Whether to execute the query immediately. True by default. Set False to validate only.",
+        False,
+        description="Whether to save query results to database. False by default (query runs but results are not saved). Set True to save results to the specified table.",
         field_id="28405919526172"
     )
     result_schema: Optional[str] = Field(
@@ -168,18 +173,42 @@ class ReadSqlLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         # Access first variable since it's a list
         var = self.variables[0]
+        
+        # Conditional logic based on write_count
+        if not var.write_count:
+            write_count_schema = ""
+            write_count_table = ""
+            write_count_connection = {"definition": "28405919100373", "id": "", "value2": None}
+        else:
+            write_count_schema = var.write_count_schema
+            write_count_table = var.write_count_table
+            write_count_connection = var.write_count_connection
+        
+        # Conditional logic based on execute_query
+        if not var.execute_query:
+            result_schema = ""
+            table_name = ""
+            drop_before_create = True
+            only_dataset_columns = False
+        else:
+            result_schema = var.result_schema
+            table_name = var.table_name
+            drop_before_create = var.drop_before_create
+            only_dataset_columns = var.only_dataset_columns
+        
         return {
                 "template": self.template,
-                "table_name": var.table_name,
-                "query": var.query,
-                "write_count": var.write_count,
-                "write_count_connection": var.write_count_connection,
-                "execute_query": var.execute_query,
-                "result_schema": var.result_schema,
-                "only_dataset_columns": var.only_dataset_columns,
-                "write_count_table": var.write_count_table,
-                "drop_before_create": var.drop_before_create,
                 "connection": var.connection,
+                "query": var.query,
+                "write_count": "true" if var.write_count else "false",
+                "write_count_connection": write_count_connection,
+                "write_count_schema": write_count_schema,
+                "write_count_table": write_count_table,
+                "execute_query": "true" if var.execute_query else "false",
+                "result_schema": result_schema,
+                "table_name": table_name,
+                "drop_before_create": "true" if drop_before_create else "false",
+                "only_dataset_columns": "true" if only_dataset_columns else "false",
             }
 
 
@@ -191,11 +220,6 @@ class ColumnSchema(BaseModel):
 
 class WriteDataVariables(BaseModel):
     # REQUIRED FIELDS
-    only_dataset_columns: bool = Field(
-        ...,
-        description="Whether to write only columns present in the dataset. True restricts to dataset columns only.",
-        field_id="28405919100737"
-    )
     connection: str = Field(
         ...,
         description="Database connection identifier. Required to establish connection for writing data.",
@@ -205,6 +229,14 @@ class WriteDataVariables(BaseModel):
         ...,
         description="Dataset identifier containing the data to write. IMPORTANT: This should be the job ID (object_id) returned from a previously executed read_sql_job.",
         field_id="28405919074002"
+    )
+    data_set_job_name: Optional[str] = Field(
+        default=None,
+        description="Name of the ReadSQL job that produced the data_set. Used for API payload.",
+    )
+    data_set_folder: Optional[str] = Field(
+        default=None,
+        description="Folder ID of the ReadSQL job that produced the data_set. Used for API payload.",
     )
     drop_or_truncate: str = Field(
         ...,
@@ -221,8 +253,18 @@ class WriteDataVariables(BaseModel):
         description="Target table name where data will be written. Must be a valid table name.",
         field_id="28405919059935"
     )
+    schemas: str = Field(
+        ...,
+        description="Schema name for organizing the table. REQUIRED database schema identifier.",
+        field_id="28405919042037"
+    )
     
     # OPTIONAL FIELDS
+    only_dataset_columns: Optional[bool] = Field(
+        False,
+        description="Whether to write only columns present in the dataset. False by default.",
+        field_id="28405919100737"
+    )
     write_count_schemas: Optional[bool] = Field(
         False,
         description="Whether to write count information to schemas. False by default.",
@@ -233,24 +275,19 @@ class WriteDataVariables(BaseModel):
         description="Additional columns to add to the table beyond dataset columns. Empty list by default.",
         field_id="28405918976213"
     )
-    schemas: Optional[str] = Field(
-        None,
-        description="Schema name for organizing the table. Optional database schema identifier.",
-        field_id="28405919042037"
-    )
-    write_count: Optional[str] = Field(
-        None,
-        description="Whether to write row count after data write. Specify 'true' or 'false'.",
+    write_count: Optional[bool] = Field(
+        False,
+        description="Whether to write row count after data write. False by default.",
         field_id="28405919839465"
     )
     write_count_connection: Optional[str] = Field(
         None,
-        description="Connection identifier for writing row count. Only needed if write_count is enabled.",
+        description="Connection identifier for writing row count. Only needed if write_count is True.",
         field_id="28405919193743"
     )
     write_count_table: Optional[str] = Field(
         None,
-        description="Table name where row count will be written. Only needed if write_count is enabled.",
+        description="Table name where row count will be written. Only needed if write_count is True.",
         field_id="28405919372169"
     )
 
@@ -279,18 +316,32 @@ class WriteDataLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         # Access first variable since it's a list
         var = self.variables[0]
+        
+        # Conditional logic based on write_count
+        if not var.write_count:
+            write_count_schemas = ""
+            write_count_table = ""
+            write_count_connection = {"definition": "28405919193743", "id": "", "value2": None}
+        else:
+            write_count_schemas = var.write_count_schemas
+            write_count_table = var.write_count_table
+            write_count_connection = var.write_count_connection
+        
         return {
                 "template": self.template,
-                "only_dataset_columns": var.only_dataset_columns,
-                "write_count_schemas": var.write_count_schemas,
+                "data_set": var.data_set,
+                "columns": var.columns,
+                "add_columns": var.add_columns,
                 "connection": var.connection,
                 "schemas": var.schemas,
-                "data_set": var.data_set,
-                "write_count": var.write_count,
-                "write_count_connection": var.write_count_connection,
-                "drop_or_truncate": var.drop_or_truncate,
                 "table": var.table,
-                "write_count_table": var.write_count_table,
+                "drop_or_truncate": var.drop_or_truncate,
+                "report_format": "false",  # ReportFormat field - defaults to false
+                "only_dataset_columns": "true" if var.only_dataset_columns else "false",
+                "write_count": "true" if var.write_count else "false",
+                "write_count_connection": write_count_connection,
+                "write_count_schemas": write_count_schemas,
+                "write_count_table": write_count_table,
             }
 
 class CompareSqlVariables(BaseModel):
