@@ -12,6 +12,50 @@ from src.ai.router.memory import Memory
 
 logger = logging.getLogger(__name__)
 
+# Job-specific minimal prompts for better performance
+WRITE_DATA_PROMPT_TEMPLATE = """Extract params for write_data job.
+
+Parameters needed:
+- name: Job name to identify it later
+- table: Which table to write data to?
+- schemas: Which schema contains the table?
+- connection: Which database connection to use? (see list below)
+- drop_or_truncate: Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
+
+Available connections:
+{connections}
+
+Ask ONE clear, friendly question at a time. Don't list all parameters at once.
+
+Output JSON: {{\"action\": \"ASK\"|\"TOOL\", \"question\": \"...\", \"params\": {{...}}}}"""
+
+READ_SQL_PROMPT = """Extract params for read_sql job.
+
+IMPORTANT: Extract params from user input FIRST, then ask for missing ones.
+CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+
+Parameters:
+- name: Job name (NEVER extract "ok"/"okay"/"yes"/"no" as name - ask for a real job name)
+- execute_query: Ask "Would you like to save the query results to the database?" (yes=true, no=false)
+- write_count: Ask "Would you like to track the row count?" (yes=true, no=false)
+
+If user provides a REAL value (not just confirmation), extract it into params. Ask ONE question at a time.
+
+Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
+
+SEND_EMAIL_PROMPT = """Extract params for send_email job.
+
+Parameters needed:
+- name: Job name to identify it later
+- to: Recipient email address
+- subject: Email subject line
+- cc: CC email addresses (optional, can be empty)
+- text: Email body text (optional)
+
+Ask ONE clear, friendly question at a time. Don't list all parameters at once.
+
+Output JSON: {{\"action\": \"ASK\"|\"TOOL\", \"question\": \"...\", \"params\": {{...}}}}"""
+
 
 PARAMETER_EXTRACTION_PROMPT = """You are a parameter extraction assistant. Your job is to extract required parameters from user input or ask for missing ones.
 
@@ -142,7 +186,11 @@ class JobAgent:
             model=os.getenv("MODEL_NAME", "qwen3:1.7b"),
             temperature=0.1,  # Lower temperature for more consistent JSON
             base_url="http://localhost:11434",
-            num_predict=800,  # Allow space for thinking + JSON (qwen3:8b thinks out loud)
+            num_predict=4096,  # Increased to 4096 - qwen3:8b is a thinking model that needs more tokens
+            model_kwargs={
+                "think": False,        
+                "stream": True      
+            }
         )
     
     def gather_params(
@@ -179,8 +227,81 @@ class JobAgent:
         context_str = json.dumps(context, indent=2)
         
         try:
-            # Simplified prompt for better LLM performance
-            prompt_text = f"""Tool: {tool_name}
+            # Use job-specific minimal prompts for better performance
+            if tool_name == "write_data":
+                # Build missing params list
+                missing = []
+                if not memory.gathered_params.get("name"): missing.append("name")
+                if not memory.gathered_params.get("table"): missing.append("table")
+                if not memory.gathered_params.get("schemas"): missing.append("schemas")
+                if not memory.gathered_params.get("connection"): missing.append("connection")
+                if not memory.gathered_params.get("drop_or_truncate"): missing.append("drop_or_truncate")
+                
+                # Get connection list and inject into system prompt
+                connection_list = memory.get_connection_list_for_llm() if memory.connections else "(Using connection from previous job)"
+                system_prompt = WRITE_DATA_PROMPT_TEMPLATE.format(connections=connection_list)
+                
+                # Include last question for context if available
+                last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
+                
+                prompt_text = f"""{last_q}User answer: "{user_input}"
+Current: {json.dumps(memory.gathered_params)}
+Missing: {', '.join(missing) if missing else 'none'}
+
+Output JSON only:"""
+                
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt_text)
+                ]
+                
+            elif tool_name == "read_sql":
+                # Minimal prompt for read_sql with clear extraction instruction
+                missing = []
+                if not memory.gathered_params.get("name"): missing.append("name")
+                if "execute_query" not in memory.gathered_params: missing.append("execute_query")
+                if "write_count" not in memory.gathered_params: missing.append("write_count")
+                
+                # Include last question for context if available
+                last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
+                
+                prompt_text = f"""{last_q}User answer: "{user_input}"
+Current: {json.dumps(memory.gathered_params)}
+Missing: {', '.join(missing) if missing else 'none'}
+
+Example - If user says "read23", extract: {{"name": "read23"}}
+Example - If user says "yes", extract: {{"execute_query": true}} or {{"write_count": true}}
+
+Output JSON only:"""
+                
+                messages = [
+                    SystemMessage(content=READ_SQL_PROMPT),
+                    HumanMessage(content=prompt_text)
+                ]
+                
+            elif tool_name == "send_email":
+                # Minimal prompt for send_email
+                missing = []
+                if not memory.gathered_params.get("name"): missing.append("name")
+                if not memory.gathered_params.get("to"): missing.append("to")
+                if not memory.gathered_params.get("subject"): missing.append("subject")
+                
+                # Include last question for context if available
+                last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
+                
+                prompt_text = f"""{last_q}User answer: "{user_input}"
+Current: {json.dumps(memory.gathered_params)}
+Missing: {', '.join(missing) if missing else 'none'}
+
+Output JSON only:"""
+                
+                messages = [
+                    SystemMessage(content=SEND_EMAIL_PROMPT),
+                    HumanMessage(content=prompt_text)
+                ]
+            else:
+                # Fallback to original prompt for compare_sql or unknown tools
+                prompt_text = f"""Tool: {tool_name}
 Current params: {json.dumps(memory.gathered_params)}
 User said: "{user_input}"
 
@@ -188,14 +309,17 @@ IMPORTANT: Output ONLY the JSON response. Do NOT include any thinking, explanati
 Just output the JSON object directly.
 
 Extract parameters or ask for missing ones."""
-            
-            messages = [
-                SystemMessage(content=PARAMETER_EXTRACTION_PROMPT),
-                HumanMessage(content=prompt_text)
-            ]
+                
+                messages = [
+                    SystemMessage(content=PARAMETER_EXTRACTION_PROMPT),
+                    HumanMessage(content=prompt_text)
+                ]
             
             response = self.llm.invoke(messages)
+            logger.info(f"📝 Job Agent raw response: {response}")
             content = response.content.strip()
+            final_answer = response.additional_kwargs.get("content")
+            logger.info(f"📝 Final answer from LLM: {final_answer}")
             
             logger.info(f"🤖 Job Agent raw response: {content[:300]}...")
             
@@ -257,14 +381,64 @@ Extract parameters or ask for missing ones."""
                     memory.gathered_params.update(new_params)
                     logger.info(f"📝 Updated gathered_params: {memory.gathered_params}")
                 
-                # For read_sql, always use fallback to ensure we use memory.connection
-                if tool_name == "read_sql":
-                    return self._fallback_param_check(memory, tool_name, user_input)
-                
                 logger.info(f"✅ Job Agent action: {result.get('action')}, params: {result.get('params')}")
                 
-                # For write_data, use fallback to ensure proper validation
-                if tool_name == "write_data":
+                # Check for direct yes/no answers BEFORE using LLM's question
+                # This handles cases where LLM doesn't extract yes/no into params
+                if user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]:
+                    user_lower = user_input.lower().strip()
+                    
+                    # For read_sql: Check params in the ORDER they're asked
+                    # Priority: execute_query (asked first) → write_count (asked second)
+                    if tool_name == "read_sql":
+                        if "execute_query" not in memory.gathered_params:
+                            # First missing param is execute_query
+                            if user_lower in ["yes", "y", "true", "1"]:
+                                memory.gathered_params["execute_query"] = True
+                                logger.info("📝 Set execute_query=True from direct user input (pre-fallback)")
+                            elif user_lower in ["no", "n", "false", "0"]:
+                                memory.gathered_params["execute_query"] = False
+                                logger.info("📝 Set execute_query=False from direct user input (pre-fallback)")
+                        elif "write_count" not in memory.gathered_params:
+                            # Second missing param is write_count
+                            if user_lower in ["yes", "y", "true", "1"]:
+                                memory.gathered_params["write_count"] = True
+                                logger.info("📝 Set write_count=True from direct user input (pre-fallback)")
+                            elif user_lower in ["no", "n", "false", "0"]:
+                                memory.gathered_params["write_count"] = False
+                                logger.info("📝 Set write_count=False from direct user input (pre-fallback)")
+                    
+                    # For write_data: only write_count uses yes/no
+                    elif tool_name == "write_data" and "write_count" not in memory.gathered_params:
+                        if user_lower in ["yes", "y", "true", "1"]:
+                            memory.gathered_params["write_count"] = True
+                            logger.info("📝 Set write_count=True from direct user input (pre-fallback)")
+                        elif user_lower in ["no", "n", "false", "0"]:
+                            memory.gathered_params["write_count"] = False
+                            logger.info("📝 Set write_count=False from direct user input (pre-fallback)")
+                
+                # If LLM returned a valid question, use it directly
+                if result.get("action") == "ASK" and result.get("question"):
+                    logger.info(f"📝 Using LLM's question: {result['question']}")
+                    # But check if we just handled a yes/no - if so, don't ask the same question again
+                    if user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]:
+                        # Re-run gathering to get next question (with EMPTY user_input to avoid re-processing)
+                        logger.info("📝 Just handled yes/no, checking for next required param")
+                        return self._fallback_param_check(memory, tool_name, user_input="")
+                    
+                    # If asking for connection for write_data, append available connections list
+                    question = result.get("question", "")
+                    if tool_name == "write_data" and "connection" in question.lower() and "connection" not in memory.gathered_params:
+                        connection_list = memory.get_connection_list_for_llm()
+                        if connection_list:
+                            result["question"] = f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
+                            logger.info("📝 Enhanced connection question with available connections list")
+                    
+                    return result
+                
+                # If LLM says all params ready (TOOL), validate with fallback
+                # This ensures we have all required params and apply business rules
+                if result.get("action") == "TOOL":
                     return self._fallback_param_check(memory, tool_name, user_input)
                 
                 return result
@@ -281,47 +455,11 @@ Extract parameters or ask for missing ones."""
             return self._fallback_param_check(memory, tool_name, user_input)
     
     def _fallback_param_check(self, memory: Memory, tool_name: str, user_input: str = "") -> Dict[str, Any]:
-        """Fallback parameter checking if LLM fails."""
+        """Fallback parameter checking if LLM fails. Just asks questions, doesn't try to extract."""
         params = memory.gathered_params
         logger.info(f"🔧 Fallback check for {tool_name}, current params: {params}")
         
-        # Simple heuristic: if user gives a single word answer, try to match it to missing params
-        if user_input and tool_name == "write_data":
-            user_lower = user_input.strip().lower()
-            
-            # Check for drop_or_truncate values
-            if not params.get("drop_or_truncate"):
-                if user_lower in ["drop", "truncate", "none", "insert", "append"]:
-                    # Map user input to expected values
-                    if user_lower in ["insert", "append"]:
-                        params["drop_or_truncate"] = "none"
-                    else:
-                        params["drop_or_truncate"] = user_lower
-                    logger.info(f"✅ Detected drop_or_truncate from user input: {params['drop_or_truncate']}")
-        
         if tool_name == "read_sql":
-            # Direct parameter extraction ONLY for non-confirmation words
-            if user_input and user_input.strip() and len(user_input.strip().split()) == 1:
-                user_value = user_input.strip().lower()
-                # Skip common confirmation/filler words that aren't actual parameters
-                skip_words = ["yes", "y", "no", "n", "ok", "okay", "sure", "fine", "done", "next"]
-                
-                if user_value not in skip_words:
-                    user_value = user_input.strip()  # Preserve original case
-                    # Determine which single parameter is currently missing
-                    missing_params = []
-                    if not params.get("name"): missing_params.append("name")
-                    if params.get("execute_query") and not params.get("result_schema"): missing_params.append("result_schema")
-                    if params.get("execute_query") and not params.get("table_name"): missing_params.append("table_name")
-                    if params.get("write_count") and not params.get("write_count_schema"): missing_params.append("write_count_schema")
-                    if params.get("write_count") and not params.get("write_count_table"): missing_params.append("write_count_table")
-                    
-                    # Only use direct extraction if exactly ONE param is missing
-                    if len(missing_params) == 1:
-                        param_name = missing_params[0]
-                        params[param_name] = user_value
-                        logger.info(f"📝 Direct extraction (single missing): {param_name}={user_value}")
-            
             # Check if we have name parameter from user
             if not params.get("name"):
                 logger.info("❌ Missing: name")
@@ -337,13 +475,6 @@ Extract parameters or ask for missing ones."""
                     "action": "ASK",
                     "question": "Would you like to save the query results to the database? (yes/no)"
                 }
-            
-            # Normalize execute_query response
-            execute_query_value = params.get("execute_query", False)
-            if isinstance(execute_query_value, str):
-                execute_query_value = execute_query_value.lower().strip() in ["yes", "true", "y", "1"]
-                params["execute_query"] = execute_query_value
-                logger.info(f"📝 Normalized execute_query to: {execute_query_value}")
             
             # If execute_query is true, we need additional parameters
             if params.get("execute_query"):
@@ -365,32 +496,6 @@ Extract parameters or ask for missing ones."""
                         "action": "ASK",
                         "question": "Should I drop the table before creating it? (yes/no)"
                     }
-                
-                # Normalize drop_before_create response
-                drop_value = params.get("drop_before_create", False)
-                if isinstance(drop_value, str):
-                    drop_value = drop_value.lower().strip() in ["yes", "true", "y", "1", "drop"]
-                    params["drop_before_create"] = drop_value
-                    logger.info(f"📝 Normalized drop_before_create to: {drop_value}")
-            
-            # Check user_input directly FIRST for yes/no responses (more reliable than LLM extraction)
-            if user_input and "write_count" not in params:
-                user_lower = user_input.lower().strip()
-                if user_lower in ["yes", "y", "true", "1"]:
-                    params["write_count"] = True
-                    logger.info("📝 Set write_count=True from direct user input")
-                elif user_lower in ["no", "n", "false", "0"]:
-                    params["write_count"] = False
-                    logger.info("📝 Set write_count=False from direct user input")
-            
-            # Normalize write_count if it exists from LLM extraction
-            if "write_count" in params:
-                write_count_value = params.get("write_count")
-                if isinstance(write_count_value, str):
-                    user_lower = write_count_value.lower().strip()
-                    write_count_value = user_lower in ["yes", "true", "y", "1"]
-                    params["write_count"] = write_count_value
-                    logger.info(f"📝 Normalized write_count from LLM extraction to: {write_count_value}")
             
             # Check if we should ask about write_count
             if "write_count" not in params:
@@ -435,32 +540,6 @@ Extract parameters or ask for missing ones."""
             }
         
         elif tool_name == "write_data":
-            # Direct parameter extraction ONLY for non-confirmation words
-            if user_input and user_input.strip() and len(user_input.strip().split()) == 1:
-                user_value = user_input.strip().lower()
-                # Skip common confirmation/filler words that aren't actual parameters
-                skip_words = ["yes", "y", "no", "n", "ok", "okay", "sure", "fine", "done", "next", "write", "both", "email"]
-                
-                if user_value not in skip_words:
-                    user_value = user_input.strip()  # Preserve original case
-                    # If we're missing ONE parameter and user gives ONE word, it's likely the answer
-                    missing_params = []
-                    if not params.get("name"): missing_params.append("name")
-                    if not params.get("table"): missing_params.append("table")
-                    if not params.get("schemas"): missing_params.append("schemas")
-                    if not params.get("connection"): missing_params.append("connection")
-                    if not params.get("drop_or_truncate"): missing_params.append("drop_or_truncate")
-                    
-                    # Only use direct extraction if exactly ONE param is missing
-                    if len(missing_params) == 1:
-                        param_name = missing_params[0]
-                        if param_name == "drop_or_truncate" and user_value.lower() in ["drop", "truncate", "none", "insert"]:
-                            params[param_name] = user_value.upper()
-                            logger.info(f"📝 Direct extraction (single missing): {param_name}={params[param_name]}")
-                        elif param_name != "drop_or_truncate":
-                            params[param_name] = user_value
-                            logger.info(f"📝 Direct extraction (single missing): {param_name}={user_value}")
-            
             if not params.get("name"):
                 logger.info("❌ Missing: name")
                 return {
@@ -483,8 +562,11 @@ Extract parameters or ask for missing ones."""
             if not params.get("connection"):
                 logger.info("❌ Missing: connection for write_data")
                 # Get available connections from memory
+                logger.info(f"📋 Memory has {len(memory.connections)} connections: {list(memory.connections.keys())[:5] if memory.connections else 'EMPTY'}")
                 connection_list = memory.get_connection_list_for_llm()
-                if connection_list:
+                logger.info(f"📋 Connection list for LLM: {connection_list[:200] if connection_list else 'EMPTY'}...")
+                # Check if we have actual connections (not just the "No connections available" message)
+                if connection_list and memory.connections:
                     return {
                         "action": "ASK",
                         "question": f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
@@ -499,25 +581,6 @@ Extract parameters or ask for missing ones."""
                     "action": "ASK",
                     "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
                 }
-            
-            # Check user_input directly FIRST for yes/no responses (more reliable than LLM extraction)
-            if user_input and "write_count" not in params:
-                user_lower = user_input.lower().strip()
-                if user_lower in ["yes", "y", "true", "1"]:
-                    params["write_count"] = True
-                    logger.info("📝 Set write_count=True from direct user input")
-                elif user_lower in ["no", "n", "false", "0"]:
-                    params["write_count"] = False
-                    logger.info("📝 Set write_count=False from direct user input")
-            
-            # Normalize write_count if it exists from LLM extraction
-            if "write_count" in params:
-                write_count_value = params.get("write_count")
-                if isinstance(write_count_value, str):
-                    user_lower = write_count_value.lower().strip()
-                    write_count_value = user_lower in ["yes", "true", "y", "1"]
-                    params["write_count"] = write_count_value
-                    logger.info(f"📝 Normalized write_count from LLM extraction to: {write_count_value}")
             
             # Check if we should ask about write_count
             if "write_count" not in params:

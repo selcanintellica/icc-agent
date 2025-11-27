@@ -177,6 +177,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         
         if action.get("action") == "ASK":
             # Need more parameters
+            memory.last_question = action["question"]  # Save question for next turn
             return memory, action["question"]
         
         if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
@@ -582,6 +583,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             wants_email = "email" in user_lower or "send" in user_lower
         
         if wants_write:
+            # If switching to write_data for the first time, clear old params from previous job
+            if memory.current_tool != "write_data":
+                logger.info("🔄 Switching to write_data, clearing gathered_params from previous job")
+                memory.gathered_params = {}
+                memory.last_question = None
+            
             memory.current_tool = "write_data"  # Track that we're gathering params for write_data
             logger.info("📝 Processing write_data request...")
             
@@ -590,6 +597,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
             if action.get("action") == "ASK":
                 logger.info(f"❓ Asking user: {action['question']}")
+                memory.last_question = action["question"]  # Save question for next turn
                 return memory, action["question"]
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
@@ -677,6 +685,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # Reset params and tool after successful write
                     memory.gathered_params = {}
                     memory.current_tool = None
+                    memory.last_question = None
 
                     return memory, f"✅ Data written successfully to table '{table_name}' in {schemas} schema!\nAnything else? (email / done)"
                     
@@ -685,12 +694,19 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     return memory, f"❌ Error: {str(e)}\nPlease try again."
         
         elif wants_email:
+            # If switching to send_email for the first time, clear old params from previous job
+            if memory.current_tool != "send_email":
+                logger.info("🔄 Switching to send_email, clearing gathered_params from previous job")
+                memory.gathered_params = {}
+                memory.last_question = None
+            
             memory.current_tool = "send_email"  # Track that we're gathering params for send_email
             logger.info("📧 Processing send_email request...")
             
             action = call_job_agent(memory, user_utterance, tool_name="send_email")
             
             if action.get("action") == "ASK":
+                memory.last_question = action["question"]  # Save question for next turn
                 return memory, action["question"]
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "send_email":

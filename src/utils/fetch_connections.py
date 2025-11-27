@@ -4,21 +4,22 @@ from pathlib import Path
 import os
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-import requests
-from requests.auth import HTTPBasicAuth
+import httpx
+from src.utils.auth import authenticate
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_connection_list(base_url: Optional[str] = None, auth: Optional[tuple[str, str]] = None) -> Dict[str, Any]:
+async def fetch_connection_list(base_url: Optional[str] = None, auth_headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """
     ICC connection list endpoint'ine GET isteği atar ve JSON döner.
+    Uses the same authentication pattern as other repositories.
     
     Args:
         base_url: API endpoint URL (if None, uses ICC_CONNECTION_LIST_URL env var)
-        auth: Optional tuple of (username, password) for basic auth
+        auth_headers: Optional dict with Authorization and TokenKey headers
         
     Returns:
         JSON response from the API
@@ -29,20 +30,30 @@ def fetch_connection_list(base_url: Optional[str] = None, auth: Optional[tuple[s
     if not base_url:
         raise RuntimeError("ICC_CONNECTION_LIST_URL env variable is not set and no base_url provided")
 
-    logger.info(f"Fetching connection list from: {base_url}")
+    logger.info(f"🔌 Fetching connection list from: {base_url}")
+    logger.info(f"🔐 Auth: {'enabled' if auth_headers else 'disabled'}")
     
     try:
-        if auth:
-            resp = requests.get(base_url, auth=HTTPBasicAuth(*auth), timeout=30, verify=False)
-        else:
-            resp = requests.get(base_url, timeout=30, verify=False)
-        
-        resp.raise_for_status()
-        data = resp.json()
-        logger.info(f"Successfully fetched {len(data.get('object', []))} connections")
-        return data
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to fetch connection list: {e}")
+        async with httpx.AsyncClient(headers=auth_headers or {}, verify=False, timeout=30.0) as client:
+            resp = await client.get(base_url)
+            
+            logger.info(f"📡 Response status: {resp.status_code}")
+            resp.raise_for_status()
+            data = resp.json()
+            
+            objects = data.get('object', [])
+            logger.info(f"✅ Successfully fetched {len(objects)} connections from API")
+            
+            if len(objects) == 0:
+                logger.warning("⚠️ API returned empty connection list! Check API response format.")
+                logger.warning(f"📄 Raw response keys: {list(data.keys())}")
+            
+            return data
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching connection list: {e.response.status_code} - {e.response.text}")
+        raise
+    except httpx.RequestError as e:
+        logger.error(f"Request error fetching connection list: {e}")
         raise
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON response: {e}")
@@ -144,16 +155,22 @@ def map_connection_list_to_config(response_json: Dict[str, Any]) -> Dict[str, Di
     objects: List[Dict[str, Any]] = response_json.get("object") or []
     result: Dict[str, Dict[str, Any]] = {}
 
-    logger.info(f"Mapping {len(objects)} connection objects")
+    logger.info(f"📋 Mapping {len(objects)} connection objects")
     
+    skipped_count = 0
     for obj in objects:
         mapped = map_connection_object(obj)
         if not mapped:
+            skipped_count += 1
             continue
         name, payload = mapped
         result[name] = payload
 
-    logger.info(f"Successfully mapped {len(result)} connections")
+    logger.info(f"✅ Successfully mapped {len(result)} connections (skipped {skipped_count} invalid)")
+    
+    if len(result) == 0 and len(objects) > 0:
+        logger.error(f"❌ All {len(objects)} connection objects were skipped! Check map_connection_object logic.")
+    
     return result
 
 
@@ -175,14 +192,15 @@ def save_connections_to_json(config: Dict[str, Dict[str, Any]], filename: str = 
 
     print(f"[OK] Saved {len(config)} connections to {output_path}")
 
-def fetch_and_map_connections(base_url: Optional[str] = None, auth: Optional[tuple[str, str]] = None) -> Dict[str, Dict[str, Any]]:
+async def fetch_and_map_connections(base_url: Optional[str] = None, auth_headers: Optional[Dict[str, str]] = None) -> Dict[str, Dict[str, Any]]:
     """
     ICC endpoint'inden connection list'i çekip, map_connection_list_to_config
     ile internal formata çevirip dict olarak döner.
+    Uses the same authentication pattern as other repositories.
     
     Args:
         base_url: API endpoint URL (optional)
-        auth: Optional tuple of (username, password) for basic auth
+        auth_headers: Optional dict with Authorization and TokenKey headers
         
     Returns:
         Dictionary mapping connection names to their info:
@@ -196,29 +214,30 @@ def fetch_and_map_connections(base_url: Optional[str] = None, auth: Optional[tup
             ...
         }
     """
-    raw = fetch_connection_list(base_url=base_url, auth=auth)
+    raw = await fetch_connection_list(base_url=base_url, auth_headers=auth_headers)
     return map_connection_list_to_config(raw)
 
 
-def populate_memory_connections(memory, base_url: Optional[str] = None, auth: Optional[tuple[str, str]] = None) -> bool:
+async def populate_memory_connections(memory, base_url: Optional[str] = None, auth_headers: Optional[Dict[str, str]] = None) -> bool:
     """
     Convenience function to fetch connections from API and populate memory.connections.
+    Uses the same authentication pattern as other repositories.
     
     Args:
         memory: Memory instance to populate
         base_url: API endpoint URL (optional)
-        auth: Optional tuple of (username, password) for basic auth
+        auth_headers: Optional dict with Authorization and TokenKey headers
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        connections = fetch_and_map_connections(base_url=base_url, auth=auth)
+        connections = await fetch_and_map_connections(base_url=base_url, auth_headers=auth_headers)
         memory.connections = connections
         logger.info(f"✅ Populated memory with {len(connections)} connections")
         return True
     except Exception as e:
-        logger.error(f"❌ Failed to populate memory connections: {e}")
+        logger.error(f"❌ Failed to populate memory connections: {e}", exc_info=True)
         return False
 
 

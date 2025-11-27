@@ -73,6 +73,7 @@ class Memory:
     last_preview: Optional[Dict[str, Any]] = None
     gathered_params: Dict[str, Any] = field(default_factory=dict)
     current_tool: Optional[str] = None  # Track which tool we're gathering params for (write_data, send_email, etc)
+    last_question: Optional[str] = None  # Track the last question asked to user for context
     execute_query_enabled: bool = False  # Track if ReadSQL executed with execute_query=true (auto-writes data)
     connection: str = "ORACLE_10"  # Connection name, set from UI
     schema: str = "SALES"  # Schema name, set from UI
