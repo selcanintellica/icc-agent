@@ -556,13 +556,8 @@ Extract parameters or ask for missing ones."""
                     "action": "ASK",
                     "question": "What table should I write the data to?"
                 }
-            if not params.get("schemas"):
-                logger.info("❌ Missing: schemas")
-                return {
-                    "action": "ASK",
-                    "question": "What schema should I write the data to?"
-                }
-            # Ask user for connection from available dynamic connections
+            
+            # Ask user for connection from available dynamic connections FIRST
             if not params.get("connection"):
                 logger.info("❌ Missing: connection for write_data")
                 # Get available connections from memory
@@ -579,6 +574,34 @@ Extract parameters or ask for missing ones."""
                     # Fallback: use the same connection as read_sql
                     params["connection"] = memory.connection
                     logger.info(f"⚠️ No dynamic connections available, using read_sql connection: {memory.connection}")
+            
+            # Now that we have connection, fetch schemas if not already cached
+            if not params.get("schemas"):
+                # Check if we need to fetch schemas for the selected connection
+                connection_name = params.get("connection")
+                if connection_name and not memory.available_schemas:
+                    # Need to fetch schemas - signal to router to do async fetch
+                    logger.info(f"📋 Need to fetch schemas for connection: {connection_name}")
+                    return {
+                        "action": "FETCH_SCHEMAS",
+                        "connection": connection_name,
+                        "question": "Fetching available schemas..."
+                    }
+                elif memory.available_schemas:
+                    # We have schemas, ask user to choose
+                    logger.info("❌ Missing: schemas (have cached list)")
+                    schema_list = memory.get_schema_list_for_llm()
+                    return {
+                        "action": "ASK",
+                        "question": f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                    }
+                else:
+                    # No connection ID available, ask for schema without list
+                    logger.info("❌ Missing: schemas (no cached list)")
+                    return {
+                        "action": "ASK",
+                        "question": "What schema should I write the data to?"
+                    }
             if not params.get("drop_or_truncate"):
                 logger.info("❌ Missing: drop_or_truncate")
                 return {

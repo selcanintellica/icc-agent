@@ -139,6 +139,20 @@ class Memory:
         
         return "\n".join(conn_list)
     
+    def get_schema_list_for_llm(self) -> str:
+        """
+        Format schema list for LLM to present to user.
+        
+        Returns:
+            Formatted string with available schemas
+        """
+        if not self.available_schemas:
+            return "No schemas available."
+        
+        # Format schemas in columns for better readability
+        schema_list = [f"• {schema}" for schema in self.available_schemas]
+        return "\n".join(schema_list)
+    
     def reset(self):
         """Reset memory to start a new conversation."""
         self.stage = Stage.START

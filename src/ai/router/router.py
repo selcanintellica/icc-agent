@@ -595,6 +595,41 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             action = call_job_agent(memory, user_utterance, tool_name="write_data")
             logger.info(f"🔍 Job agent returned: action={action.get('action')}, tool={action.get('tool_name')}")
 
+            if action.get("action") == "FETCH_SCHEMAS":
+                # Need to fetch schemas for the selected connection
+                connection_name = action.get("connection")
+                logger.info(f"📋 Fetching schemas for connection: {connection_name}")
+                
+                try:
+                    from src.utils.icc_api_client import fetch_schemas_for_connection
+                    from src.utils.auth import authenticate
+                    
+                    # Get connection ID
+                    connection_id = memory.get_connection_id(connection_name)
+                    if not connection_id:
+                        logger.error(f"❌ Cannot fetch schemas: Unknown connection {connection_name}")
+                        return memory, f"❌ Error: Unknown connection '{connection_name}'"
+                    
+                    # Get auth headers
+                    userpass, token = authenticate()
+                    auth_headers = {
+                        "Authorization": f"Basic {userpass}",
+                        "TokenKey": token
+                    }
+                    
+                    # Fetch schemas
+                    schemas = await fetch_schemas_for_connection(connection_id, auth_headers=auth_headers)
+                    memory.available_schemas = schemas
+                    logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
+                    
+                    # Now ask user to choose schema
+                    schema_list = memory.get_schema_list_for_llm()
+                    return memory, f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+                    return memory, "What schema should I write the data to?"
+
             if action.get("action") == "ASK":
                 logger.info(f"❓ Asking user: {action['question']}")
                 memory.last_question = action["question"]  # Save question for next turn

@@ -46,7 +46,7 @@ print("="*60 + "\n")
 # ICC Agent imports - Using Staged Router
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
-from src.utils.fetch_connections import populate_memory_connections
+from src.utils.icc_api_client import populate_memory_connections
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
