@@ -460,6 +460,42 @@ Extract parameters or ask for missing ones."""
             logger.error(f"❌ Job Agent error: {str(e)}")
             return self._fallback_param_check(memory, tool_name, user_input)
     
+    def _check_write_count_params(self, params: Dict[str, Any], memory: Memory, param_prefix: str = "write_count") -> Optional[Dict[str, Any]]:
+        """Check write_count related parameters. Returns ASK action if missing, None if complete.
+        
+        Args:
+            params: Current gathered parameters
+            memory: Conversation memory
+            param_prefix: Prefix for parameter names ('write_count' or 'write_count')
+        """
+        schema_param = f"{param_prefix}_schema" if param_prefix == "write_count" else f"{param_prefix}_schemas"
+        
+        if not params.get(schema_param):
+            logger.info(f"❌ Missing: {schema_param} (write_count=true)")
+            return {
+                "action": "ASK",
+                "question": "What schema should I write the row count to?"
+            }
+        if not params.get(f"{param_prefix}_table"):
+            logger.info(f"❌ Missing: {param_prefix}_table (write_count=true)")
+            return {
+                "action": "ASK",
+                "question": "What table should I write the row count to?"
+            }
+        if not params.get(f"{param_prefix}_connection"):
+            logger.info(f"❌ Missing: {param_prefix}_connection (write_count=true), suggesting: {memory.connection}")
+            return {
+                "action": "ASK",
+                "question": f"What connection should I use for the row count? (Press enter for '{memory.connection}')"
+            }
+        
+        # If user just pressed enter or said "same", use memory.connection
+        if params.get(f"{param_prefix}_connection", "").strip() in ["", "same", "default"]:
+            params[f"{param_prefix}_connection"] = memory.connection
+            logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+        
+        return None  # All params present
+    
     def _fallback_param_check(self, memory: Memory, tool_name: str, user_input: str = "") -> Dict[str, Any]:
         """Fallback parameter checking if LLM fails. Just asks questions, doesn't try to extract."""
         params = memory.gathered_params
@@ -513,29 +549,9 @@ Extract parameters or ask for missing ones."""
             
             # If write_count is true, we need additional parameters
             if params.get("write_count"):
-                if not params.get("write_count_schema"):
-                    logger.info("❌ Missing: write_count_schema (write_count=true)")
-                    return {
-                        "action": "ASK",
-                        "question": "What schema should I write the row count to?"
-                    }
-                if not params.get("write_count_table"):
-                    logger.info("❌ Missing: write_count_table (write_count=true)")
-                    return {
-                        "action": "ASK",
-                        "question": "What table should I write the row count to?"
-                    }
-                if not params.get("write_count_connection"):
-                    logger.info(f"❌ Missing: write_count_connection (write_count=true), suggesting: {memory.connection}")
-                    return {
-                        "action": "ASK",
-                        "question": f"What connection should I use for the row count? (Press enter for '{memory.connection}')"
-                    }
-                
-                # If user just pressed enter or said "same", use memory.connection
-                if params.get("write_count_connection", "").strip() in ["", "same", "default"]:
-                    params["write_count_connection"] = memory.connection
-                    logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+                result = self._check_write_count_params(params, memory, "write_count")
+                if result:  # Missing parameters
+                    return result
             
             # Have all required params
             logger.info(f"✅ All read_sql params present: {params}")
@@ -621,29 +637,9 @@ Extract parameters or ask for missing ones."""
             
             # If write_count is true, we need additional parameters
             if params.get("write_count"):
-                if not params.get("write_count_schemas"):
-                    logger.info("❌ Missing: write_count_schemas (write_count=true)")
-                    return {
-                        "action": "ASK",
-                        "question": "What schema should I write the row count to?"
-                    }
-                if not params.get("write_count_table"):
-                    logger.info("❌ Missing: write_count_table (write_count=true)")
-                    return {
-                        "action": "ASK",
-                        "question": "What table should I write the row count to?"
-                    }
-                if not params.get("write_count_connection"):
-                    logger.info(f"❌ Missing: write_count_connection (write_count=true), suggesting: {memory.connection}")
-                    return {
-                        "action": "ASK",
-                        "question": f"What connection should I use for the row count? (Press enter for '{memory.connection}')"
-                    }
-                
-                # If user just pressed enter or said "same", use memory.connection
-                if params.get("write_count_connection", "").strip() in ["", "same", "default"]:
-                    params["write_count_connection"] = memory.connection
-                    logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+                result = self._check_write_count_params(params, memory, "write_count")
+                if result:  # Missing parameters
+                    return result
             
             # Have all params
             logger.info(f"✅ All write_data params present: {params}")
