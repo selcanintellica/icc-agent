@@ -1,4 +1,4 @@
-from src.utils.config import API_CONFIG
+from src.config.api_config import API_CONFIG
 from src.models.query import QueryPayload, QueryResponse
 from src.models.save_job_response import APIResponse
 from src.repositories.base_repository import BaseRepository

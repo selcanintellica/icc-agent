@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException
 
 from src.models.save_job_response import  APIResponse
-from src.utils.config import API_CONFIG
+from src.config.api_config import API_CONFIG
 
 from loguru import logger
 

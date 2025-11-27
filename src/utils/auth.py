@@ -3,7 +3,7 @@ Authentication utilities for API access.
 """
 from typing import Optional, Tuple
 import httpx
-from src.utils.config import AUTH_CONFIG
+from src.config.api_config import AUTH_CONFIG
 from loguru import logger
 
 

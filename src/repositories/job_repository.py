@@ -3,7 +3,7 @@ import logging
 from src.models.wire import WirePayload
 from src.models.query import QueryPayload
 from src.models.save_job_response import APIResponse, JobResponse
-from src.utils.config import API_CONFIG
+from src.config.api_config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
 
 from src.payload_builders.wire_builder import build_wire_payload

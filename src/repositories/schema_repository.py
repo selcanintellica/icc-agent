@@ -1,8 +1,8 @@
 """
-Database configuration loader - reads database hierarchy from JSON config.
+Database schema repository - loads database hierarchy from JSON config.
 
-This module replaces the file-based schema_docs folder scanning with
-JSON configuration for UI dropdowns.
+This module provides access to database metadata (connections, schemas, tables, columns)
+from the db_config.json configuration file.
 """
 
 import json
@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 CONFIG_PATH = Path(__file__).parent.parent.parent / "db_config.json"
 
 
-class ConfigLoader:
-    """Loads database configuration from JSON file."""
+class SchemaRepository:
+    """Repository for database schema metadata."""
     
     def __init__(self, config_path: Optional[Path] = None):
         """
-        Initialize the config loader.
+        Initialize the schema repository.
         
         Args:
             config_path: Path to db_config.json. If None, uses default.
@@ -29,7 +29,7 @@ class ConfigLoader:
         self.config_path = config_path or CONFIG_PATH
         self._config = None
         
-        logger.info(f"🔍 ConfigLoader initialized with path: {self.config_path.absolute()}")
+        logger.info(f"🔍 SchemaRepository initialized with path: {self.config_path.absolute()}")
         
         if not self.config_path.exists():
             logger.error(f"❌ Config file does not exist: {self.config_path.absolute()}")
@@ -223,12 +223,12 @@ class ConfigLoader:
         return schema
 
 
-# Global instance
-config_loader = ConfigLoader()
+# Global instance (for backwards compatibility with old config_loader interface)
+config_loader = SchemaRepository()
 
 
-def get_config_loader() -> ConfigLoader:
-    """Get the global config loader instance."""
+def get_config_loader() -> SchemaRepository:
+    """Get the global schema repository instance."""
     return config_loader
 
 

@@ -1,3 +1,4 @@
+"""API and authentication configuration."""
 import os
 from dotenv import load_dotenv
 
