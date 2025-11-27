@@ -17,17 +17,21 @@ WRITE_DATA_PROMPT_TEMPLATE = """Extract params for write_data job.
 
 CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
 
-Parameters needed (in order):
-1. name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
-2. table: Which table to write data to?
-3. connection: Which database connection to use? (see list below)
-4. schemas: Which schema contains the table? (DO NOT ASK - system will fetch available schemas after connection is selected)
-5. drop_or_truncate: Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
+Parameters needed (in order) with EXACT types:
+1. name (string): Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
+2. table (string): Which table to write data to?
+3. connection (string): Which database connection to use? (see list below)
+4. schemas (string): Which schema contains the table? (DO NOT ASK - system will fetch available schemas after connection is selected)
+5. drop_or_truncate (string): "drop", "truncate", or "none" - Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
+6. write_count (boolean): true or false - Ask "Would you like to track the row count for this write operation? (yes/no)"
 
 Available connections:
 {connections}
 
-IMPORTANT: After connection is selected, DO NOT ask about schemas. The missing schemas will trigger automatic schema fetching.
+IMPORTANT: 
+- After connection is selected, DO NOT ask about schemas. The missing schemas will trigger automatic schema fetching.
+- schemas must be a STRING (e.g., "ANONYMOUS"), NOT a list
+- write_count must be a BOOLEAN (true/false), not a string
 
 Ask ONE clear, friendly question at a time. Don't list all parameters at once.
 
@@ -38,25 +42,27 @@ READ_SQL_PROMPT = """Extract params for read_sql job.
 IMPORTANT: Extract params from user input FIRST, then ask for missing ones.
 CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
 
-Parameters:
-- name: Job name (NEVER extract "ok"/"okay"/"yes"/"no" as name - ask for a real job name)
-- execute_query: Ask "Would you like to save the query results to the database?" (yes=true, no=false)
-- write_count: Ask "Would you like to track the row count?" (yes=true, no=false)
+Parameters with EXACT types:
+- name (string): Job name (NEVER extract "ok"/"okay"/"yes"/"no" as name - ask for a real job name)
+- execute_query (boolean): true or false - Ask "Would you like to save the query results to the database?" (yes=true, no=false)
+- write_count (boolean): true or false - Ask "Would you like to track the row count?" (yes=true, no=false)
+
+IMPORTANT: execute_query and write_count must be BOOLEAN (true/false), not strings.
 
 If user provides a REAL value (not just confirmation), extract it into params. Ask ONE question at a time.
 
-Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
+Output JSON: {{\"action\": \"ASK\"|\"TOOL\", \"question\": \"...\", \"params\": {{...}}}}"""
 
 SEND_EMAIL_PROMPT = """Extract params for send_email job.
 
 CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
 
-Parameters needed:
-- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
-- to: Recipient email address
-- subject: Email subject line
-- cc: CC email addresses (optional, can be empty)
-- text: Email body text (optional)
+Parameters needed with EXACT types:
+- name (string): Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
+- to (string): Recipient email address
+- subject (string): Email subject line
+- cc (string): CC email addresses (optional, can be empty string)
+- text (string): Email body text (optional)
 
 Ask ONE clear, friendly question at a time. Don't list all parameters at once.
 
@@ -84,38 +90,38 @@ IMPORTANT:
 
 Required parameters by tool:
 
-read_sql (ONLY these parameters):
-- name (job name for props.name) - REQUIRED
-- execute_query (true/false) - Ask: "Would you like to save the query results to the database?" - REQUIRED
+read_sql (ONLY these parameters with EXACT types):
+- name (string) - job name for props.name - REQUIRED
+- execute_query (boolean) - true or false - Ask: "Would you like to save the query results to the database?" - REQUIRED
   * If user says yes/true: set execute_query=true and ask for result_schema, table_name, drop_before_create
   * If user says no/false: set execute_query=false, skip other write-related questions
-- result_schema (target schema name) - REQUIRED only if execute_query=true
-- table_name (target table name) - REQUIRED only if execute_query=true  
-- drop_before_create (true/false) - REQUIRED only if execute_query=true. Ask: "Should I drop the table before creating it? (yes/no)"
-- only_dataset_columns (true/false) - defaults to false if execute_query=true, do NOT ask
-- write_count (true/false) - Ask: "Would you like to track the row count?" - REQUIRED
+- result_schema (string) - target schema name - REQUIRED only if execute_query=true
+- table_name (string) - target table name - REQUIRED only if execute_query=true  
+- drop_before_create (boolean) - true or false - REQUIRED only if execute_query=true. Ask: "Should I drop the table before creating it? (yes/no)"
+- only_dataset_columns (boolean) - defaults to false if execute_query=true, do NOT ask
+- write_count (boolean) - true or false - Ask: "Would you like to track the row count?" - REQUIRED
   * If user says yes/true: set write_count=true and ask for write_count_schema, write_count_table, write_count_connection
   * If user says no/false: set write_count=false, skip write_count-related questions
-- write_count_schema (schema name) - REQUIRED only if write_count=true
-- write_count_table (table name) - REQUIRED only if write_count=true
-- write_count_connection (connection name) - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
-- query and connection are provided automatically
+- write_count_schema (string) - schema name - REQUIRED only if write_count=true
+- write_count_table (string) - table name - REQUIRED only if write_count=true
+- write_count_connection (string) - connection name - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
+- query (string) and connection (string) are provided automatically
 
-write_data (ONLY these parameters):
-- name (job name for props.name) - REQUIRED
-- table (table name to write to) - REQUIRED
-- schemas (schema name) - REQUIRED
-- drop_or_truncate ("drop", "truncate", or "none") - REQUIRED
-- connection (database connection name) - Ask user to select from available connections - REQUIRED
-- data_set (job_id from previous read_sql) - already available in memory, do NOT ask for it
-- columns (from previous read_sql) - already available in memory, do NOT ask for it
-- only_dataset_columns (true/false) - defaults to false, do NOT ask for it
-- write_count (true/false) - Ask: "Would you like to track the row count for this write operation?" - REQUIRED
+write_data (ONLY these parameters with EXACT types):
+- name (string) - job name for props.name - REQUIRED
+- table (string) - table name to write to - REQUIRED
+- schemas (string) - schema name - REQUIRED - MUST BE STRING, NOT LIST
+- drop_or_truncate (string) - "drop", "truncate", or "none" - REQUIRED
+- connection (string) - database connection name - Ask user to select from available connections - REQUIRED
+- write_count (boolean) - true or false - Ask: "Would you like to track the row count for this write operation?" - REQUIRED
   * If user says yes/true: set write_count=true and ask for write_count_schemas, write_count_table, write_count_connection
   * If user says no/false: set write_count=false, skip write_count-related questions
-- write_count_schemas (schema name) - REQUIRED only if write_count=true
-- write_count_table (table name) - REQUIRED only if write_count=true
-- write_count_connection (connection name) - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
+- write_count_schemas (string) - schema name - REQUIRED only if write_count=true
+- write_count_table (string) - table name - REQUIRED only if write_count=true
+- write_count_connection (string) - connection name - REQUIRED only if write_count=true. Use memory.connection as default suggestion.
+- data_set (string) - job_id from previous read_sql - already available in memory, do NOT ask for it
+- columns (array) - from previous read_sql - already available in memory, do NOT ask for it
+- only_dataset_columns (boolean) - defaults to false, do NOT ask for it
 
 send_email (ONLY these parameters):
 - name (job name for props.name) - REQUIRED
@@ -380,10 +386,17 @@ Extract parameters or ask for missing ones."""
                 if "message" in result and "question" not in result:
                     result["question"] = result["message"]
                 
-                # Update gathered params (filter out None values)
+                # Normalize params before updating memory
                 if "params" in result and result["params"]:
+                    params = result["params"]
+                    
+                    # Fix: LLM sometimes returns schemas as list instead of string
+                    if "schemas" in params and isinstance(params["schemas"], list):
+                        params["schemas"] = params["schemas"][0] if params["schemas"] else ""
+                        logger.info(f"📝 Normalized schemas from list to string: {params['schemas']}")
+                    
                     # Only update with non-None values
-                    new_params = {k: v for k, v in result["params"].items() if v is not None}
+                    new_params = {k: v for k, v in params.items() if v is not None}
                     memory.gathered_params.update(new_params)
                     logger.info(f"📝 Updated gathered_params: {memory.gathered_params}")
                 
