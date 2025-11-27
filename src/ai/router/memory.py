@@ -79,20 +79,47 @@ class Memory:
     schema: str = "SALES"  # Schema name, set from UI
     selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])  # Tables selected from UI
     connections: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Dynamic connection list from API
+    available_schemas: List[str] = field(default_factory=list)  # Cached schema list for selected connection
     
     def get_connection_id(self, connection_name: str) -> Optional[str]:
         """
-        Get connection ID from stored connections.
+        Get connection ID from stored connections with fuzzy matching.
+        
+        Handles cases like:
+        - "ORACLE_10" matches "ORACLE_10"
+        - "ORACLE_10 (Oracle)" matches "ORACLE_10"
+        - "oracle10" matches "ORACLE_10"
+        - "oracle_10" matches "ORACLE_10"
         
         Args:
-            connection_name: Name of the connection
+            connection_name: Name of the connection (can include db_type in parentheses)
             
         Returns:
             Connection ID string or None if not found
         """
+        if not connection_name:
+            return None
+        
+        # First try exact match
         conn = self.connections.get(connection_name)
         if conn:
             return conn.get("id")
+        
+        # Remove anything in parentheses (e.g., "ORACLE_10 (Oracle)" -> "ORACLE_10")
+        clean_name = connection_name.split("(")[0].strip()
+        conn = self.connections.get(clean_name)
+        if conn:
+            return conn.get("id")
+        
+        # Try case-insensitive match with underscores removed
+        # "oracle10" or "ORACLE10" -> matches "ORACLE_10"
+        normalized_input = clean_name.lower().replace("_", "").replace("-", "")
+        
+        for stored_name, conn_info in self.connections.items():
+            normalized_stored = stored_name.lower().replace("_", "").replace("-", "")
+            if normalized_input == normalized_stored:
+                return conn_info.get("id")
+        
         return None
     
     def get_connection_list_for_llm(self) -> str:

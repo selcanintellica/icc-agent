@@ -605,19 +605,23 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 params = action.get("params", {})
 
                 try:
+                    # Get connection name from params (user selected from dynamic connection list)
+                    connection_name = params.get("connection", memory.connection)
+                    logger.info(f"🔌 User selected connection: {connection_name}")
+                    
                     # Get connection ID from connection name
-                    # Try dynamic connections first, fallback to static if not available
-                    connection_id = memory.get_connection_id(memory.connection)
+                    # Try dynamic connections first (from fetched API data), fallback to static if not available
+                    connection_id = memory.get_connection_id(connection_name)
                     if not connection_id:
                         # Fallback to static connections.py
                         from src.utils.connections import get_connection_id
-                        connection_id = get_connection_id(memory.connection)
+                        connection_id = get_connection_id(connection_name)
                         if not connection_id:
-                            logger.error(f"❌ Unknown connection: {memory.connection}")
-                            return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
-                        logger.info(f"🔌 Using connection from static file: {memory.connection} (ID: {connection_id})")
+                            logger.error(f"❌ Unknown connection: {connection_name}")
+                            return memory, f"❌ Error: Unknown connection '{connection_name}'. Please select a valid connection."
+                        logger.info(f"🔌 Using connection ID from static file: {connection_name} (ID: {connection_id})")
                     else:
-                        logger.info(f"🔌 Using connection from memory: {memory.connection} (ID: {connection_id})")
+                        logger.info(f"🔌 Using connection ID from fetched data: {connection_name} (ID: {connection_id})")
                     
                     # Get table name from params (user provides destination table)
                     table_name = params.get("table", "output_table")
