@@ -611,7 +611,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                         return memory, f"❌ Error: Unknown connection '{connection_name}'"
                     
                     # Get auth headers
-                    userpass, token = authenticate()
+                    userpass, token = await authenticate()
                     auth_headers = {
                         "Authorization": f"Basic {userpass}",
                         "TokenKey": token

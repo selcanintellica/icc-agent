@@ -274,7 +274,7 @@ if __name__ == "__main__":
     async def test_api():
         # Get authentication
         try:
-            userpass, token = authenticate()
+            userpass, token = await authenticate()
             auth_headers = {
                 "Authorization": f"Basic {userpass}",
                 "TokenKey": token
