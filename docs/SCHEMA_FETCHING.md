@@ -5,7 +5,7 @@ Enhanced the ICC agent to dynamically fetch and present available schemas to use
 
 ## Architecture
 
-### New Module: `src/utils/icc_api_client.py`
+### New Module: `src/utils/connection_api_client.py`
 Professional, unified ICC API client that handles:
 - **Connection fetching**: GET `/connection/list`
 - **Schema fetching**: POST `/utility/connection/{connection_id}`
@@ -167,7 +167,7 @@ Connection names support flexible matching:
 
 ### Test Script
 ```bash
-python src/utils/icc_api_client.py
+python src/utils/connection_api_client.py
 ```
 
 Tests:
@@ -183,10 +183,10 @@ Tests:
 - Can be deprecated once new client is stable
 
 ### New Files
-- `src/utils/icc_api_client.py` - Professional unified API client
+- `src/utils/connection_api_client.py` - Professional unified API client
 
 ### Updated Files
-- `app.py` - Uses `icc_api_client` instead of `fetch_connections`
+- `app.py` - Uses `connection_api_client` instead of `fetch_connections`
 - `src/ai/router/memory.py` - Added schema caching and formatting
 - `src/ai/router/job_agent.py` - Added FETCH_SCHEMAS action
 - `src/ai/router/router.py` - Added FETCH_SCHEMAS handler

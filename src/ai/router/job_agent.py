@@ -17,15 +17,17 @@ WRITE_DATA_PROMPT_TEMPLATE = """Extract params for write_data job.
 
 CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
 
-Parameters needed:
-- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
-- table: Which table to write data to?
-- schemas: Which schema contains the table?
-- connection: Which database connection to use? (see list below)
-- drop_or_truncate: Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
+Parameters needed (in order):
+1. name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
+2. table: Which table to write data to?
+3. connection: Which database connection to use? (see list below)
+4. schemas: Which schema contains the table? (DO NOT ASK - system will fetch available schemas after connection is selected)
+5. drop_or_truncate: Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
 
 Available connections:
 {connections}
+
+IMPORTANT: After connection is selected, DO NOT ask about schemas. The missing schemas will trigger automatic schema fetching.
 
 Ask ONE clear, friendly question at a time. Don't list all parameters at once.
 

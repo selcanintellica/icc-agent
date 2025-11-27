@@ -265,7 +265,7 @@ if __name__ == "__main__":
     Test script for ICC API client.
     
     Usage:
-        python src/utils/icc_api_client.py
+        python src/utils/connection_api_client.py
     """
     import asyncio
     

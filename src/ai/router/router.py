@@ -601,7 +601,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 logger.info(f"📋 Fetching schemas for connection: {connection_name}")
                 
                 try:
-                    from src.utils.icc_api_client import fetch_schemas_for_connection
+                    from src.utils.connection_api_client import fetch_schemas_for_connection
                     from src.utils.auth import authenticate
                     
                     # Get connection ID
