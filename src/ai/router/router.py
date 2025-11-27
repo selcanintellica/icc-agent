@@ -624,11 +624,15 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     
                     # Now ask user to choose schema
                     schema_list = memory.get_schema_list_for_llm()
-                    return memory, f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                    question = f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                    memory.last_question = question  # Save question for next turn
+                    return memory, question
                     
                 except Exception as e:
                     logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
-                    return memory, "What schema should I write the data to?"
+                    fallback_question = "What schema should I write the data to?"
+                    memory.last_question = fallback_question  # Save question for next turn
+                    return memory, fallback_question
 
             if action.get("action") == "ASK":
                 logger.info(f"❓ Asking user: {action['question']}")
