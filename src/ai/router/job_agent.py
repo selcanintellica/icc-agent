@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 # Job-specific minimal prompts for better performance
 WRITE_DATA_PROMPT_TEMPLATE = """Extract params for write_data job.
 
+CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+
 Parameters needed:
-- name: Job name to identify it later
+- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
 - table: Which table to write data to?
 - schemas: Which schema contains the table?
 - connection: Which database connection to use? (see list below)
@@ -45,8 +47,10 @@ Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
 
 SEND_EMAIL_PROMPT = """Extract params for send_email job.
 
+CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+
 Parameters needed:
-- name: Job name to identify it later
+- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
 - to: Recipient email address
 - subject: Email subject line
 - cc: CC email addresses (optional, can be empty)
