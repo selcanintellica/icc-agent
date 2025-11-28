@@ -8,7 +8,6 @@ from src.ai.router.memory import Memory, Stage
 from src.ai.router.sql_agent import call_sql_agent
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import read_sql_job, write_data_job, send_email_job, compare_sql_job
-from src.utils.connections import get_connection_id
 from src.models.natural_language import (
     ReadSqlLLMRequest,
     ReadSqlVariables,
@@ -178,6 +177,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         
         if action.get("action") == "ASK":
             # Need more parameters
+            memory.last_question = action["question"]  # Save question for next turn
             return memory, action["question"]
         
         if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
@@ -186,6 +186,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
 
             try:
                 # Get connection ID from connection name
+                from src.utils.connections import get_connection_id
                 connection_id = get_connection_id(memory.connection)
                 if not connection_id:
                     logger.error(f"❌ Unknown connection: {memory.connection}")
@@ -339,6 +340,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             # Fetch columns for both queries before showing map table
             logger.info("📊 Fetching columns for both queries...")
             try:
+                from src.utils.connections import get_connection_id
                 connection_id = get_connection_id(memory.connection)
                 if not connection_id:
                     return memory, f"❌ Error: Unknown connection '{memory.connection}'."
@@ -406,14 +408,12 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     auto_mappings.append({"FirstMappedColumn": col, "SecondMappedColumn": col})
             response_data["pre_mappings"] = auto_mappings
 
-        import json
         return memory, f"MAP_TABLE_POPUP:{json.dumps(response_data)}"
 
     # ========== STAGE: WAITING_MAP_TABLE ==========
     if memory.stage == Stage.WAITING_MAP_TABLE:
         # Frontend sends back mapping data as JSON
         try:
-            import json
             mapping_data = json.loads(user_utterance)
 
             # Extract key mappings and column mappings
@@ -486,6 +486,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
         # Execute the job immediately after getting the name
         logger.info(f"⚡ Executing compare_sql_job with name '{job_name}'...")
         try:
+            from src.utils.connections import get_connection_id
             connection_id = get_connection_id(memory.connection)
             if not connection_id:
                 return memory, f"❌ Error: Unknown connection '{memory.connection}'."
@@ -548,8 +549,9 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     # ========== STAGE: SHOW_RESULTS ==========
     if memory.stage == Stage.SHOW_RESULTS:
         memory.stage = Stage.NEED_WRITE_OR_EMAIL
-        memory.gathered_params = {}  # Reset for next operation
-        memory.current_tool = None  # Reset current tool
+        # DON'T reset gathered_params here - only reset after completing write/email
+        # memory.gathered_params = {}  # Will be reset after completing the operation
+        memory.current_tool = None  # Reset current tool tracker
 
         # If execute_query was enabled, data was already written by the API
         if memory.execute_query_enabled:
@@ -581,14 +583,60 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             wants_email = "email" in user_lower or "send" in user_lower
         
         if wants_write:
+            # If switching to write_data for the first time, clear old params from previous job
+            if memory.current_tool != "write_data":
+                logger.info("🔄 Switching to write_data, clearing gathered_params from previous job")
+                memory.gathered_params = {}
+                memory.last_question = None
+            
             memory.current_tool = "write_data"  # Track that we're gathering params for write_data
             logger.info("📝 Processing write_data request...")
             
             action = call_job_agent(memory, user_utterance, tool_name="write_data")
             logger.info(f"🔍 Job agent returned: action={action.get('action')}, tool={action.get('tool_name')}")
 
+            if action.get("action") == "FETCH_SCHEMAS":
+                # Need to fetch schemas for the selected connection
+                connection_name = action.get("connection")
+                logger.info(f"📋 Fetching schemas for connection: {connection_name}")
+                
+                try:
+                    from src.utils.connection_api_client import fetch_schemas_for_connection
+                    from src.utils.auth import authenticate
+                    
+                    # Get connection ID
+                    connection_id = memory.get_connection_id(connection_name)
+                    if not connection_id:
+                        logger.error(f"❌ Cannot fetch schemas: Unknown connection {connection_name}")
+                        return memory, f"❌ Error: Unknown connection '{connection_name}'"
+                    
+                    # Get auth headers
+                    userpass, token = await authenticate()
+                    auth_headers = {
+                        "Authorization": f"Basic {userpass}",
+                        "TokenKey": token
+                    }
+                    
+                    # Fetch schemas
+                    schemas = await fetch_schemas_for_connection(connection_id, auth_headers=auth_headers)
+                    memory.available_schemas = schemas
+                    logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
+                    
+                    # Now ask user to choose schema
+                    schema_list = memory.get_schema_list_for_llm()
+                    question = f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                    memory.last_question = question  # Save question for next turn
+                    return memory, question
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+                    fallback_question = "What schema should I write the data to?"
+                    memory.last_question = fallback_question  # Save question for next turn
+                    return memory, fallback_question
+
             if action.get("action") == "ASK":
                 logger.info(f"❓ Asking user: {action['question']}")
+                memory.last_question = action["question"]  # Save question for next turn
                 return memory, action["question"]
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
@@ -596,13 +644,23 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 params = action.get("params", {})
 
                 try:
-                    # Get connection ID from connection name
-                    connection_id = get_connection_id(memory.connection)
-                    if not connection_id:
-                        logger.error(f"❌ Unknown connection: {memory.connection}")
-                        return memory, f"❌ Error: Unknown connection '{memory.connection}'. Please select a valid connection."
+                    # Get connection name from params (user selected from dynamic connection list)
+                    connection_name = params.get("connection", memory.connection)
+                    logger.info(f"🔌 User selected connection: {connection_name}")
                     
-                    logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
+                    # Get connection ID from connection name
+                    # Try dynamic connections first (from fetched API data), fallback to static if not available
+                    connection_id = memory.get_connection_id(connection_name)
+                    if not connection_id:
+                        # Fallback to static connections.py
+                        from src.utils.connections import get_connection_id
+                        connection_id = get_connection_id(connection_name)
+                        if not connection_id:
+                            logger.error(f"❌ Unknown connection: {connection_name}")
+                            return memory, f"❌ Error: Unknown connection '{connection_name}'. Please select a valid connection."
+                        logger.info(f"🔌 Using connection ID from static file: {connection_name} (ID: {connection_id})")
+                    else:
+                        logger.info(f"🔌 Using connection ID from fetched data: {connection_name} (ID: {connection_id})")
                     
                     # Get table name from params (user provides destination table)
                     table_name = params.get("table", "output_table")
@@ -643,10 +701,14 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # If write_count is true, add the write_count-related fields
                     if write_count:
                         write_count_conn_name = params.get("write_count_connection", memory.connection)
-                        write_count_conn_id = get_connection_id(write_count_conn_name)
+                        write_count_conn_id = memory.get_connection_id(write_count_conn_name)
                         if not write_count_conn_id:
-                            logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
-                            return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
+                            # Fallback to static connections.py
+                            from src.utils.connections import get_connection_id as get_conn_id_static
+                            write_count_conn_id = get_conn_id_static(write_count_conn_name)
+                            if not write_count_conn_id:
+                                logger.error(f"❌ Unknown write_count connection: {write_count_conn_name}")
+                                return memory, f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count. Please select a valid connection."
 
                         write_data_vars.write_count_connection = write_count_conn_id
                         write_data_vars.write_count_schemas = params.get("write_count_schemas")
@@ -666,6 +728,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     # Reset params and tool after successful write
                     memory.gathered_params = {}
                     memory.current_tool = None
+                    memory.last_question = None
 
                     return memory, f"✅ Data written successfully to table '{table_name}' in {schemas} schema!\nAnything else? (email / done)"
                     
@@ -674,12 +737,19 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     return memory, f"❌ Error: {str(e)}\nPlease try again."
         
         elif wants_email:
+            # If switching to send_email for the first time, clear old params from previous job
+            if memory.current_tool != "send_email":
+                logger.info("🔄 Switching to send_email, clearing gathered_params from previous job")
+                memory.gathered_params = {}
+                memory.last_question = None
+            
             memory.current_tool = "send_email"  # Track that we're gathering params for send_email
             logger.info("📧 Processing send_email request...")
             
             action = call_job_agent(memory, user_utterance, tool_name="send_email")
             
             if action.get("action") == "ASK":
+                memory.last_question = action["question"]  # Save question for next turn
                 return memory, action["question"]
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "send_email":
@@ -689,6 +759,7 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     params = memory.gathered_params
                     
                     # Get connection ID from connection name
+                    from src.utils.connections import get_connection_id
                     connection_id = get_connection_id(memory.connection)
                     if not connection_id:
                         logger.error(f"❌ Unknown connection: {memory.connection}")

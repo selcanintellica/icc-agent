@@ -13,6 +13,7 @@ Then open your browser to: http://localhost:8050
 from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True forces .env to override system variables
 
+import os
 import dash
 from dash import dcc, html, Input, Output, State, callback_context, ALL, MATCH
 import dash_bootstrap_components as dbc
@@ -45,6 +46,7 @@ print("="*60 + "\n")
 # ICC Agent imports - Using Staged Router
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
+from src.utils.connection_api_client import populate_memory_connections
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
@@ -359,6 +361,34 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         if session_id not in session_memories:
             session_memories[session_id] = Memory()
             logger.info(f"🆕 Created new memory for session: {session_id}")
+            
+            # Populate connections from API (falls back to static if fails)
+            try:
+                from src.utils.auth import authenticate
+                
+                logger.info("🔌 Attempting to fetch connections from API")
+                
+                # Authenticate using the same pattern as other API calls
+                auth_result = await authenticate()
+                auth_headers = None
+                if auth_result:
+                    userpass, token = auth_result
+                    auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
+                    logger.info("✅ Authentication successful for connection fetch")
+                else:
+                    logger.warning("⚠️ Authentication failed, trying without auth")
+                
+                if await populate_memory_connections(session_memories[session_id], auth_headers=auth_headers):
+                    conn_count = len(session_memories[session_id].connections)
+                    logger.info(f"✅ Populated {conn_count} connections from API")
+                    if conn_count > 0:
+                        logger.info(f"📋 Available connections: {list(session_memories[session_id].connections.keys())[:5]}...")
+                    else:
+                        logger.warning("⚠️ API returned 0 connections! Will use static connections.py as fallback")
+                else:
+                    logger.warning("⚠️ Could not fetch connections from API, will use static connections.py as fallback")
+            except Exception as e:
+                logger.error(f"❌ Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
         
         memory = session_memories[session_id]
         
