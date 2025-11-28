@@ -253,9 +253,14 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                     memory.execute_query_enabled = execute_query  # Track if data was auto-written
                     memory.stage = Stage.SHOW_RESULTS
                     
-                    # Note: output_table_info is NOT set here for ReadSQL
-                    # SendEmail requires WriteData to be done first for ReadSQL flow
-                    # (CompareSQL sets output_table_info directly since it writes results as part of job)
+                    # Track output table info for send_email query generation
+                    # When execute_query=true, data is written to result_schema.table_name
+                    if execute_query:
+                        memory.output_table_info = {
+                            "schema": params.get("result_schema"),
+                            "table": params.get("table_name")
+                        }
+                        logger.info(f"📝 Set output_table_info from ReadSQL: {memory.output_table_info}")
                     
                     cols_str = ", ".join(memory.last_columns[:5])
                     if len(memory.last_columns) > 5:
