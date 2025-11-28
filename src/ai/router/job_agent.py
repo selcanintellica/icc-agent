@@ -526,27 +526,23 @@ Extract parameters or ask for missing ones."""
             if params.get("execute_query"):
                 if not params.get("result_schema"):
                     logger.info("❌ Missing: result_schema (execute_query=true)")
-                    # Get available schemas from db_config.json for the selected connection
-                    try:
-                        from src.utils.config_loader import get_config_loader
-                        config_loader = get_config_loader()
-                        available_schemas = config_loader.get_schemas_for_connection(memory.connection)
-                        
-                        if available_schemas:
-                            schema_list = "\n".join([f"• {schema}" for schema in available_schemas])
-                            question = f"What schema should I write the results to?\n\nAvailable schemas in {memory.connection}:\n{schema_list}"
-                            logger.info(f"📋 Showing {len(available_schemas)} available schemas for result_schema")
-                        else:
-                            question = "What schema should I write the results to?"
-                            logger.warning(f"⚠️ No schemas found in db_config.json for connection {memory.connection}")
-                    except Exception as e:
-                        logger.warning(f"⚠️ Could not load schema list from db_config.json: {e}")
-                        question = "What schema should I write the results to?"
-                    
-                    return {
-                        "action": "ASK",
-                        "question": question
-                    }
+                    # Check if schemas are already cached in memory (fetched from ICC API)
+                    if memory.available_schemas:
+                        # We have cached schemas, show them to user
+                        schema_list = memory.get_schema_list_for_llm()
+                        logger.info(f"📋 Using {len(memory.available_schemas)} cached schemas for result_schema")
+                        return {
+                            "action": "ASK",
+                            "question": f"What schema should I write the results to?\n\nAvailable schemas:\n{schema_list}"
+                        }
+                    else:
+                        # Need to fetch schemas from ICC API - signal router to do async fetch
+                        logger.info(f"📋 Need to fetch schemas for connection: {memory.connection}")
+                        return {
+                            "action": "FETCH_SCHEMAS",
+                            "connection": memory.connection,
+                            "question": "Fetching available schemas..."
+                        }
                 if not params.get("table_name"):
                     logger.info("❌ Missing: table_name (execute_query=true)")
                     return {
