@@ -44,6 +44,11 @@ class Stage(Enum):
 
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
+    
+    # Send Email Flow
+    CONFIRM_EMAIL_QUERY = "confirm_email_query"
+    NEED_EMAIL_QUERY = "need_email_query"
+    
     DONE = "done"
 
 
@@ -80,6 +85,11 @@ class Memory:
     selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])  # Tables selected from UI
     connections: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Dynamic connection list from API
     available_schemas: List[str] = field(default_factory=list)  # Cached schema list for selected connection
+    
+    # Send Email flow - output table tracking and query verification
+    output_table_info: Optional[Dict[str, str]] = None  # {"schema": "...", "table": "..."} from write operations
+    pending_email_params: Optional[Dict[str, Any]] = None  # Stores email params pending query confirmation
+    email_query_confirmed: bool = False  # Track if user confirmed the auto-generated query
     
     def get_connection_id(self, connection_name: str) -> Optional[str]:
         """
@@ -172,6 +182,9 @@ class Memory:
         self.gathered_params = {}
         self.current_tool = None
         self.execute_query_enabled = False
+        self.output_table_info = None
+        self.pending_email_params = None
+        self.email_query_confirmed = False
         # Keep connection and connections as they're set externally
     
     def to_dict(self) -> Dict[str, Any]:
@@ -197,7 +210,10 @@ class Memory:
             "connection": self.connection,
             "schema": self.schema,
             "selected_tables": self.selected_tables,
-            "connections": self.connections
+            "connections": self.connections,
+            "output_table_info": self.output_table_info,
+            "pending_email_params": self.pending_email_params,
+            "email_query_confirmed": self.email_query_confirmed
         }
     
     @classmethod
@@ -225,4 +241,7 @@ class Memory:
         memory.schema = data.get("schema", "SALES")
         memory.selected_tables = data.get("selected_tables", ["customers", "orders"])
         memory.connections = data.get("connections", {})
+        memory.output_table_info = data.get("output_table_info")
+        memory.pending_email_params = data.get("pending_email_params")
+        memory.email_query_confirmed = data.get("email_query_confirmed", False)
         return memory
