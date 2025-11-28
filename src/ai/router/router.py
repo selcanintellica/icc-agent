@@ -180,6 +180,49 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
             memory.last_question = action["question"]  # Save question for next turn
             return memory, action["question"]
         
+        if action.get("action") == "FETCH_SCHEMAS":
+            # Need to fetch schemas for the selected connection (for execute_query=true flow)
+            connection_name = action.get("connection", memory.connection)
+            logger.info(f"📋 Fetching schemas for connection: {connection_name}")
+            
+            try:
+                from src.utils.connection_api_client import fetch_schemas_for_connection
+                from src.utils.auth import authenticate
+                
+                # Get connection ID
+                connection_id = memory.get_connection_id(connection_name)
+                if not connection_id:
+                    # Fallback to static connections.py
+                    from src.utils.connections import get_connection_id
+                    connection_id = get_connection_id(connection_name)
+                    if not connection_id:
+                        logger.error(f"❌ Cannot fetch schemas: Unknown connection {connection_name}")
+                        return memory, f"❌ Error: Unknown connection '{connection_name}'"
+                
+                # Get auth headers
+                userpass, token = await authenticate()
+                auth_headers = {
+                    "Authorization": f"Basic {userpass}",
+                    "TokenKey": token
+                }
+                
+                # Fetch schemas from ICC API
+                schemas = await fetch_schemas_for_connection(connection_id, auth_headers=auth_headers)
+                memory.available_schemas = schemas
+                logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
+                
+                # Now ask user to choose schema
+                schema_list = memory.get_schema_list_for_llm()
+                question = f"What schema should I write the results to?\n\nAvailable schemas:\n{schema_list}"
+                memory.last_question = question  # Save question for next turn
+                return memory, question
+                
+            except Exception as e:
+                logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+                fallback_question = "What schema should I write the results to?"
+                memory.last_question = fallback_question  # Save question for next turn
+                return memory, fallback_question
+        
         if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
             logger.info("⚡ Executing read_sql_job...")
             params = action.get("params", {})
