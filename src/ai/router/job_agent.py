@@ -405,6 +405,19 @@ Extract parameters or ask for missing ones."""
                         params["schemas"] = params["schemas"][0] if params["schemas"] else ""
                         logger.info(f"📝 Normalized schemas from list to string: {params['schemas']}")
                     
+                    # For read_sql & write_data: Only remove write_count if user DIDN'T just give a yes/no answer
+                    # If user said yes/no and LLM extracted write_count, KEEP it (user's intent is clear)
+                    # If user said something else and LLM returned write_count anyway, REMOVE it (LLM is guessing)
+                    user_gave_yes_no = user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]
+                    
+                    if tool_name == "read_sql" and "write_count" in params and not user_gave_yes_no:
+                        logger.info(f"⚠️ REMOVING write_count={params.get('write_count')} from LLM - must be asked explicitly (user didn't give yes/no)")
+                        params.pop("write_count")
+                    
+                    if tool_name == "write_data" and "write_count" in params and not user_gave_yes_no:
+                        logger.info(f"⚠️ REMOVING write_count={params.get('write_count')} from LLM - must be asked explicitly (user didn't give yes/no)")
+                        params.pop("write_count")
+                    
                     # Only update with non-None values
                     new_params = {k: v for k, v in params.items() if v is not None}
                     memory.gathered_params.update(new_params)
@@ -412,65 +425,16 @@ Extract parameters or ask for missing ones."""
                 
                 logger.info(f"✅ Job Agent action: {result.get('action')}, params: {result.get('params')}")
                 
-                # Check for direct yes/no answers BEFORE using LLM's question
-                # This handles cases where LLM doesn't extract yes/no into params
+                # Check if user just gave a yes/no answer
+                # If so, go directly to fallback to ask for NEXT parameter in sequence
+                # This ensures proper parameter order: name -> execute_query -> result_schema -> table_name -> drop_before_create -> write_count
                 if user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]:
-                    user_lower = user_input.lower().strip()
-                    
-                    # For read_sql: Handle parameter flow carefully
-                    if tool_name == "read_sql":
-                        # Check what we're currently asking for based on current params
-                        if not memory.gathered_params.get("name"):
-                            # Asking for name - don't treat yes/no as name
-                            pass
-                        elif "execute_query" not in memory.gathered_params:
-                            # Currently asking for execute_query
-                            if user_lower in ["yes", "y", "true", "1"]:
-                                memory.gathered_params["execute_query"] = True
-                                logger.info("📝 Set execute_query=True from direct user input")
-                            elif user_lower in ["no", "n", "false", "0"]:
-                                memory.gathered_params["execute_query"] = False
-                                logger.info("📝 Set execute_query=False from direct user input")
-                        elif memory.gathered_params.get("execute_query") and not memory.gathered_params.get("result_schema"):
-                            # execute_query=true but missing result_schema - don't treat yes/no as schema name
-                            pass
-                        elif memory.gathered_params.get("execute_query") and memory.gathered_params.get("result_schema") and not memory.gathered_params.get("table_name"):
-                            # Have result_schema but missing table_name - don't treat yes/no as table name
-                            pass
-                        elif memory.gathered_params.get("execute_query") and "drop_before_create" not in memory.gathered_params:
-                            # Currently asking for drop_before_create
-                            if user_lower in ["yes", "y", "true", "1"]:
-                                memory.gathered_params["drop_before_create"] = True
-                                logger.info("📝 Set drop_before_create=True from direct user input")
-                            elif user_lower in ["no", "n", "false", "0"]:
-                                memory.gathered_params["drop_before_create"] = False
-                                logger.info("📝 Set drop_before_create=False from direct user input")
-                        elif "write_count" not in memory.gathered_params:
-                            # Currently asking for write_count (after all execute_query params)
-                            if user_lower in ["yes", "y", "true", "1"]:
-                                memory.gathered_params["write_count"] = True
-                                logger.info("📝 Set write_count=True from direct user input")
-                            elif user_lower in ["no", "n", "false", "0"]:
-                                memory.gathered_params["write_count"] = False
-                                logger.info("📝 Set write_count=False from direct user input")
-                    
-                    # For write_data: only write_count uses yes/no
-                    elif tool_name == "write_data" and "write_count" not in memory.gathered_params:
-                        if user_lower in ["yes", "y", "true", "1"]:
-                            memory.gathered_params["write_count"] = True
-                            logger.info("📝 Set write_count=True from direct user input")
-                        elif user_lower in ["no", "n", "false", "0"]:
-                            memory.gathered_params["write_count"] = False
-                            logger.info("📝 Set write_count=False from direct user input")
+                    logger.info(f"📝 User gave yes/no answer: '{user_input}', going to fallback for next param")
+                    return self._fallback_param_check(memory, tool_name, user_input="")
                 
                 # If LLM returned a valid question, use it directly
                 if result.get("action") == "ASK" and result.get("question"):
                     logger.info(f"📝 Using LLM's question: {result['question']}")
-                    # But check if we just handled a yes/no - if so, don't ask the same question again
-                    if user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]:
-                        # Re-run gathering to get next question (with EMPTY user_input to avoid re-processing)
-                        logger.info("📝 Just handled yes/no, checking for next required param")
-                        return self._fallback_param_check(memory, tool_name, user_input="")
                     
                     # If asking for connection for write_data, append available connections list
                     question = result.get("question", "")

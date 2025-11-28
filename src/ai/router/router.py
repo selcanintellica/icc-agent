@@ -195,8 +195,13 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
                 logger.info(f"🔌 Using connection: {memory.connection} (ID: {connection_id})")
                 
                 # Get execute_query and write_count parameters
+                # IMPORTANT: write_count must be explicitly provided by job_agent, no default!
                 execute_query = params.get("execute_query", False)
-                write_count = params.get("write_count", False)
+                write_count = params.get("write_count")
+                
+                if write_count is None:
+                    logger.error(f"❌ write_count parameter missing! Gathered params: {params}")
+                    return memory, f"❌ Error: write_count parameter not provided. Please try again."
 
                 # Create ReadSQL variables with all gathered params
                 read_sql_vars = ReadSqlVariables(
