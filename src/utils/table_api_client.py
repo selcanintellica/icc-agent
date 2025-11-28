@@ -13,6 +13,7 @@ import requests
 from typing import List, Optional, Dict
 from functools import lru_cache
 from src.utils.mock_table_data import get_mock_table_definition
+from src.config.api_config import TABLE_API_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -30,16 +31,12 @@ class TableAPIClient:
             use_mock: Whether to use mock data instead of API calls.
                      If None, reads from TABLE_API_MOCK environment variable.
         """
-        self.base_url = base_url or os.getenv(
-            "TABLE_API_BASE_URL", 
-            "http://localhost:8000/api/tables"
-        )
-        self.timeout = int(os.getenv("TABLE_API_TIMEOUT", "10"))
+        self.base_url = base_url or TABLE_API_CONFIG["base_url"]
+        self.timeout = TABLE_API_CONFIG["timeout"]
         
         # Check if mock mode is enabled
         if use_mock is None:
-            mock_env = os.getenv("TABLE_API_MOCK", "false").lower()
-            self.use_mock = mock_env in ("true", "1", "yes")
+            self.use_mock = TABLE_API_CONFIG["use_mock"]
         else:
             self.use_mock = use_mock
         

@@ -30,3 +30,18 @@ AUTH_CONFIG = {
     # Generate at https://www.base64encode.org/
     "userpass": os.getenv("AUTH_USERPASS", "YWRtaW46YWRtaW4="),
 }
+
+# ICC API configuration (connections and schemas)
+ICC_API_CONFIG = {
+    "base_url": os.getenv("ICC_API_BASE_URL", "https://172.16.22.13:8084"),
+    "connection_list_url": os.getenv("ICC_CONNECTION_LIST_URL", "https://172.16.22.13:8084/connection/list"),
+    "schema_endpoint_template": "/utility/connection/{connection_id}",  # Format with connection_id
+    "timeout": 30.0,
+}
+
+# Table Definitions API configuration
+TABLE_API_CONFIG = {
+    "base_url": os.getenv("TABLE_API_BASE_URL", "http://localhost:8000/api/tables"),
+    "timeout": int(os.getenv("TABLE_API_TIMEOUT", "10")),
+    "use_mock": os.getenv("TABLE_API_MOCK", "false").lower() in ("true", "1", "yes"),
+}

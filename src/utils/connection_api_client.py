@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from src.utils.auth import authenticate
+from src.config.api_config import ICC_API_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +32,9 @@ class ICCAPIClient:
             base_url: Base URL for ICC API (e.g., https://172.16.22.13:8084)
             auth_headers: Optional authentication headers (Authorization and TokenKey)
         """
-        self.base_url = base_url or os.getenv("ICC_API_BASE_URL", "https://172.16.22.13:8084")
+        self.base_url = base_url or ICC_API_CONFIG["base_url"]
         self.auth_headers = auth_headers or {}
-        self.timeout = 30.0
+        self.timeout = ICC_API_CONFIG["timeout"]
     
     async def fetch_connections(self) -> Dict[str, Dict[str, Any]]:
         """
