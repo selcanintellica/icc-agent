@@ -46,12 +46,15 @@ Parameters with EXACT types:
 - name (string): Job name (NEVER extract "ok"/"okay"/"yes"/"no" as name - ask for a real job name)
 - execute_query (boolean): true or false - Ask "Would you like to save the query results to the database?" (yes=true, no=false)
 - write_count (boolean): true or false - Ask "Would you like to track the row count?" (yes=true, no=false)
+- result_schema (string): ONLY needed if execute_query=true. Extract from user or ask.
+- table_name (string): ONLY needed if execute_query=true. Extract from user or ask.
+- drop_before_create (boolean): ONLY needed if execute_query=true. Extract yes/no from user or ask.
 
 IMPORTANT: execute_query and write_count must be BOOLEAN (true/false), not strings.
 
 If user provides a REAL value (not just confirmation), extract it into params. Ask ONE question at a time.
 
-Output JSON: {{\"action\": \"ASK\"|\"TOOL\", \"question\": \"...\", \"params\": {{...}}}}"""
+Output JSON: {"action": "ASK"|"TOOL", "question": "...", "params": {...}}"""
 
 SEND_EMAIL_PROMPT = """Extract params for send_email job.
 
@@ -198,10 +201,10 @@ class JobAgent:
             model=os.getenv("MODEL_NAME", "qwen3:1.7b"),
             temperature=0.1,  # Lower temperature for more consistent JSON
             base_url="http://localhost:11434",
-            num_predict=4096,  # Increased to 4096 - qwen3:8b is a thinking model that needs more tokens
+            num_predict=6000,  # Increased to 4096 - qwen3:8b is a thinking model that needs more tokens
             model_kwargs={
                 "think": False,        
-                "stream": True      
+                "stream": False      
             }
         )
     
@@ -248,19 +251,22 @@ class JobAgent:
                 if not memory.gathered_params.get("schemas"): missing.append("schemas")
                 if not memory.gathered_params.get("connection"): missing.append("connection")
                 if not memory.gathered_params.get("drop_or_truncate"): missing.append("drop_or_truncate")
+                if not memory.gathered_params.get("write_count"): missing.append("write_count")
                 
                 # Get connection list and inject into system prompt
                 connection_list = memory.get_connection_list_for_llm() if memory.connections else "(Using connection from previous job)"
                 system_prompt = WRITE_DATA_PROMPT_TEMPLATE.format(connections=connection_list)
                 
+                # SIMPLIFIED prompt - just ask for missing param
                 # Include last question for context if available
                 last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
                 
                 prompt_text = f"""{last_q}User answer: "{user_input}"
 Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
-
 Output JSON only:"""
+
+
                 
                 messages = [
                     SystemMessage(content=system_prompt),
@@ -268,10 +274,13 @@ Output JSON only:"""
                 ]
                 
             elif tool_name == "read_sql":
-                # Minimal prompt for read_sql with clear extraction instruction
+                # SIMPLIFIED prompt for read_sql
                 missing = []
                 if not memory.gathered_params.get("name"): missing.append("name")
                 if "execute_query" not in memory.gathered_params: missing.append("execute_query")
+                if memory.gathered_params.get("execute_query") and not memory.gathered_params.get("result_schema"): missing.append("result_schema")
+                if memory.gathered_params.get("execute_query") and not memory.gathered_params.get("table_name"): missing.append("table_name")
+                if memory.gathered_params.get("execute_query") and "drop_before_create" not in memory.gathered_params: missing.append("drop_before_create")
                 if "write_count" not in memory.gathered_params: missing.append("write_count")
                 
                 # Include last question for context if available
@@ -290,6 +299,7 @@ Output JSON only:"""
                     SystemMessage(content=READ_SQL_PROMPT),
                     HumanMessage(content=prompt_text)
                 ]
+                logger.info(f"📝 -------------- Read SQL prompt: {messages}--------------------")
                 
             elif tool_name == "send_email":
                 # Minimal prompt for send_email
@@ -407,34 +417,51 @@ Extract parameters or ask for missing ones."""
                 if user_input and user_input.lower().strip() in ["yes", "y", "no", "n", "true", "false", "1", "0"]:
                     user_lower = user_input.lower().strip()
                     
-                    # For read_sql: Check params in the ORDER they're asked
-                    # Priority: execute_query (asked first) → write_count (asked second)
+                    # For read_sql: Handle parameter flow carefully
                     if tool_name == "read_sql":
-                        if "execute_query" not in memory.gathered_params:
-                            # First missing param is execute_query
+                        # Check what we're currently asking for based on current params
+                        if not memory.gathered_params.get("name"):
+                            # Asking for name - don't treat yes/no as name
+                            pass
+                        elif "execute_query" not in memory.gathered_params:
+                            # Currently asking for execute_query
                             if user_lower in ["yes", "y", "true", "1"]:
                                 memory.gathered_params["execute_query"] = True
-                                logger.info("📝 Set execute_query=True from direct user input (pre-fallback)")
+                                logger.info("📝 Set execute_query=True from direct user input")
                             elif user_lower in ["no", "n", "false", "0"]:
                                 memory.gathered_params["execute_query"] = False
-                                logger.info("📝 Set execute_query=False from direct user input (pre-fallback)")
+                                logger.info("📝 Set execute_query=False from direct user input")
+                        elif memory.gathered_params.get("execute_query") and not memory.gathered_params.get("result_schema"):
+                            # execute_query=true but missing result_schema - don't treat yes/no as schema name
+                            pass
+                        elif memory.gathered_params.get("execute_query") and memory.gathered_params.get("result_schema") and not memory.gathered_params.get("table_name"):
+                            # Have result_schema but missing table_name - don't treat yes/no as table name
+                            pass
+                        elif memory.gathered_params.get("execute_query") and "drop_before_create" not in memory.gathered_params:
+                            # Currently asking for drop_before_create
+                            if user_lower in ["yes", "y", "true", "1"]:
+                                memory.gathered_params["drop_before_create"] = True
+                                logger.info("📝 Set drop_before_create=True from direct user input")
+                            elif user_lower in ["no", "n", "false", "0"]:
+                                memory.gathered_params["drop_before_create"] = False
+                                logger.info("📝 Set drop_before_create=False from direct user input")
                         elif "write_count" not in memory.gathered_params:
-                            # Second missing param is write_count
+                            # Currently asking for write_count (after all execute_query params)
                             if user_lower in ["yes", "y", "true", "1"]:
                                 memory.gathered_params["write_count"] = True
-                                logger.info("📝 Set write_count=True from direct user input (pre-fallback)")
+                                logger.info("📝 Set write_count=True from direct user input")
                             elif user_lower in ["no", "n", "false", "0"]:
                                 memory.gathered_params["write_count"] = False
-                                logger.info("📝 Set write_count=False from direct user input (pre-fallback)")
+                                logger.info("📝 Set write_count=False from direct user input")
                     
                     # For write_data: only write_count uses yes/no
                     elif tool_name == "write_data" and "write_count" not in memory.gathered_params:
                         if user_lower in ["yes", "y", "true", "1"]:
                             memory.gathered_params["write_count"] = True
-                            logger.info("📝 Set write_count=True from direct user input (pre-fallback)")
+                            logger.info("📝 Set write_count=True from direct user input")
                         elif user_lower in ["no", "n", "false", "0"]:
                             memory.gathered_params["write_count"] = False
-                            logger.info("📝 Set write_count=False from direct user input (pre-fallback)")
+                            logger.info("📝 Set write_count=False from direct user input")
                 
                 # If LLM returned a valid question, use it directly
                 if result.get("action") == "ASK" and result.get("question"):
@@ -535,9 +562,26 @@ Extract parameters or ask for missing ones."""
             if params.get("execute_query"):
                 if not params.get("result_schema"):
                     logger.info("❌ Missing: result_schema (execute_query=true)")
+                    # Get available schemas from db_config.json for the selected connection
+                    try:
+                        from src.utils.config_loader import get_config_loader
+                        config_loader = get_config_loader()
+                        available_schemas = config_loader.get_schemas_for_connection(memory.connection)
+                        
+                        if available_schemas:
+                            schema_list = "\n".join([f"• {schema}" for schema in available_schemas])
+                            question = f"What schema should I write the results to?\n\nAvailable schemas in {memory.connection}:\n{schema_list}"
+                            logger.info(f"📋 Showing {len(available_schemas)} available schemas for result_schema")
+                        else:
+                            question = "What schema should I write the results to?"
+                            logger.warning(f"⚠️ No schemas found in db_config.json for connection {memory.connection}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not load schema list from db_config.json: {e}")
+                        question = "What schema should I write the results to?"
+                    
                     return {
                         "action": "ASK",
-                        "question": "What schema should I write the results to?"
+                        "question": question
                     }
                 if not params.get("table_name"):
                     logger.info("❌ Missing: table_name (execute_query=true)")
@@ -551,8 +595,10 @@ Extract parameters or ask for missing ones."""
                         "action": "ASK",
                         "question": "Should I drop the table before creating it? (yes/no)"
                     }
+                # All execute_query params complete, fall through to check write_count
             
             # Check if we should ask about write_count
+            # NOTE: This is asked AFTER all execute_query parameters are complete
             if "write_count" not in params:
                 logger.info("❓ Asking about write_count")
                 return {
