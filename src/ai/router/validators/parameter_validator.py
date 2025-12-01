@@ -117,13 +117,6 @@ class ParameterValidator:
                 "question": "What should I name this write_data job?"
             }
         
-        if not params.get("table"):
-            logger.info("❌ Missing: table")
-            return {
-                "action": "ASK",
-                "question": "What table should I write the data to?"
-            }
-        
         if not params.get("connection"):
             logger.info("❌ Missing: connection for write_data")
             logger.info(f"📋 Memory has {len(memory.connections)} connections")
@@ -164,9 +157,14 @@ class ParameterValidator:
                 return {
                     "action": "ASK",
                     "question": "What schema should I write the data to?"
-                }
+            }
         
-        if not params.get("drop_or_truncate"):
+        if not params.get("table"):
+            logger.info("❌ Missing: table")
+            return {
+                "action": "ASK",
+                "question": "What table should I write the data to?"
+            }        if not params.get("drop_or_truncate"):
             logger.info("❌ Missing: drop_or_truncate")
             return {
                 "action": "ASK",

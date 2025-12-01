@@ -105,6 +105,13 @@ class JobAgent:
             # Re-run validation to get next question
             return self._validate_params(memory, tool_name, user_input="")
         
+        # If params are empty and input is just a simple command (like "write"), skip LLM
+        user_input_lower = user_input.lower().strip()
+        simple_commands = {"write", "email", "send", "done", "finish", "complete"}
+        if not memory.gathered_params and user_input_lower in simple_commands:
+            logger.info(f"📝 Simple command '{user_input}' with empty params, skipping LLM extraction")
+            return self._validate_params(memory, tool_name, user_input="")
+        
         # Try to use LLM to extract parameters
         try:
             result = self._extract_with_llm(memory, user_input, tool_name)
