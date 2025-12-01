@@ -22,25 +22,20 @@ class WriteDataPrompt:
     
     TEMPLATE = """Extract params for write_data job.
 
-CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Parameters needed (in order) with EXACT types:
-1. name (string): Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
-2. table (string): Which table to write data to?
-3. connection (string): Which database connection to use? (see list below)
-4. schemas (string): Which schema contains the table? (DO NOT ASK - system will fetch available schemas after connection is selected)
-5. drop_or_truncate (string): "drop", "truncate", or "none" - Ask "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
-6. write_count (boolean): true or false - Ask "Would you like to track the row count for this write operation? (yes/no)"
+Params needed:
+1. name (string): Job name
+2. table (string): Target table
+3. connection (string): Database connection
+4. schemas (string): Schema (system fetches after connection)
+5. drop_or_truncate (string): "drop", "truncate", or "none"
+6. write_count (boolean): true/false
 
 Available connections:
 {connections}
 
-IMPORTANT: 
-- After connection is selected, DO NOT ask about schemas. The missing schemas will trigger automatic schema fetching.
-- schemas must be a STRING (e.g., "ANONYMOUS"), NOT a list
-- write_count must be a BOOLEAN (true/false), not a string
-
-Ask ONE clear, friendly question at a time. Don't list all parameters at once.
+Types: schemas=STRING, write_count=BOOLEAN. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
@@ -54,17 +49,14 @@ class ReadSQLPrompt:
     
     TEMPLATE = """Extract params for read_sql job.
 
-IMPORTANT: Extract params from user input FIRST, then ask for missing ones.
-CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Parameters with EXACT types:
-- name (string): Job name (NEVER extract "ok"/"okay"/"yes"/"no" as name - ask for a real job name)
-- execute_query (boolean): true or false - Ask "Would you like to save the query results to the database?" (yes=true, no=false)
-- write_count (boolean): true or false - Ask "Would you like to track the row count?" (yes=true, no=false)
+Params:
+- name (string): Job name
+- execute_query (boolean): Save results to DB? (yes=true, no=false)
+- write_count (boolean): Track row count? (yes=true, no=false)
 
-IMPORTANT: execute_query and write_count must be BOOLEAN (true/false), not strings.
-
-If user provides a REAL value (not just confirmation), extract it into params. Ask ONE question at a time.
+Types: execute_query and write_count must be BOOLEAN. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
