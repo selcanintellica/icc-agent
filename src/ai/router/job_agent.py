@@ -287,17 +287,6 @@ Output format:
 Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
 
-CRITICAL: Match the user's answer to the parameter being asked! Pay attention to keywords:
-- If question contains "write the data" OR "data to" AND mentions "schema" → extract as "schemas"
-- If question contains "write the row count" OR "row count to" AND mentions "schema" → extract as "write_count_schemas"
-- If question contains "row count" AND mentions "table" → extract as "write_count_table"
-- If question contains "row count" AND mentions "connection" → extract as "write_count_connection"
-- If last question asks about connection (main) → extract as "connection"
-- If last question asks about table (main) → extract as "table"
-- If last question asks about name/job name → extract as "name"
-- If last question asks "drop/truncate" → extract as "drop_or_truncate"
-- If last question asks "track row count" → extract as "write_count"
-
 Output JSON only:"""
             
         elif tool_name == "read_sql":
@@ -308,17 +297,6 @@ Output JSON only:"""
             prompt_text = f"""{last_q}User answer: "{user_input}"
 Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
-
-CRITICAL: Match the user's answer to the parameter being asked!
-- If last question contains "write the results" OR "result schema" → extract as "result_schema"
-- If last question contains "write the row count" OR "row count" AND "schema" → extract as "write_count_schema"
-- If last question contains "write the row count" OR "row count" AND "table" → extract as "write_count_table"
-- If last question contains "row count" AND "connection" → extract as "write_count_connection"
-- If last question asks about table (result) → extract as "table_name"
-- If last question asks about name/job name → extract as "name"
-- If last question asks "save/write results" → extract as "execute_query"
-- If last question asks "track row count" → extract as "write_count"
-- If last question asks "drop table" → extract as "drop_before_create"
 
 Output JSON only:"""
             
