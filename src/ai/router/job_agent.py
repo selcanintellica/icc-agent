@@ -33,7 +33,7 @@ class JobAgentConfig:
         base_url: str = "http://localhost:11434",
         num_predict: int = 4096
     ):
-        self.model_name = model_name or os.getenv("MODEL_NAME", "qwen3:1.7b")
+        self.model_name = model_name or os.getenv("MODEL_NAME", "qwen3:8b")
         self.temperature = temperature
         self.base_url = base_url
         self.num_predict = num_predict
@@ -106,18 +106,12 @@ class JobAgent:
             # Re-run validation to get next question
             return self._validate_params(memory, tool_name, user_input="")
         
-        # If params are empty or very few, and input is simple/short, skip LLM
+        # Skip LLM only for simple commands when params are empty
         user_input_lower = user_input.lower().strip()
         simple_commands = {"write", "email", "send", "done", "finish", "complete", "both"}
         
-        # Skip LLM if: empty params with simple command, OR very short input (< 3 words) at start
-        should_skip = (
-            (not memory.gathered_params and user_input_lower in simple_commands) or
-            (len(memory.gathered_params) <= 1 and len(user_input.split()) <= 2)
-        )
-        
-        if should_skip:
-            logger.info(f"📝 Skipping LLM extraction for simple input: '{user_input}'")
+        if not memory.gathered_params and user_input_lower in simple_commands:
+            logger.info(f"📝 Skipping LLM extraction for command: '{user_input}'")
             return self._validate_params(memory, tool_name, user_input="")
         
         # Try to use LLM to extract parameters
@@ -380,13 +374,21 @@ Extract parameters or ask for missing ones."""
             HumanMessage(content=prompt_text)
         ]
         
-        response = self.llm.invoke(messages)
-        content = response.content.strip()
+        logger.info(f"🔄 Calling LLM with model: {self.config.model_name}")
+        logger.info(f"📝 Prompt length: {len(prompt_text)} chars")
         
-        logger.info(f"🤖 Job Agent raw response: {content[:300]}...")
-        
-        if not content:
-            logger.error("❌ LLM returned empty response, using fallback")
+        try:
+            response = self.llm.invoke(messages)
+            content = response.content.strip()
+            
+            logger.info(f"🤖 Job Agent raw response: {content[:300]}...")
+            
+            if not content:
+                logger.error("❌ LLM returned empty response, using fallback")
+                return self._validate_params(memory, tool_name, user_input)
+        except Exception as llm_error:
+            logger.error(f"❌ LLM invocation failed: {str(llm_error)}")
+            logger.error(f"❌ Falling back to validation")
             return self._validate_params(memory, tool_name, user_input)
         
         # Parse JSON response
