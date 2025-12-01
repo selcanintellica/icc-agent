@@ -371,3 +371,206 @@ class ReadSQLHandler(BaseStageHandler):
                 memory,
                 f"❌ Error: {result['message']}\nPlease try again."
             )
+        logger.info(f"📋 Fetching schemas for connection: {connection_name}")
+        
+        try:
+            from src.utils.connection_api_client import fetch_schemas_for_connection
+            from src.utils.auth import authenticate
+            
+            connection_id = memory.get_connection_id(connection_name)
+            if not connection_id:
+                logger.error(f"❌ Cannot fetch schemas: Unknown connection {connection_name}")
+                return self._create_result(
+                    memory,
+                    f"❌ Error: Unknown connection '{connection_name}'"
+                )
+            
+            userpass, token = await authenticate()
+            auth_headers = {
+                "Authorization": f"Basic {userpass}",
+                "TokenKey": token
+            }
+            
+            schemas = await fetch_schemas_for_connection(connection_id, auth_headers=auth_headers)
+            memory.available_schemas = schemas
+            logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
+            
+            schema_list = memory.get_schema_list_for_llm()
+            
+            # Determine if this is for main schema or write_count_schemas based on what's missing
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schemas") and params.get("write_count_connection"):
+                # This is for write_count_schemas
+                question = f"Which schema should I write the row count to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for write_count_schemas")
+            else:
+                # This is for main schemas
+                question = f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for main schemas")
+            
+            memory.last_question = question
+            return self._create_result(memory, question)
+        
+        except Exception as e:
+            logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+            
+            # Determine fallback question based on context
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schemas"):
+                fallback_question = "What schema should I write the row count to?"
+            else:
+                fallback_question = "What schema should I write the data to?"
+            
+            memory.last_question = fallback_question
+            return self._create_result(memory, fallback_question)
+    
+    async def _execute_write_data_job(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
+        """Execute write_data job."""
+        logger.info("⚡ Executing write_data_job...")
+        
+        try:
+            connection_name = params.get("connection", memory.connection)
+            connection_id = memory.get_connection_id(connection_name)
+            
+            if not connection_id:
+                from src.utils.connections import get_connection_id
+                connection_id = get_connection_id(connection_name)
+                if not connection_id:
+                    return self._create_result(
+                        memory,
+                        f"❌ Error: Unknown connection '{connection_name}'."
+                    )
+            
+            table_name = params.get("table", "output_table")
+            drop_or_truncate = params.get("drop_or_truncate", "INSERT").upper()
+            
+            if drop_or_truncate not in ["DROP", "TRUNCATE", "INSERT"]:
+                drop_or_truncate = "INSERT"
+            
+            columns = [ColumnSchema(columnName=col) for col in (memory.last_columns or [])]
+            schemas = params.get("schemas", memory.schema)
+            write_count = params.get("write_count", False)
+            
+            write_data_vars = WriteDataVariables(
+                data_set=memory.last_job_id,
+                data_set_job_name=memory.last_job_name,
+                data_set_folder=memory.last_job_folder,
+                columns=columns,
+                add_columns=[],
+                connection=connection_id,
+                schemas=schemas,
+                table=table_name,
+                drop_or_truncate=drop_or_truncate,
+                write_count=write_count
+            )
+            
+            if write_count:
+                write_count_conn_name = params.get("write_count_connection", memory.connection)
+                write_count_conn_id = memory.get_connection_id(write_count_conn_name)
+                
+                if not write_count_conn_id:
+                    from src.utils.connections import get_connection_id as get_conn_id_static
+                    write_count_conn_id = get_conn_id_static(write_count_conn_name)
+                    if not write_count_conn_id:
+                        return self._create_result(
+                            memory,
+                            f"❌ Error: Unknown connection '{write_count_conn_name}' for write_count."
+                        )
+                
+                write_data_vars.write_count_connection = write_count_conn_id
+                write_data_vars.write_count_schemas = params.get("write_count_schemas")
+                write_data_vars.write_count_table = params.get("write_count_table")
+            
+            request = WriteDataLLMRequest(
+                rights={"owner": "184431757886694"},
+                props={"active": "true", "name": params.get("name", "WriteData_Job"), "description": ""},
+                variables=[write_data_vars]
+            )
+            
+            result = await write_data_job(request)
+            logger.info(f"📊 write_data_job result: {json.dumps(result, indent=2, default=str)}")
+            
+            memory.gathered_params = {}
+            memory.current_tool = None
+            memory.last_question = None
+            
+            return self._create_result(
+                memory,
+                f"✅ Data written successfully to table '{table_name}' in {schemas} schema!\nAnything else? (email / done)"
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Error in write_data: {str(e)}", exc_info=True)
+            return self._create_result(
+                memory,
+                f"❌ Error: {str(e)}\nPlease try again."
+            )
+    
+    async def _handle_send_email(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        """Handle send_email flow."""
+        if memory.current_tool != "send_email":
+            logger.info("🔄 Switching to send_email, clearing gathered_params")
+            memory.gathered_params = {}
+            memory.last_question = None
+        
+        memory.current_tool = "send_email"
+        logger.info("📧 Processing send_email request...")
+        
+        action = call_job_agent(memory, user_input, tool_name="send_email")
+        
+        if action.get("action") == "ASK":
+            memory.last_question = action["question"]
+            return self._create_result(memory, action["question"])
+        
+        if action.get("action") == "TOOL" and action.get("tool_name") == "send_email":
+            return await self._execute_send_email_job(memory)
+        
+        return self._create_result(memory, "Please provide email parameters.")
+    
+    async def _execute_send_email_job(self, memory: Memory) -> StageHandlerResult:
+        """Execute send_email job."""
+        logger.info("⚡ Executing send_email_job...")
+        
+        try:
+            params = memory.gathered_params
+            
+            from src.utils.connections import get_connection_id
+            connection_id = get_connection_id(memory.connection)
+            if not connection_id:
+                return self._create_result(
+                    memory,
+                    f"❌ Error: Unknown connection '{memory.connection}'."
+                )
+            
+            request = SendEmailLLMRequest(
+                rights={"owner": "184431757886694"},
+                props={"active": "true", "name": params.get("name", "Email_Results"), "description": ""},
+                variables=[SendEmailVariables(
+                    query=memory.last_sql,
+                    connection=connection_id,
+                    to=params.get("to"),
+                    subject=params.get("subject", "Query Results"),
+                    text=params.get("text", "Please find the query results attached."),
+                    attachment=True,
+                    cc=params.get("cc", "")
+                )]
+            )
+            
+            result = await send_email_job(request)
+            logger.info(f"📊 send_email_job result: {json.dumps(result, indent=2, default=str)}")
+            
+            memory.gathered_params = {}
+            memory.current_tool = None
+            memory.last_question = None
+            
+            return self._create_result(
+                memory,
+                f"✅ Email sent to {params.get('to')}!\nAnything else? (write / done)"
+            )
+        
+        except Exception as e:
+            logger.error(f"❌ Error in send_email: {str(e)}", exc_info=True)
+            return self._create_result(
+                memory,
+                f"❌ Error: {str(e)}\nPlease try again."
+            )

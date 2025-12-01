@@ -13,6 +13,8 @@ from .context.stage_context import Stage
 from .stage_handlers.base_handler import BaseStageHandler, StageHandlerResult
 from .stage_handlers.readsql_handler import ReadSQLHandler
 from .stage_handlers.comparesql_handler import CompareSQLHandler
+from .stage_handlers.writedata_handler import WriteDataHandler
+from .stage_handlers.sendemail_handler import SendEmailHandler
 from .sql_agent import create_sql_agent, SQLAgent
 from .job_agent import create_job_agent, JobAgent
 
@@ -139,6 +141,22 @@ class RouterOrchestrator:
             )
         )
         
+        # Register WriteData handler
+        registry.register(
+            "writedata",
+            WriteDataHandler(
+                job_agent=self.config.job_agent
+            )
+        )
+        
+        # Register SendEmail handler
+        registry.register(
+            "sendemail",
+            SendEmailHandler(
+                job_agent=self.config.job_agent
+            )
+        )
+        
         return registry
     
     async def handle_turn(self, memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
@@ -172,6 +190,25 @@ class RouterOrchestrator:
             result = await handler.handle(memory, user_utterance)
             
             if result:
+                # Check for delegation markers
+                if result.response == "__DELEGATE_TO_WRITEDATA__":
+                    logger.info("🔄 Detected delegation to WriteDataHandler")
+                    writedata_handler = self.registry._handlers.get("writedata")
+                    if writedata_handler:
+                        result = await writedata_handler.handle(memory, user_utterance)
+                        return result.memory, result.response
+                    else:
+                        return memory, "❌ Error: WriteDataHandler not available."
+                
+                elif result.response == "__DELEGATE_TO_SENDEMAIL__":
+                    logger.info("🔄 Detected delegation to SendEmailHandler")
+                    sendemail_handler = self.registry._handlers.get("sendemail")
+                    if sendemail_handler:
+                        result = await sendemail_handler.handle(memory, user_utterance)
+                        return result.memory, result.response
+                    else:
+                        return memory, "❌ Error: SendEmailHandler not available."
+                
                 return result.memory, result.response
             else:
                 logger.warning(f"⚠️ Handler returned None for stage {memory.stage.value}")
