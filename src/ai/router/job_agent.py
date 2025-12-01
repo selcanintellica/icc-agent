@@ -358,6 +358,8 @@ Extract parameters or ask for missing ones."""
         
         logger.info(f"🔄 Calling LLM with model: {self.config.model_name}")
         logger.info(f"📝 Prompt length: {len(prompt_text)} chars")
+        logger.info(f"📄 System prompt:\n{system_prompt}")
+        logger.info(f"📄 User prompt:\n{prompt_text}")
         
         try:
             response = self.llm.invoke(messages)
