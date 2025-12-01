@@ -157,14 +157,16 @@ class ParameterValidator:
                 return {
                     "action": "ASK",
                     "question": "What schema should I write the data to?"
-            }
+                }
         
         if not params.get("table"):
             logger.info("❌ Missing: table")
             return {
                 "action": "ASK",
                 "question": "What table should I write the data to?"
-            }        if not params.get("drop_or_truncate"):
+            }
+        
+        if not params.get("drop_or_truncate"):
             logger.info("❌ Missing: drop_or_truncate")
             return {
                 "action": "ASK",
