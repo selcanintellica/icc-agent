@@ -51,9 +51,11 @@ class SendEmailHandler(BaseStageHandler):
         """Process the SendEmail workflow."""
         logger.info(f"📨 SendEmailHandler: Processing send_email request")
         
-        # Initialize tool context if switching from another tool
-        if memory.current_tool != "send_email":
-            logger.info("🔄 Switching to send_email, clearing gathered_params")
+        # Clear params on first entry (when gathered_params has read_sql data)
+        # Check if we're just starting send_email by looking at gathered_params
+        if not memory.gathered_params.get("recipient") and memory.gathered_params.get("name"):
+            # Has read_sql params (name) but no send_email params (recipient) - clear it
+            logger.info("🔄 Starting send_email, clearing old gathered_params")
             memory.gathered_params = {}
             memory.last_question = None
         

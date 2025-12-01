@@ -52,9 +52,11 @@ class WriteDataHandler(BaseStageHandler):
         """Process the WriteData workflow."""
         logger.info(f"📗 WriteDataHandler: Processing write_data request")
         
-        # Initialize tool context if switching from another tool
-        if memory.current_tool != "write_data":
-            logger.info("🔄 Switching to write_data, clearing gathered_params")
+        # Clear params on first entry (when gathered_params has read_sql data)
+        # Check if we're just starting write_data by looking at gathered_params
+        if not memory.gathered_params.get("table") and memory.gathered_params.get("name"):
+            # Has read_sql params (name) but no write_data params (table) - clear it
+            logger.info("🔄 Starting write_data, clearing old gathered_params")
             memory.gathered_params = {}
             memory.last_question = None
         

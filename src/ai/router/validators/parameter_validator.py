@@ -127,16 +127,21 @@ class ParameterValidator:
         if not params.get("connection"):
             logger.info("❌ Missing: connection for write_data")
             logger.info(f"📋 Memory has {len(memory.connections)} connections")
-            connection_list = memory.get_connection_list_for_llm()
             
-            if connection_list and memory.connections:
+            # First time - need to fetch connections
+            if not memory.connections:
+                logger.info("🔄 Need to fetch connections from API")
                 return {
-                    "action": "ASK",
-                    "question": f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
+                    "action": "FETCH_CONNECTIONS",
+                    "question": "Fetching available connections..."
                 }
-            else:
-                params["connection"] = memory.connection
-                logger.info(f"⚠️ No dynamic connections available, using read_sql connection: {memory.connection}")
+            
+            # Connections already fetched - present list
+            connection_list = memory.get_connection_list_for_llm()
+            return {
+                "action": "ASK",
+                "question": f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
+            }
         
         if not params.get("schemas"):
             connection_name = params.get("connection")
