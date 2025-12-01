@@ -332,8 +332,8 @@ class ReadSQLHandler(BaseStageHandler):
             # Return a special marker that router will recognize
             return StageHandlerResult(
                 memory=memory,
-                message="__DELEGATE_TO_WRITEDATA__",
-                new_stage=memory.stage
+                response="__DELEGATE_TO_WRITEDATA__",
+                next_stage=memory.stage
             )
         elif wants_email:
             # Set tool context and signal router to delegate to SendEmailHandler
@@ -342,8 +342,8 @@ class ReadSQLHandler(BaseStageHandler):
             # Return a special marker that router will recognize
             return StageHandlerResult(
                 memory=memory,
-                message="__DELEGATE_TO_SENDEMAIL__",
-                new_stage=memory.stage
+                response="__DELEGATE_TO_SENDEMAIL__",
+                next_stage=memory.stage
             )
         
         return self._create_result(
