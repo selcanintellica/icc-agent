@@ -51,9 +51,13 @@ class SendEmailHandler(BaseStageHandler):
         """Process the SendEmail workflow."""
         logger.info(f"📨 SendEmailHandler: Processing send_email request")
         
-        # Clear params only when switching from read_sql (has execute_query or write_count params)
-        has_read_sql_params = "execute_query" in memory.gathered_params or "write_count" in memory.gathered_params
-        if has_read_sql_params:
+        # Clear params only when switching from read_sql
+        # Check for execute_query (always present in read_sql) but NOT send_email-specific params
+        has_read_sql_only_params = (
+            "execute_query" in memory.gathered_params and 
+            not any(k in memory.gathered_params for k in ["to", "recipient", "subject", "body"])
+        )
+        if has_read_sql_only_params:
             logger.info("🔄 Switching from read_sql to send_email, clearing gathered_params")
             memory.gathered_params = {}
             memory.last_question = None

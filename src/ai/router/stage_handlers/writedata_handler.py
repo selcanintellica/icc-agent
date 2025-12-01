@@ -52,9 +52,13 @@ class WriteDataHandler(BaseStageHandler):
         """Process the WriteData workflow."""
         logger.info(f"📗 WriteDataHandler: Processing write_data request")
         
-        # Clear params only when switching from read_sql (has execute_query or write_count params)
-        has_read_sql_params = "execute_query" in memory.gathered_params or "write_count" in memory.gathered_params
-        if has_read_sql_params:
+        # Clear params only when switching from read_sql
+        # Check for execute_query (always present in read_sql) but NOT write_data-specific params
+        has_read_sql_only_params = (
+            "execute_query" in memory.gathered_params and 
+            not any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
+        )
+        if has_read_sql_only_params:
             logger.info("🔄 Switching from read_sql to write_data, clearing gathered_params")
             memory.gathered_params = {}
             memory.last_question = None
