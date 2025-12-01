@@ -51,6 +51,7 @@ class ParameterValidator:
                 connection_name = memory.connection
                 if connection_name and not memory.available_schemas:
                     logger.info(f"📋 Need to fetch schemas for connection: {connection_name}")
+                    memory.available_schemas = []  # Clear cached schemas before fetching
                     return {
                         "action": "FETCH_SCHEMAS",
                         "connection": connection_name,
@@ -140,6 +141,7 @@ class ParameterValidator:
             connection_name = params.get("connection")
             if connection_name and not memory.available_schemas:
                 logger.info(f"📋 Need to fetch schemas for connection: {connection_name}")
+                memory.available_schemas = []  # Clear cached schemas before fetching
                 return {
                     "action": "FETCH_SCHEMAS",
                     "connection": connection_name,
@@ -172,6 +174,12 @@ class ParameterValidator:
                 "action": "ASK",
                 "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
             }
+        
+        # Normalize drop_or_truncate
+        drop_val = params.get("drop_or_truncate", "").lower().strip()
+        if drop_val in ["no", "append", "keep", "skip"]:
+            params["drop_or_truncate"] = "none"
+            logger.info("📝 Normalized drop_or_truncate to 'none'")
         
         if "write_count" not in params:
             logger.info("❓ Asking about write_count for write_data")
@@ -218,6 +226,13 @@ class ParameterValidator:
             return {
                 "action": "ASK",
                 "question": "What should the email subject be?"
+            }
+        
+        if not params.get("body"):
+            logger.info("❌ Missing: body")
+            return {
+                "action": "ASK",
+                "question": "What should the email body say?"
             }
         
         if "cc" not in params:
@@ -308,6 +323,7 @@ class ParameterValidator:
             # Need to fetch schemas for selected connection
             if connection_name and not memory.available_schemas:
                 logger.info(f"📋 Need to fetch schemas for write_count connection: {connection_name}")
+                memory.available_schemas = []  # Clear cached schemas before fetching
                 return {
                     "action": "FETCH_SCHEMAS",
                     "connection": connection_name,
