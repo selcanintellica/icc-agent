@@ -1,24 +1,36 @@
-import json
 import logging
+from typing import Optional
 from src.models.wire import WirePayload
 from src.models.query import QueryPayload
 from src.models.save_job_response import APIResponse, JobResponse
 from src.utils.config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
 
-from src.payload_builders.wire_builder import build_wire_payload
-from src.payload_builders.query_builder import QueryBuilder
-from src.repositories.query_repository import QueryRepository
+from src.payload_builders.wire_builder import get_wire_builder, WireBuilder
+from src.payload_builders.query_builder import get_query_builder, QueryBuilder
+from src.repositories.services import ColumnFetchingService, CompareSQLColumnGenerator
 
 logger = logging.getLogger(__name__)
 
 
 class JobRepository(BaseRepository):
-    """Repository for handling job-related API operations"""
+    """Repository for handling job-related API operations with dependency injection."""
+    
+    def __init__(
+        self,
+        client,
+        wire_builder: Optional[WireBuilder] = None,
+        query_builder: Optional[QueryBuilder] = None,
+        column_service: Optional[ColumnFetchingService] = None
+    ):
+        """Initialize with injected dependencies."""
+        super().__init__(client)
+        self.wire_builder = wire_builder or get_wire_builder()
+        self.query_builder = query_builder or get_query_builder()
+        self.column_service = column_service or ColumnFetchingService(client)
 
-    @staticmethod
     async def write_data_job(self, data) -> APIResponse[JobResponse]:
-        wire = build_wire_payload(data)
+        wire = self.wire_builder.build_wire_payload(data)
 
         logger.info(f"Creating write data job: {data.template}")
         logger.info(f"📦 Wire payload being sent to API:")
@@ -28,7 +40,6 @@ class JobRepository(BaseRepository):
         response = await self.post_request(endpoint, wire, JobResponse)
         return response
 
-    @staticmethod
     async def read_sql_job(self, data) -> tuple[APIResponse[JobResponse], list[str]]:
         """
         Execute a read SQL job and return both the job response and column names.
@@ -38,13 +49,12 @@ class JobRepository(BaseRepository):
                    - API response with job_id
                    - List of column names from the query
         """
-        query_payload = await QueryBuilder.build_read_sql_query_payload(data)
-        column_response = await QueryRepository.get_column_names(self, query_payload)
+        query_payload = await self.query_builder.build_read_sql_query_payload(data)
         
-        # Extract column names from the response
-        column_names = column_response.data.object.columns if column_response.success else []
+        # Use column service to fetch columns
+        column_names = await self.column_service.get_columns_as_list(query_payload)
 
-        wire = build_wire_payload(data, column_names=column_names)
+        wire = self.wire_builder.build_wire_payload(data, column_names=column_names)
 
         logger.info(f"Creating read SQL job: {data.template}")
         endpoint = ""  # Empty string since base_url already contains the full path
@@ -53,16 +63,14 @@ class JobRepository(BaseRepository):
         logger.info(f"Read SQL job created. Job ID: {response.data.object_id if response.success else 'N/A'}, Columns: {column_names}")
         return response, column_names
 
-    @staticmethod
     async def send_email_job(self, data) -> APIResponse[JobResponse]:
-        wire = build_wire_payload(data)
+        wire = self.wire_builder.build_wire_payload(data)
 
         logger.info(f"Creating send email job: {data.template}")
         endpoint = ""  # Empty string since base_url already contains the full path
         response = await self.post_request(endpoint, wire, JobResponse)
         return response
 
-    @staticmethod
     async def compare_sql_job(self, data) -> APIResponse[JobResponse]:
         """
         Execute a compare SQL job.
@@ -77,50 +85,20 @@ class JobRepository(BaseRepository):
         # Fetch columns only if not already provided
         if not var.first_table_columns:
             query_payload1 = QueryPayload(connectionId=conn_id, sql=sql1, folderId="")
-            col_resp1 = await QueryRepository.get_column_names(self, query_payload1)
-            cols1 = col_resp1.data.object.columns if col_resp1.success else []
-            var.first_table_columns = ",".join(cols1)
+            var.first_table_columns = await self.column_service.get_columns_as_comma_separated(query_payload1)
         
         if not var.second_table_columns:
             query_payload2 = QueryPayload(connectionId=conn_id, sql=sql2, folderId="")
-            col_resp2 = await QueryRepository.get_column_names(self, query_payload2)
-            cols2 = col_resp2.data.object.columns if col_resp2.success else []
-            var.second_table_columns = ",".join(cols2)
+            var.second_table_columns = await self.column_service.get_columns_as_comma_separated(query_payload2)
         
         # Dynamically generate columns_output based on keys
         if not var.columns_output:
-            output_cols = [
-                {"columnName": "FIRST_SQL_QUERY"},
-                {"columnName": "FIRST_TABLE_KEYS"}
-            ]
-            
-            # Add columns for first table keys
-            first_keys_list = [k.strip() for k in var.first_table_keys.split(",") if k.strip()]
-            for i, _ in enumerate(first_keys_list, 1):
-                output_cols.append({"columnName": f"FIRST_KEY_{i}"})
-                
-            output_cols.extend([
-                {"columnName": "FIRST_COLUMN"},
-                {"columnName": "FIRST_VALUE"},
-                {"columnName": "FIRST_TABLE_COUNT"},
-                {"columnName": "SECOND_SQL_QUERY"},
-                {"columnName": "SECOND_TABLE_KEYS"}
-            ])
-            
-            # Add columns for second table keys
-            second_keys_list = [k.strip() for k in var.second_table_keys.split(",") if k.strip()]
-            for i, _ in enumerate(second_keys_list, 1):
-                output_cols.append({"columnName": f"SECOND_KEY_{i}"})
-                
-            output_cols.extend([
-                {"columnName": "SECOND_COLUMN"},
-                {"columnName": "SECOND_VALUE"},
-                {"columnName": "SECOND_TABLE_COUNT"}
-            ])
-            
-            var.columns_output = json.dumps(output_cols)
+            var.columns_output = CompareSQLColumnGenerator.generate_columns_output(
+                first_table_keys=var.first_table_keys,
+                second_table_keys=var.second_table_keys
+            )
 
-        wire = build_wire_payload(data)
+        wire = self.wire_builder.build_wire_payload(data)
         
         logger.info(f"Creating compare SQL job: {data.template}")
         logger.info(f"Keys mapping: {var.keys_mapping}")

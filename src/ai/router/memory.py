@@ -1,228 +1,350 @@
 """
-Memory and Stage management for the staged conversation router.
+Refactored Memory using composition following SOLID principles.
+
+This module provides a Memory class that composes:
+- ConnectionManager: Handles connection-related operations
+- JobContext: Manages job execution state
+- StageContext: Handles conversation stage flow
+
+Following SOLID principles:
+- Single Responsibility: Each component has one responsibility
+- Open/Closed: Easy to extend with new components
+- Dependency Inversion: Memory depends on abstractions
 """
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass
 
-class Stage(Enum):
-    """Conversation stages for the router."""
-    START = "start"
-    
-    # New Initial Stage
-    ASK_JOB_TYPE = "ask_job_type"
-    
-    # Read SQL Flow
-    ASK_SQL_METHOD = "ask_sql_method"
-    NEED_NATURAL_LANGUAGE = "need_natural_language"
-    NEED_USER_SQL = "need_user_sql"
-    CONFIRM_GENERATED_SQL = "confirm_generated_sql"
-    CONFIRM_USER_SQL = "confirm_user_sql"
-    EXECUTE_SQL = "execute_sql"
-    
-    # Compare SQL Flow
-    ASK_FIRST_SQL_METHOD = "ask_first_sql_method"
-    NEED_FIRST_NATURAL_LANGUAGE = "need_first_natural_language"
-    NEED_FIRST_USER_SQL = "need_first_user_sql"
-    CONFIRM_FIRST_GENERATED_SQL = "confirm_first_generated_sql"
-    CONFIRM_FIRST_USER_SQL = "confirm_first_user_sql"
-    
-    ASK_SECOND_SQL_METHOD = "ask_second_sql_method"
-    NEED_SECOND_NATURAL_LANGUAGE = "need_second_natural_language"
-    NEED_SECOND_USER_SQL = "need_second_user_sql"
-    CONFIRM_SECOND_GENERATED_SQL = "confirm_second_generated_sql"
-    CONFIRM_SECOND_USER_SQL = "confirm_second_user_sql"
-    
-    ASK_AUTO_MATCH = "ask_auto_match"
-    WAITING_MAP_TABLE = "waiting_map_table"
-    ASK_REPORTING_TYPE = "ask_reporting_type"
-    ASK_COMPARE_SCHEMA = "ask_compare_schema"
-    ASK_COMPARE_TABLE_NAME = "ask_compare_table_name"
-    ASK_COMPARE_JOB_NAME = "ask_compare_job_name"
-    EXECUTE_COMPARE_SQL = "execute_compare_sql"
-
-    SHOW_RESULTS = "show_results"
-    NEED_WRITE_OR_EMAIL = "need_write_or_email"
-    DONE = "done"
+from .context import ConnectionManager, JobContext, StageContext
+from .context.stage_context import Stage
 
 
 @dataclass
 class Memory:
     """
-    Conversation memory that persists across turns.
-    Stores state, last SQL, job results, and any gathered parameters.
+    Refactored conversation memory using composition.
+    
+    Composes three focused components:
+    - connection_manager: Handles connections and schemas
+    - job_context: Manages job state and results
+    - stage_context: Tracks conversation flow
+    
+    Following SOLID principles - Memory is now a facade that delegates
+    to specialized components instead of handling everything itself.
     """
-    stage: Stage = Stage.START
-    job_type: str = "readsql"  # readsql or comparesql
     
-    last_sql: Optional[str] = None
-    first_sql: Optional[str] = None
-    second_sql: Optional[str] = None
+    connection_manager: ConnectionManager
+    job_context: JobContext
+    stage_context: StageContext
     
-    # Compare SQL specific fields
-    first_columns: Optional[List[str]] = None
-    second_columns: Optional[List[str]] = None
-    column_mappings: Optional[List[Dict[str, str]]] = None  # [{FirstMappedColumn, SecondMappedColumn}]
-    key_mappings: Optional[List[Dict[str, str]]] = None  # [{FirstKey, SecondKey}]
-    
-    last_job_id: Optional[str] = None
-    last_job_name: Optional[str] = None  # ReadSQL job name
-    last_job_folder: Optional[str] = None  # ReadSQL job folder
-    last_columns: Optional[List[str]] = None
-    last_preview: Optional[Dict[str, Any]] = None
-    gathered_params: Dict[str, Any] = field(default_factory=dict)
-    current_tool: Optional[str] = None  # Track which tool we're gathering params for (write_data, send_email, etc)
-    last_question: Optional[str] = None  # Track the last question asked to user for context
-    execute_query_enabled: bool = False  # Track if ReadSQL executed with execute_query=true (auto-writes data)
-    connection: str = "ORACLE_10"  # Connection name, set from UI
-    schema: str = "SALES"  # Schema name, set from UI
-    selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])  # Tables selected from UI
-    connections: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # Dynamic connection list from API
-    available_schemas: List[str] = field(default_factory=list)  # Cached schema list for selected connection
-    
-    def get_connection_id(self, connection_name: str) -> Optional[str]:
+    def __init__(
+        self,
+        connection_manager: Optional[ConnectionManager] = None,
+        job_context: Optional[JobContext] = None,
+        stage_context: Optional[StageContext] = None
+    ):
         """
-        Get connection ID from stored connections with fuzzy matching.
-        
-        Handles cases like:
-        - "ORACLE_10" matches "ORACLE_10"
-        - "ORACLE_10 (Oracle)" matches "ORACLE_10"
-        - "oracle10" matches "ORACLE_10"
-        - "oracle_10" matches "ORACLE_10"
+        Initialize memory with composed components.
         
         Args:
-            connection_name: Name of the connection (can include db_type in parentheses)
-            
-        Returns:
-            Connection ID string or None if not found
+            connection_manager: Connection management (creates default if None)
+            job_context: Job context (creates default if None)
+            stage_context: Stage context (creates default if None)
         """
-        if not connection_name:
-            return None
-        
-        # First try exact match
-        conn = self.connections.get(connection_name)
-        if conn:
-            return conn.get("id")
-        
-        # Remove anything in parentheses (e.g., "ORACLE_10 (Oracle)" -> "ORACLE_10")
-        clean_name = connection_name.split("(")[0].strip()
-        conn = self.connections.get(clean_name)
-        if conn:
-            return conn.get("id")
-        
-        # Try case-insensitive match with underscores removed
-        # "oracle10" or "ORACLE10" -> matches "ORACLE_10"
-        normalized_input = clean_name.lower().replace("_", "").replace("-", "")
-        
-        for stored_name, conn_info in self.connections.items():
-            normalized_stored = stored_name.lower().replace("_", "").replace("-", "")
-            if normalized_input == normalized_stored:
-                return conn_info.get("id")
-        
-        return None
+        self.connection_manager = connection_manager or ConnectionManager()
+        self.job_context = job_context or JobContext()
+        self.stage_context = stage_context or StageContext()
+    
+    # Convenience properties for backward compatibility
+    
+    @property
+    def stage(self) -> Stage:
+        """Get current stage."""
+        return self.stage_context.stage
+    
+    @stage.setter
+    def stage(self, value: Stage) -> None:
+        """Set current stage."""
+        self.stage_context.stage = value
+    
+    @property
+    def job_type(self) -> str:
+        """Get job type."""
+        return self.job_context.job_type
+    
+    @job_type.setter
+    def job_type(self, value: str) -> None:
+        """Set job type."""
+        self.job_context.job_type = value
+    
+    @property
+    def last_sql(self) -> Optional[str]:
+        """Get last SQL."""
+        return self.job_context.last_sql
+    
+    @last_sql.setter
+    def last_sql(self, value: Optional[str]) -> None:
+        """Set last SQL."""
+        self.job_context.last_sql = value
+    
+    @property
+    def first_sql(self) -> Optional[str]:
+        """Get first SQL."""
+        return self.job_context.first_sql
+    
+    @first_sql.setter
+    def first_sql(self, value: Optional[str]) -> None:
+        """Set first SQL."""
+        self.job_context.first_sql = value
+    
+    @property
+    def second_sql(self) -> Optional[str]:
+        """Get second SQL."""
+        return self.job_context.second_sql
+    
+    @second_sql.setter
+    def second_sql(self, value: Optional[str]) -> None:
+        """Set second SQL."""
+        self.job_context.second_sql = value
+    
+    @property
+    def first_columns(self) -> Optional[List[str]]:
+        """Get first columns."""
+        return self.job_context.first_columns
+    
+    @first_columns.setter
+    def first_columns(self, value: Optional[List[str]]) -> None:
+        """Set first columns."""
+        self.job_context.first_columns = value
+    
+    @property
+    def second_columns(self) -> Optional[List[str]]:
+        """Get second columns."""
+        return self.job_context.second_columns
+    
+    @second_columns.setter
+    def second_columns(self, value: Optional[List[str]]) -> None:
+        """Set second columns."""
+        self.job_context.second_columns = value
+    
+    @property
+    def column_mappings(self) -> Optional[List[Dict[str, str]]]:
+        """Get column mappings."""
+        return self.job_context.column_mappings
+    
+    @column_mappings.setter
+    def column_mappings(self, value: Optional[List[Dict[str, str]]]) -> None:
+        """Set column mappings."""
+        self.job_context.column_mappings = value
+    
+    @property
+    def key_mappings(self) -> Optional[List[Dict[str, str]]]:
+        """Get key mappings."""
+        return self.job_context.key_mappings
+    
+    @key_mappings.setter
+    def key_mappings(self, value: Optional[List[Dict[str, str]]]) -> None:
+        """Set key mappings."""
+        self.job_context.key_mappings = value
+    
+    @property
+    def last_job_id(self) -> Optional[str]:
+        """Get last job ID."""
+        return self.job_context.last_job_id
+    
+    @last_job_id.setter
+    def last_job_id(self, value: Optional[str]) -> None:
+        """Set last job ID."""
+        self.job_context.last_job_id = value
+    
+    @property
+    def last_job_name(self) -> Optional[str]:
+        """Get last job name."""
+        return self.job_context.last_job_name
+    
+    @last_job_name.setter
+    def last_job_name(self, value: Optional[str]) -> None:
+        """Set last job name."""
+        self.job_context.last_job_name = value
+    
+    @property
+    def last_job_folder(self) -> Optional[str]:
+        """Get last job folder."""
+        return self.job_context.last_job_folder
+    
+    @last_job_folder.setter
+    def last_job_folder(self, value: Optional[str]) -> None:
+        """Set last job folder."""
+        self.job_context.last_job_folder = value
+    
+    @property
+    def last_columns(self) -> Optional[List[str]]:
+        """Get last columns."""
+        return self.job_context.last_columns
+    
+    @last_columns.setter
+    def last_columns(self, value: Optional[List[str]]) -> None:
+        """Set last columns."""
+        self.job_context.last_columns = value
+    
+    @property
+    def last_preview(self) -> Optional[Dict[str, Any]]:
+        """Get last preview."""
+        return self.job_context.last_preview
+    
+    @last_preview.setter
+    def last_preview(self, value: Optional[Dict[str, Any]]) -> None:
+        """Set last preview."""
+        self.job_context.last_preview = value
+    
+    @property
+    def gathered_params(self) -> Dict[str, Any]:
+        """Get gathered params."""
+        return self.job_context.gathered_params
+    
+    @gathered_params.setter
+    def gathered_params(self, value: Dict[str, Any]) -> None:
+        """Set gathered params."""
+        self.job_context.gathered_params = value
+    
+    @property
+    def current_tool(self) -> Optional[str]:
+        """Get current tool."""
+        return self.job_context.current_tool
+    
+    @current_tool.setter
+    def current_tool(self, value: Optional[str]) -> None:
+        """Set current tool."""
+        self.job_context.current_tool = value
+    
+    @property
+    def last_question(self) -> Optional[str]:
+        """Get last question."""
+        return self.stage_context.last_question
+    
+    @last_question.setter
+    def last_question(self, value: Optional[str]) -> None:
+        """Set last question."""
+        self.stage_context.last_question = value
+    
+    @property
+    def execute_query_enabled(self) -> bool:
+        """Get execute query flag."""
+        return self.job_context.execute_query_enabled
+    
+    @execute_query_enabled.setter
+    def execute_query_enabled(self, value: bool) -> None:
+        """Set execute query flag."""
+        self.job_context.execute_query_enabled = value
+    
+    @property
+    def connection(self) -> str:
+        """Get connection."""
+        return self.connection_manager.connection
+    
+    @connection.setter
+    def connection(self, value: str) -> None:
+        """Set connection."""
+        self.connection_manager.connection = value
+    
+    @property
+    def schema(self) -> str:
+        """Get schema."""
+        return self.connection_manager.schema
+    
+    @schema.setter
+    def schema(self, value: str) -> None:
+        """Set schema."""
+        self.connection_manager.schema = value
+    
+    @property
+    def selected_tables(self) -> List[str]:
+        """Get selected tables."""
+        return self.job_context.selected_tables
+    
+    @selected_tables.setter
+    def selected_tables(self, value: List[str]) -> None:
+        """Set selected tables."""
+        self.job_context.selected_tables = value
+    
+    @property
+    def connections(self) -> Dict[str, Dict[str, Any]]:
+        """Get connections."""
+        return self.connection_manager.connections
+    
+    @connections.setter
+    def connections(self, value: Dict[str, Dict[str, Any]]) -> None:
+        """Set connections."""
+        self.connection_manager.connections = value
+    
+    @property
+    def available_schemas(self) -> List[str]:
+        """Get available schemas."""
+        return self.connection_manager.available_schemas
+    
+    @available_schemas.setter
+    def available_schemas(self, value: List[str]) -> None:
+        """Set available schemas."""
+        self.connection_manager.available_schemas = value
+    
+    # Delegated methods
+    
+    def get_connection_id(self, connection_name: str) -> Optional[str]:
+        """Get connection ID (delegates to ConnectionManager)."""
+        return self.connection_manager.get_connection_id(connection_name)
     
     def get_connection_list_for_llm(self) -> str:
-        """
-        Format connection list for LLM to present to user.
-        
-        Returns:
-            Formatted string with available connections
-        """
-        if not self.connections:
-            return "No connections available."
-        
-        conn_list = []
-        for name, info in self.connections.items():
-            db_type = info.get("db_type", "Unknown")
-            conn_list.append(f"• {name} ({db_type})")
-        
-        return "\n".join(conn_list)
+        """Get connection list for LLM (delegates to ConnectionManager)."""
+        return self.connection_manager.get_connection_list_for_llm()
     
     def get_schema_list_for_llm(self) -> str:
-        """
-        Format schema list for LLM to present to user.
-        
-        Returns:
-            Formatted string with available schemas
-        """
-        if not self.available_schemas:
-            return "No schemas available."
-        
-        # Format schemas in columns for better readability
-        schema_list = [f"• {schema}" for schema in self.available_schemas]
-        return "\n".join(schema_list)
+        """Get schema list for LLM (delegates to ConnectionManager)."""
+        return self.connection_manager.get_schema_list_for_llm()
     
-    def reset(self):
-        """Reset memory to start a new conversation."""
-        self.stage = Stage.START
-        self.job_type = "readsql"
-        self.last_sql = None
-        self.first_sql = None
-        self.second_sql = None
-        self.first_columns = None
-        self.second_columns = None
-        self.column_mappings = None
-        self.key_mappings = None
-        self.last_job_id = None
-        self.last_job_name = None
-        self.last_job_folder = None
-        self.last_columns = None
-        self.last_preview = None
-        self.gathered_params = {}
-        self.current_tool = None
-        self.execute_query_enabled = False
-        # Keep connection and connections as they're set externally
+    def reset(self) -> None:
+        """Reset all contexts."""
+        self.stage_context.reset()
+        self.job_context.reset()
+        # Keep connection_manager as is (set externally)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert memory to dictionary for serialization."""
         return {
-            "stage": self.stage.value,
-            "job_type": self.job_type,
-            "last_sql": self.last_sql,
-            "first_sql": self.first_sql,
-            "second_sql": self.second_sql,
-            "first_columns": self.first_columns,
-            "second_columns": self.second_columns,
-            "column_mappings": self.column_mappings,
-            "key_mappings": self.key_mappings,
-            "last_job_id": self.last_job_id,
-            "last_job_name": self.last_job_name,
-            "last_job_folder": self.last_job_folder,
-            "last_columns": self.last_columns,
-            "last_preview": self.last_preview,
-            "gathered_params": self.gathered_params,
-            "current_tool": self.current_tool,
-            "execute_query_enabled": self.execute_query_enabled,
-            "connection": self.connection,
-            "schema": self.schema,
-            "selected_tables": self.selected_tables,
-            "connections": self.connections
+            **self.stage_context.to_dict(),
+            **self.job_context.to_dict(),
+            **self.connection_manager.to_dict()
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Memory":
         """Create Memory from dictionary."""
-        memory = cls()
-        memory.stage = Stage(data.get("stage", "start"))
-        memory.job_type = data.get("job_type", "readsql")
-        memory.last_sql = data.get("last_sql")
-        memory.first_sql = data.get("first_sql")
-        memory.second_sql = data.get("second_sql")
-        memory.first_columns = data.get("first_columns")
-        memory.second_columns = data.get("second_columns")
-        memory.column_mappings = data.get("column_mappings")
-        memory.key_mappings = data.get("key_mappings")
-        memory.last_job_id = data.get("last_job_id")
-        memory.last_job_name = data.get("last_job_name")
-        memory.last_job_folder = data.get("last_job_folder")
-        memory.last_columns = data.get("last_columns")
-        memory.last_preview = data.get("last_preview")
-        memory.gathered_params = data.get("gathered_params", {})
-        memory.current_tool = data.get("current_tool")
-        memory.execute_query_enabled = data.get("execute_query_enabled", False)
-        memory.connection = data.get("connection", "ORACLE_10")
-        memory.schema = data.get("schema", "SALES")
-        memory.selected_tables = data.get("selected_tables", ["customers", "orders"])
-        memory.connections = data.get("connections", {})
-        return memory
+        return cls(
+            stage_context=StageContext.from_dict(data),
+            job_context=JobContext.from_dict(data),
+            connection_manager=ConnectionManager.from_dict(data)
+        )
+
+
+# Factory function for backward compatibility
+def create_memory(
+    connection: str = "ORACLE_10",
+    schema: str = "SALES"
+) -> Memory:
+    """
+    Create a Memory instance with default configuration.
+    
+    Args:
+        connection: Default connection name
+        schema: Default schema name
+        
+    Returns:
+        Memory: Configured memory instance
+    """
+    return Memory(
+        connection_manager=ConnectionManager(
+            default_connection=connection,
+            default_schema=schema
+        ),
+        job_context=JobContext(),
+        stage_context=StageContext()
+    )

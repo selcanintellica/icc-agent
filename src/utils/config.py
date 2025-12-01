@@ -1,28 +1,25 @@
+"""
+Configuration module for ICC application.
+
+Loads configuration from environment variables with sensible defaults.
+Uses standard dotenv patterns - override=True means .env takes precedence.
+"""
+
 import os
 from dotenv import load_dotenv
 
-# Load .env file FIRST, and override system environment variables
+# Load environment variables from .env file
+# override=True means .env values take precedence over system environment
 load_dotenv(override=True)
 
-# TEMPORARY FIX: Directly set the values from .env, ignoring system environment variables
-# Read .env values directly
-from pathlib import Path
-env_file = Path(__file__).parent.parent.parent / ".env"
-if env_file.exists():
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key] = value
-
+# API Configuration
 API_CONFIG = {
     "api_base_url": os.getenv("API_BASE_URL", "https://127.0.0.1:8082/job/save"),
     "query_api_base_url": os.getenv("QUERY_API_BASE_URL", "https://127.0.0.1:8082/utility/query"),
-    "timeout": 30.0,
+    "timeout": float(os.getenv("API_TIMEOUT", "30.0")),
 }
 
-# Authentication configuration (Basic Auth + Custom Token)
+# Authentication Configuration (Basic Auth + Custom Token)
 AUTH_CONFIG = {
     "token_endpoint": os.getenv("TOKEN_ENDPOINT", "https://127.0.0.1:8082/token/gettoken"),
     # Base64 encoded username:password (default: admin:admin = YWRtaW46YWRtaW4=)

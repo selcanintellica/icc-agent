@@ -228,7 +228,7 @@ class TableAPIClient:
             health_url = f"{self.base_url.rsplit('/tables', 1)[0]}/health"
             response = requests.get(health_url, timeout=5)
             return response.status_code == 200
-        except:
+        except Exception:
             return False
 
 

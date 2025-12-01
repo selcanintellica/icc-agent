@@ -5,9 +5,9 @@ from src.repositories.base_repository import BaseRepository
 
 
 class QueryRepository(BaseRepository):
+    """Repository for handling query-related API operations."""
 
     # Although this method called get, it actually sends a POST request with the query payload
-    @staticmethod
     async def get_column_names(self, data: QueryPayload) -> APIResponse[QueryResponse]:
         """
         Get column names by analyzing a SQL query.

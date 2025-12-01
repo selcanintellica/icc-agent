@@ -43,7 +43,7 @@ print("\n" + "="*60)
 print("🔍 LOGGING ENABLED - You should see agent actions below")
 print("="*60 + "\n")
 
-# ICC Agent imports - Using Staged Router
+# ICC Agent imports - Using Staged Router (Refactored)
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
 from src.utils.connection_api_client import populate_memory_connections

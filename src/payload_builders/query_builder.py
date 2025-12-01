@@ -1,50 +1,117 @@
+"""
+Refactored Query Builder using Dependency Injection.
+
+Builds query payloads with injected ConnectionResolver.
+"""
+
+import logging
+from typing import Optional
+
 from src.models.query import QueryPayload
 from src.models.natural_language import SendEmailLLMRequest, ReadSqlLLMRequest
-from src.utils.connections import get_connection_id
+from .services.connection_resolver import ConnectionResolver
+
+logger = logging.getLogger(__name__)
+
 
 class QueryBuilder:
-    """Repository for handling query-related operations"""
-
-    @staticmethod
-    async def build_send_email_query_payload(data: SendEmailLLMRequest) -> QueryPayload:
+    """
+    Builder for query payloads.
+    
+    Follows DIP - depends on ConnectionResolver abstraction.
+    Follows SRP - only handles query payload building.
+    """
+    
+    def __init__(self, connection_resolver: Optional[ConnectionResolver] = None):
         """
-        Create a QueryPayload instance.
-
+        Initialize query builder.
+        
         Args:
-            data (SendEmailLLMRequest): The input data containing connection and query information.
-
-        Returns:
-            QueryPayload: An instance of QueryPayload with the provided parameters.
+            connection_resolver: Connection resolver (creates new if not provided)
         """
-
+        self._resolver = connection_resolver or ConnectionResolver()
+    
+    async def build_send_email_query_payload(
+        self,
+        data: SendEmailLLMRequest
+    ) -> QueryPayload:
+        """
+        Build query payload for SendEmail request.
+        
+        Args:
+            data: SendEmail request with connection and query
+            
+        Returns:
+            QueryPayload: Built query payload
+        """
         connection_name = data.variables[0].connection
-        connection_id = get_connection_id(connection_name) or connection_name
+        connection_id = self._resolver.resolve_connection_id(connection_name)
+        
+        logger.info(
+            f"SendEmail query: connection '{connection_name}' -> '{connection_id}'"
+        )
+        
         sql = data.variables[0].query
         folder_id = ""
-        return QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
-
-
-    @staticmethod
-    async def build_read_sql_query_payload(data: ReadSqlLLMRequest) -> QueryPayload:
+        
+        return QueryPayload(
+            connectionId=connection_id,
+            sql=sql,
+            folderId=folder_id
+        )
+    
+    async def build_read_sql_query_payload(
+        self,
+        data: ReadSqlLLMRequest
+    ) -> QueryPayload:
         """
-        Create a QueryPayload instance.
-
+        Build query payload for ReadSQL request.
+        
         Args:
-            data (ReadSqlLLMRequest): The input data containing connection and query information.
-
+            data: ReadSQL request with connection and query
+            
         Returns:
-            QueryPayload: An instance of QueryPayload with the provided parameters.
+            QueryPayload: Built query payload
         """
-        from loguru import logger
-
         connection_name = data.variables[0].connection
-        connection_id = get_connection_id(connection_name) or connection_name
-        logger.info(f"[QueryBuilder] Connection name: '{connection_name}' -> Connection ID: '{connection_id}'")
-
+        connection_id = self._resolver.resolve_connection_id(connection_name)
+        
+        logger.info(
+            f"ReadSQL query: connection '{connection_name}' -> '{connection_id}'"
+        )
+        
         sql = data.variables[0].query
         folder_id = ""
-
-        payload = QueryPayload(connectionId=connection_id, sql=sql, folderId=folder_id)
-        logger.info(f"[QueryBuilder] Built QueryPayload: connectionId='{payload.connectionId}', sql='{sql[:100]}...', folderId='{folder_id}'")
-
+        
+        payload = QueryPayload(
+            connectionId=connection_id,
+            sql=sql,
+            folderId=folder_id
+        )
+        
+        logger.debug(
+            f"Built QueryPayload: connectionId='{payload.connectionId}', "
+            f"sql='{sql[:100]}...', folderId='{folder_id}'"
+        )
+        
         return payload
+
+
+# Global builder instance (singleton pattern)
+_builder: Optional[QueryBuilder] = None
+
+
+def get_query_builder() -> QueryBuilder:
+    """
+    Get global query builder instance.
+    
+    Returns:
+        QueryBuilder: Global builder instance
+    """
+    global _builder
+    
+    if _builder is None:
+        _builder = QueryBuilder()
+        logger.info("Created global QueryBuilder instance")
+    
+    return _builder
