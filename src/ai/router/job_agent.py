@@ -132,28 +132,10 @@ class JobAgent:
             
             logger.info(f"✅ Job Agent action: {result.get('action')}, params: {result.get('params')}")
             
-            # If LLM returned a valid question, use it
-            if result.get("action") == "ASK" and result.get("question"):
-                # Check if we just handled a yes/no - if so, get next question
-                if user_input and user_input.lower().strip() in YesNoExtractor.YES_VALUES | YesNoExtractor.NO_VALUES:
-                    logger.info("📝 Just handled yes/no, checking for next required param")
-                    return self._validate_params(memory, tool_name, user_input="")
-                
-                # Enhance connection question with available connections list
-                question = result.get("question", "")
-                if tool_name == "write_data" and "connection" in question.lower() and "connection" not in memory.gathered_params:
-                    connection_list = memory.get_connection_list_for_llm()
-                    if connection_list:
-                        result["question"] = f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
-                        logger.info("📝 Enhanced connection question with available connections list")
-                
-                return result
-            
-            # If LLM says all params ready, validate with fallback
-            if result.get("action") == "TOOL":
-                return self._validate_params(memory, tool_name, user_input)
-            
-            return result
+            # After extracting params, ALWAYS validate to get the correct next question
+            # The validator knows the correct order (name -> connection -> schemas -> table)
+            # Don't trust LLM's question suggestions
+            return self._validate_params(memory, tool_name, user_input)
         
         except Exception as e:
             logger.error(f"❌ Job Agent error: {str(e)}")
