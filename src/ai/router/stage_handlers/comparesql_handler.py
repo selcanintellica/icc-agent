@@ -432,6 +432,14 @@ class CompareSQLHandler(BaseStageHandler):
             
             if result.get("message") == "Success":
                 memory.last_job_id = result.get("job_id")
+                
+                # Track output table info for send_email query generation
+                memory.output_table_info = {
+                    "schema": params.get("schemas", "cache"),
+                    "table": params.get("table_name", "cache")
+                }
+                logger.info(f"📝 Set output_table_info from CompareSQL: {memory.output_table_info}")
+                
                 memory.gathered_params = {}
                 response = f"✅ Compare Job '{job_name}' created successfully!\n🆔 Job ID: {memory.last_job_id}\n\nWhat next? (email / done)"
                 return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)

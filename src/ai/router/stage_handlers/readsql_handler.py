@@ -270,6 +270,15 @@ class ReadSQLHandler(BaseStageHandler):
                 memory.last_columns = result.get("columns", [])
                 memory.execute_query_enabled = execute_query
                 
+                # Track output table info for send_email query generation
+                # When execute_query=true, data is written to result_schema.table_name
+                if execute_query:
+                    memory.output_table_info = {
+                        "schema": params.get("result_schema"),
+                        "table": params.get("table_name")
+                    }
+                    logger.info(f"📝 Set output_table_info from ReadSQL: {memory.output_table_info}")
+                
                 cols_str = ", ".join(memory.last_columns[:5])
                 if len(memory.last_columns) > 5:
                     cols_str += f"... ({len(memory.last_columns)} total)"

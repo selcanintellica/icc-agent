@@ -187,6 +187,13 @@ class WriteDataHandler(BaseStageHandler):
             result = await write_data_job(request)
             logger.info(f"📊 write_data_job result: {json.dumps(result, indent=2, default=str)}")
             
+            # Track output table info for send_email query generation
+            memory.output_table_info = {
+                "schema": schemas,
+                "table": table_name
+            }
+            logger.info(f"📝 Set output_table_info from WriteData: {memory.output_table_info}")
+            
             # Clean up memory
             memory.gathered_params = {}
             memory.current_tool = None

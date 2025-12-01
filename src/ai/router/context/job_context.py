@@ -44,6 +44,14 @@ class JobContext:
     # Execution flags
     execute_query_enabled: bool = False  # Track if ReadSQL executed with execute_query=true
     
+    # Output table info for send_email query generation
+    # Stores schema and table where data was written (by execute_query, write_data, or compare_sql)
+    output_table_info: Optional[Dict[str, str]] = None
+    
+    # SendEmail pending state (for query confirmation flow)
+    pending_email_params: Optional[Dict[str, Any]] = None
+    email_query_confirmed: bool = False
+    
     # UI selections
     selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])
     
@@ -65,6 +73,9 @@ class JobContext:
         self.gathered_params = {}
         self.current_tool = None
         self.execute_query_enabled = False
+        self.output_table_info = None
+        self.pending_email_params = None
+        self.email_query_confirmed = False
     
     def set_read_sql_result(
         self,
@@ -150,7 +161,10 @@ class JobContext:
             "gathered_params": self.gathered_params,
             "current_tool": self.current_tool,
             "execute_query_enabled": self.execute_query_enabled,
-            "selected_tables": self.selected_tables
+            "selected_tables": self.selected_tables,
+            "output_table_info": self.output_table_info,
+            "pending_email_params": self.pending_email_params,
+            "email_query_confirmed": self.email_query_confirmed
         }
     
     @classmethod
@@ -173,5 +187,8 @@ class JobContext:
             gathered_params=data.get("gathered_params", {}),
             current_tool=data.get("current_tool"),
             execute_query_enabled=data.get("execute_query_enabled", False),
-            selected_tables=data.get("selected_tables", ["customers", "orders"])
+            selected_tables=data.get("selected_tables", ["customers", "orders"]),
+            output_table_info=data.get("output_table_info"),
+            pending_email_params=data.get("pending_email_params"),
+            email_query_confirmed=data.get("email_query_confirmed", False)
         )
