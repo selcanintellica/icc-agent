@@ -71,7 +71,7 @@ class JobAgent:
             num_predict=self.config.num_predict,
             timeout=30.0,  # 30 second timeout
             model_kwargs={
-                "think": False,
+                "think": True,
                 "stream": True
             }
         )
@@ -269,7 +269,17 @@ Output format:
         # Get appropriate prompt for the tool
         if tool_name == "write_data":
             missing = self._get_missing_params_write_data(memory.gathered_params)
-            connection_list = memory.get_connection_list_for_llm() if memory.connections else "(Using connection from previous job)"
+            
+            # Only include connection list in system prompt if:
+            # 1. We need connection AND it's not in last_question already
+            # 2. This avoids duplication when validator includes it in the question
+            needs_connection = "connection" in missing and "connection" not in memory.gathered_params
+            connection_already_in_question = memory.last_question and "Available connections:" in memory.last_question
+            
+            connection_list = ""
+            if needs_connection and memory.connections and not connection_already_in_question:
+                connection_list = memory.get_connection_list_for_llm()
+            
             system_prompt = self.prompt_manager.get_prompt("write_data", connections=connection_list)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
@@ -287,14 +297,6 @@ CRITICAL: Match the user's answer to the parameter being asked! Pay attention to
 - If last question asks about name/job name → extract as "name"
 - If last question asks "drop/truncate" → extract as "drop_or_truncate"
 - If last question asks "track row count" → extract as "write_count"
-
-Examples:
-- Q: "Which connection should I use to write the data?" A: "ORACLE_10" → {{"connection": "ORACLE_10"}}
-- Q: "Which schema should I write the data to?" A: "SALES" → {{"schemas": "SALES"}}
-- Q: "What table should I write the data to?" A: "orders" → {{"table": "orders"}}
-- Q: "Which connection should I use for the row count?" A: "ORACLE_10" → {{"write_count_connection": "ORACLE_10"}}
-- Q: "Which schema should I write the row count to?" A: "LOGS" → {{"write_count_schemas": "LOGS"}}
-- Q: "What table should I write the row count to?" A: "row_counts" → {{"write_count_table": "row_counts"}}
 
 Output JSON only:"""
             
@@ -317,15 +319,6 @@ CRITICAL: Match the user's answer to the parameter being asked!
 - If last question asks "save/write results" → extract as "execute_query"
 - If last question asks "track row count" → extract as "write_count"
 - If last question asks "drop table" → extract as "drop_before_create"
-
-Examples:
-- Q: "What should I name this job?" A: "read23" → {{"name": "read23"}}
-- Q: "Save results?" A: "yes" → {{"execute_query": true}}
-- Q: "Which schema should I write the results to?" A: "ICC_TEST" → {{"result_schema": "ICC_TEST"}}
-- Q: "Which table?" A: "customers" → {{"table_name": "customers"}}
-- Q: "Which schema should I write the row count to?" A: "LOGS" → {{"write_count_schema": "LOGS"}}
-- Q: "What table should I write the row count to?" A: "row_counts" → {{"write_count_table": "row_counts"}}
-- Q: "What connection should I use for the row count?" A: "ORACLE_10" → {{"write_count_connection": "ORACLE_10"}}
 
 Output JSON only:"""
             
