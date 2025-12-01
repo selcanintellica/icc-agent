@@ -286,12 +286,24 @@ Output format:
 Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
 
-CRITICAL: Match the user's answer to the parameter being asked!
-- If last question asks about connection → extract as "connection"
-- If last question asks about schema → extract as "schemas"
-- If last question asks about table → extract as "table"
+CRITICAL: Match the user's answer to the parameter being asked! Pay attention to keywords:
+- If question contains "write the data" OR "data to" AND mentions "schema" → extract as "schemas"
+- If question contains "write the row count" OR "row count to" AND mentions "schema" → extract as "write_count_schemas"
+- If question contains "row count" AND mentions "table" → extract as "write_count_table"
+- If question contains "row count" AND mentions "connection" → extract as "write_count_connection"
+- If last question asks about connection (main) → extract as "connection"
+- If last question asks about table (main) → extract as "table"
 - If last question asks about name/job name → extract as "name"
 - If last question asks "drop/truncate" → extract as "drop_or_truncate"
+- If last question asks "track row count" → extract as "write_count"
+
+Examples:
+- Q: "Which connection should I use to write the data?" A: "ORACLE_10" → {{"connection": "ORACLE_10"}}
+- Q: "Which schema should I write the data to?" A: "SALES" → {{"schemas": "SALES"}}
+- Q: "What table should I write the data to?" A: "orders" → {{"table": "orders"}}
+- Q: "Which connection should I use for the row count?" A: "ORACLE_10" → {{"write_count_connection": "ORACLE_10"}}
+- Q: "Which schema should I write the row count to?" A: "LOGS" → {{"write_count_schemas": "LOGS"}}
+- Q: "What table should I write the row count to?" A: "row_counts" → {{"write_count_table": "row_counts"}}
 
 Output JSON only:"""
             
@@ -305,22 +317,22 @@ Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
 
 CRITICAL: Match the user's answer to the parameter being asked!
-- If last question asks about schema (result) → extract as "result_schema"
+- If last question contains "write the results" OR "result schema" → extract as "result_schema"
+- If last question contains "write the row count" OR "row count" AND "schema" → extract as "write_count_schema"
+- If last question contains "write the row count" OR "row count" AND "table" → extract as "write_count_table"
+- If last question contains "row count" AND "connection" → extract as "write_count_connection"
 - If last question asks about table (result) → extract as "table_name"
 - If last question asks about name/job name → extract as "name"
 - If last question asks "save/write results" → extract as "execute_query"
 - If last question asks "track row count" → extract as "write_count"
 - If last question asks "drop table" → extract as "drop_before_create"
-- If last question asks about schema (for row count) → extract as "write_count_schema"
-- If last question asks about table (for row count) → extract as "write_count_table"
-- If last question asks about connection (for row count) → extract as "write_count_connection"
 
 Examples:
 - Q: "What should I name this job?" A: "read23" → {{"name": "read23"}}
 - Q: "Save results?" A: "yes" → {{"execute_query": true}}
-- Q: "Which schema?" A: "ICC_TEST" → {{"result_schema": "ICC_TEST"}}
+- Q: "Which schema should I write the results to?" A: "ICC_TEST" → {{"result_schema": "ICC_TEST"}}
 - Q: "Which table?" A: "customers" → {{"table_name": "customers"}}
-- Q: "What schema should I write the row count to?" A: "LOGS" → {{"write_count_schema": "LOGS"}}
+- Q: "Which schema should I write the row count to?" A: "LOGS" → {{"write_count_schema": "LOGS"}}
 - Q: "What table should I write the row count to?" A: "row_counts" → {{"write_count_table": "row_counts"}}
 - Q: "What connection should I use for the row count?" A: "ORACLE_10" → {{"write_count_connection": "ORACLE_10"}}
 

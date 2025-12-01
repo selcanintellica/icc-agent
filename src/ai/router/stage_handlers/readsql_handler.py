@@ -350,6 +350,9 @@ class ReadSQLHandler(BaseStageHandler):
         
         action = call_job_agent(memory, user_input, tool_name="write_data")
         
+        if action.get("action") == "FETCH_CONNECTIONS":
+            return await self._fetch_connections(memory)
+        
         if action.get("action") == "FETCH_SCHEMAS":
             return await self._fetch_schemas_for_write(memory, action.get("connection"))
         
@@ -389,13 +392,31 @@ class ReadSQLHandler(BaseStageHandler):
             logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
             
             schema_list = memory.get_schema_list_for_llm()
-            question = f"Which schema should I write the results to?\n\nAvailable schemas:\n{schema_list}"
+            
+            # Determine if this is for result_schema or write_count_schema based on what's missing
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schema") and params.get("write_count_connection"):
+                # This is for write_count schema
+                question = f"Which schema should I write the row count to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for write_count_schema")
+            else:
+                # This is for result_schema
+                question = f"Which schema should I write the results to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for result_schema")
+            
             memory.last_question = question
             return self._create_result(memory, question)
         
         except Exception as e:
             logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
-            fallback_question = "What schema should I write the results to?"
+            
+            # Determine fallback question based on context
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schema"):
+                fallback_question = "What schema should I write the row count to?"
+            else:
+                fallback_question = "What schema should I write the results to?"
+            
             memory.last_question = fallback_question
             return self._create_result(memory, fallback_question)
     
@@ -426,13 +447,31 @@ class ReadSQLHandler(BaseStageHandler):
             logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
             
             schema_list = memory.get_schema_list_for_llm()
-            question = f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+            
+            # Determine if this is for main schema or write_count_schemas based on what's missing
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schemas") and params.get("write_count_connection"):
+                # This is for write_count_schemas
+                question = f"Which schema should I write the row count to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for write_count_schemas")
+            else:
+                # This is for main schemas
+                question = f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
+                logger.info("📝 Asking for main schemas")
+            
             memory.last_question = question
             return self._create_result(memory, question)
         
         except Exception as e:
             logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
-            fallback_question = "What schema should I write the data to?"
+            
+            # Determine fallback question based on context
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_schemas"):
+                fallback_question = "What schema should I write the row count to?"
+            else:
+                fallback_question = "What schema should I write the data to?"
+            
             memory.last_question = fallback_question
             return self._create_result(memory, fallback_question)
     
