@@ -69,6 +69,7 @@ class JobAgent:
             temperature=self.config.temperature,
             base_url=self.config.base_url,
             num_predict=self.config.num_predict,
+            timeout=30.0,  # 30 second timeout
             model_kwargs={
                 "think": False,
                 "stream": True
