@@ -46,6 +46,11 @@ class Stage(Enum):
 
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
+    
+    # SendEmail Flow
+    CONFIRM_EMAIL_QUERY = "confirm_email_query"
+    NEED_EMAIL_QUERY = "need_email_query"
+    
     DONE = "done"
 
 

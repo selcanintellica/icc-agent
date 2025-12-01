@@ -228,8 +228,8 @@ class ParameterValidator:
                 "question": "What should the email subject be?"
             }
         
-        if not params.get("body"):
-            logger.info("❌ Missing: body")
+        if not params.get("text"):
+            logger.info("❌ Missing: text")
             return {
                 "action": "ASK",
                 "question": "What should the email body say?"

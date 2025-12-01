@@ -238,6 +238,36 @@ class Memory:
         self.job_context.execute_query_enabled = value
     
     @property
+    def output_table_info(self) -> Optional[Dict[str, str]]:
+        """Get output table info (schema and table where data was written)."""
+        return self.job_context.output_table_info
+    
+    @output_table_info.setter
+    def output_table_info(self, value: Optional[Dict[str, str]]) -> None:
+        """Set output table info."""
+        self.job_context.output_table_info = value
+    
+    @property
+    def pending_email_params(self) -> Optional[Dict[str, Any]]:
+        """Get pending email params (for query confirmation flow)."""
+        return self.job_context.pending_email_params
+    
+    @pending_email_params.setter
+    def pending_email_params(self, value: Optional[Dict[str, Any]]) -> None:
+        """Set pending email params."""
+        self.job_context.pending_email_params = value
+    
+    @property
+    def email_query_confirmed(self) -> bool:
+        """Get email query confirmed flag."""
+        return self.job_context.email_query_confirmed
+    
+    @email_query_confirmed.setter
+    def email_query_confirmed(self, value: bool) -> None:
+        """Set email query confirmed flag."""
+        self.job_context.email_query_confirmed = value
+    
+    @property
     def connection(self) -> str:
         """Get connection."""
         return self.connection_manager.connection
