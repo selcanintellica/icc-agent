@@ -369,12 +369,16 @@ class ReadSQLHandler(BaseStageHandler):
             params = memory.gathered_params
             if params.get("write_count") and not params.get("write_count_schema") and params.get("write_count_connection"):
                 purpose = "write_count"
+                param_name = "write_count_schema"
             else:
                 purpose = "result"
+                param_name = "result_schema"
             
-            question = ConnectionFetcher.create_schema_question(memory, purpose=purpose)
-            memory.last_question = question
-            return self._create_result(memory, question)
+            # Return special format for UI to show dropdown
+            question_text = "Which schema should I write the results to?" if purpose == "result" else "Which schema should I write the row count to?"
+            response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': param_name, 'question': question_text})}"
+            memory.last_question = question_text
+            return self._create_result(memory, response)
         else:
             return self._create_result(
                 memory,

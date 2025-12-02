@@ -71,7 +71,7 @@ class JobAgent:
             num_predict=self.config.num_predict,
             timeout=30.0,  # 30 second timeout
             model_kwargs={
-                "think": True,
+                "think": False,
                 "stream": True
             }
         )
@@ -100,6 +100,13 @@ class JobAgent:
         """
         logger.info(f"🔍 Job Agent: Gathering params for '{tool_name}'")
         logger.info(f"📋 Current params: {memory.gathered_params}")
+        
+        # Check if schema was directly selected via dropdown (bypass LLM)
+        if user_input.startswith("__SCHEMA_SELECTED__:"):
+            schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
+            logger.info(f"✅ Schema directly selected via dropdown: {schema_name} (already assigned)")
+            # Schema already assigned in app.py, just validate to get next question
+            return self._validate_params(memory, tool_name, user_input="")
         
         # Check for direct yes/no answers first (fastest)
         if YesNoExtractor.extract_boolean(user_input, memory, tool_name):

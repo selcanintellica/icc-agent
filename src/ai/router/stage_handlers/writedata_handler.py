@@ -104,16 +104,21 @@ class WriteDataHandler(BaseStageHandler):
         result = await ConnectionFetcher.fetch_schemas(connection_name, memory)
         
         if result["success"]:
-            # Determine purpose based on what's missing in params
+            # Determine purpose
             params = memory.gathered_params
-            if params.get("write_count") and not params.get("write_count_schemas") and params.get("write_count_connection"):
+            if params.get("write_count") and not params.get("write_count_schemas"):
                 purpose = "write_count"
+                param_name = "write_count_schemas"
+                question_text = "Which schema should I write the row count to?"
             else:
                 purpose = "data"
+                param_name = "schemas"
+                question_text = "Which schema should I write the data to?"
             
-            question = ConnectionFetcher.create_schema_question(memory, purpose=purpose)
-            memory.last_question = question
-            return self._create_result(memory, question)
+            # Return special format for UI to show dropdown
+            response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': param_name, 'question': question_text})}"
+            memory.last_question = question_text
+            return self._create_result(memory, response)
         else:
             return self._create_result(
                 memory,
