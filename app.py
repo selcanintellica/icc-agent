@@ -1067,10 +1067,10 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
         button_id_dict = json.loads(triggered_id.split(".")[0])
         param_name = button_id_dict.get("param")
         
-        # Find the corresponding schema value
+        # Find the corresponding schema value - check n_clicks to find actual clicked button
         triggered_idx = None
         for i, bid in enumerate(button_ids):
-            if bid.get("param") == param_name:
+            if bid.get("param") == param_name and n_clicks[i] is not None:
                 triggered_idx = i
                 break
         
@@ -1209,10 +1209,10 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
         button_id_dict = json.loads(triggered_id.split(".")[0])
         param_name = button_id_dict.get("param")
         
-        # Find the corresponding connection value
+        # Find the corresponding connection value - check n_clicks to find actual clicked button
         triggered_idx = None
         for i, bid in enumerate(button_ids):
-            if bid.get("param") == param_name:
+            if bid.get("param") == param_name and n_clicks[i] is not None:
                 triggered_idx = i
                 break
         
