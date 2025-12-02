@@ -287,7 +287,10 @@ Output format:
             if needs_connection and memory.connections and not connection_already_in_question:
                 connection_list = memory.get_connection_list_for_llm()
             
-            system_prompt = self.prompt_manager.get_prompt("write_data", connections=connection_list)
+            # Check if write_count is enabled to add conditional hints
+            write_count = memory.gathered_params.get("write_count", False)
+            
+            system_prompt = self.prompt_manager.get_prompt("write_data", connections=connection_list, write_count=write_count)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"
@@ -298,7 +301,12 @@ Output JSON only:"""
             
         elif tool_name == "read_sql":
             missing = self._get_missing_params_read_sql(memory.gathered_params)
-            system_prompt = self.prompt_manager.get_prompt("read_sql")
+            
+            # Check if execute_query or write_count is enabled to add conditional hints
+            execute_query = memory.gathered_params.get("execute_query", False)
+            write_count = memory.gathered_params.get("write_count", False)
+            
+            system_prompt = self.prompt_manager.get_prompt("read_sql", execute_query=execute_query, write_count=write_count)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"

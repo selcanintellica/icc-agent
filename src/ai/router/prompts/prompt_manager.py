@@ -24,13 +24,15 @@ class WriteDataPrompt:
 
 IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Params needed:
+Required params:
 1. name (string): Job name
 2. table (string): Target table
 3. connection (string): Database connection
 4. schemas (string): Schema (system fetches after connection)
 5. drop_or_truncate (string): "drop", "truncate", or "none"
-6. write_count (boolean): true/false
+6. write_count (boolean): true/false - Track row count?
+
+{write_count_hint}
 
 Available connections:
 {connections}
@@ -39,9 +41,15 @@ Types: schemas=STRING, write_count=BOOLEAN. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
-    def get_prompt(self, connections: str = "") -> str:
-        """Get the write_data prompt with connection list injected."""
-        return self.TEMPLATE.format(connections=connections)
+    def get_prompt(self, connections: str = "", write_count: bool = False) -> str:
+        """Get the write_data prompt with connection list and conditional hints."""
+        write_count_hint = ""
+        if write_count:
+            write_count_hint = """IF write_count=true, ALSO need:
+- write_count_connection (string): Connection for row count (can be different from main)
+- write_count_schemas (string): Schema for row count table
+- write_count_table (string): Table name to store row count"""
+        return self.TEMPLATE.format(connections=connections, write_count_hint=write_count_hint)
 
 
 class ReadSQLPrompt:
@@ -51,18 +59,36 @@ class ReadSQLPrompt:
 
 IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Params:
+Required params:
 - name (string): Job name
 - execute_query (boolean): Save results to DB? (yes=true, no=false)
 - write_count (boolean): Track row count? (yes=true, no=false)
+
+{execute_query_hint}
+
+{write_count_hint}
 
 Types: execute_query and write_count must be BOOLEAN. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
-    def get_prompt(self) -> str:
-        """Get the read_sql prompt."""
-        return self.TEMPLATE
+    def get_prompt(self, execute_query: bool = False, write_count: bool = False) -> str:
+        """Get the read_sql prompt with conditional hints."""
+        execute_query_hint = ""
+        if execute_query:
+            execute_query_hint = """IF execute_query=true, ALSO need:
+- result_schema (string): Schema to write query results
+- table_name (string): Table name to store query results
+- drop_before_create (boolean): Drop table before creating? (yes=true, no=false)"""
+        
+        write_count_hint = ""
+        if write_count:
+            write_count_hint = """IF write_count=true, ALSO need:
+- write_count_connection (string): Connection for row count (default: same as query connection)
+- write_count_schema (string): Schema for row count table
+- write_count_table (string): Table name to store row count"""
+        
+        return self.TEMPLATE.format(execute_query_hint=execute_query_hint, write_count_hint=write_count_hint)
 
 
 class SendEmailPrompt:
