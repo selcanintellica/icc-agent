@@ -100,7 +100,7 @@ class RetryPresets:
     
     # LLM operations (longer timeouts expected)
     LLM_CALL = RetryConfig(
-        max_retries=2,
+        max_retries=3,
         base_delay=2.0,
         max_delay=15.0,
         strategy=RetryStrategy.EXPONENTIAL,
