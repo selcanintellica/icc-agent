@@ -287,18 +287,11 @@ Output format:
             
             # Only include connection list in system prompt if:
             # 1. We need connection AND it's not in last_question already
-            # 2. This avoids duplication when validator includes it in the question
-            needs_connection = "connection" in missing and "connection" not in memory.gathered_params
-            connection_already_in_question = memory.last_question and "Available connections:" in memory.last_question
-            
-            connection_list = ""
-            if needs_connection and memory.connections and not connection_already_in_question:
-                connection_list = memory.get_connection_list_for_llm()
-            
             # Check if write_count is enabled to add conditional hints
             write_count = memory.gathered_params.get("write_count", False)
             
-            system_prompt = self.prompt_manager.get_prompt("write_data", connections=connection_list, write_count=write_count)
+            # Don't include connection list - we use dropdowns now
+            system_prompt = self.prompt_manager.get_prompt("write_data", connections="", write_count=write_count)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"

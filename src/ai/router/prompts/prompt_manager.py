@@ -27,29 +27,26 @@ IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 Required params:
 1. name (string): Job name
 2. table (string): Target table
-3. connection (string): Database connection
+3. connection (string): Database connection (UI shows dropdown)
 4. schemas (string): Schema (system fetches after connection)
 5. drop_or_truncate (string): "drop", "truncate", or "none"
 6. write_count (boolean): true/false - Track row count?
 
 {write_count_hint}
 
-Available connections:
-{connections}
-
 Types: schemas=STRING, write_count=BOOLEAN. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
     def get_prompt(self, connections: str = "", write_count: bool = False) -> str:
-        """Get the write_data prompt with connection list and conditional hints."""
+        """Get the write_data prompt with conditional hints."""
         write_count_hint = ""
         if write_count:
             write_count_hint = """IF write_count=true, ALSO need:
 - write_count_connection (string): Connection for row count (can be different from main)
 - write_count_schemas (string): Schema for row count table
 - write_count_table (string): Table name to store row count"""
-        return self.TEMPLATE.format(connections=connections, write_count_hint=write_count_hint)
+        return self.TEMPLATE.format(write_count_hint=write_count_hint)
 
 
 class ReadSQLPrompt:
