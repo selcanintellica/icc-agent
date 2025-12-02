@@ -86,18 +86,30 @@ class WriteDataHandler(BaseStageHandler):
         return self._create_result(memory, "Please provide write_data parameters.")
     
     async def _fetch_connections(self, memory: Memory) -> StageHandlerResult:
-        """Fetch all available connections for write_data."""
-        result = await ConnectionFetcher.fetch_connections(memory)
+        """Fetch all available connections and show dropdown."""
+        # Only fetch from API if not already in memory
+        if not memory.connections:
+            result = await ConnectionFetcher.fetch_connections(memory)
+            if not result["success"]:
+                return self._create_result(
+                    memory,
+                    f"❌ Error: {result['message']}\nPlease try again."
+                )
         
-        if result["success"]:
-            question = ConnectionFetcher.create_connection_question(memory, purpose="main")
-            memory.last_question = question
-            return self._create_result(memory, question)
+        # Determine purpose
+        params = memory.gathered_params
+        if params.get("write_count") and not params.get("write_count_connection"):
+            param_name = "write_count_connection"
+            question_text = "Which connection should I use for the row count?"
         else:
-            return self._create_result(
-                memory,
-                f"❌ Error: {result['message']}\nPlease try again."
-            )
+            param_name = "connection"
+            question_text = "Which connection should I use to write the data?"
+        
+        # Return special format for UI to show dropdown
+        connections_list = list(memory.connections.keys())
+        response = f"CONNECTION_DROPDOWN:{json.dumps({'connections': connections_list, 'param_name': param_name, 'question': question_text})}"
+        memory.last_question = question_text
+        return self._create_result(memory, response)
     
     async def _fetch_schemas(self, memory: Memory, connection_name: str) -> StageHandlerResult:
         """Fetch schemas for the selected connection."""

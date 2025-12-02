@@ -120,21 +120,11 @@ class ParameterValidator:
         
         if not params.get("connection"):
             logger.info("❌ Missing: connection for write_data")
-            logger.info(f"📋 Memory has {len(memory.connections)} connections")
-            
-            # First time - need to fetch connections
-            if not memory.connections:
-                logger.info("🔄 Need to fetch connections from API")
-                return {
-                    "action": "FETCH_CONNECTIONS",
-                    "question": "Fetching available connections..."
-                }
-            
-            # Connections already fetched - present list
-            connection_list = memory.get_connection_list_for_llm()
+            # Always return FETCH_CONNECTIONS to trigger dropdown UI
+            # Handler will check if connections are already in memory
             return {
-                "action": "ASK",
-                "question": f"Which connection should I use to write the data?\n\nAvailable connections:\n{connection_list}"
+                "action": "FETCH_CONNECTIONS",
+                "question": "Fetching available connections..."
             }
         
         if not params.get("schemas"):
@@ -296,21 +286,13 @@ class ParameterValidator:
         
         # Step 1: Check if connection is selected
         if not params.get(f"{param_prefix}_connection"):
-            # Need to fetch connections first
-            if not memory.connections:
-                logger.info(f"📋 Need to fetch connections for write_count")
-                return {
-                    "action": "FETCH_CONNECTIONS",
-                    "question": "Fetching available connections for row count..."
-                }
-            else:
-                # Have connections, ask user to select
-                logger.info(f"❌ Missing: {param_prefix}_connection (have cached list)")
-                connection_list = memory.get_connection_list_for_llm()
-                return {
-                    "action": "ASK",
-                    "question": f"Which connection should I use for the row count?\n\nAvailable connections:\n{connection_list}\n\n(Or press enter to use '{memory.connection}')"
-                }
+            # Always return FETCH_CONNECTIONS to trigger dropdown UI
+            # Handler will check if connections are already in memory
+            logger.info(f"📋 Need connection selection for {param_prefix}")
+            return {
+                "action": "FETCH_CONNECTIONS",
+                "question": "Fetching available connections for row count..."
+            }
         
         # Handle default connection selection
         if params.get(f"{param_prefix}_connection", "").strip() in ["", "same", "default"]:

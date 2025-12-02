@@ -192,6 +192,9 @@ class ReadSQLHandler(BaseStageHandler):
             memory.last_question = action["question"]
             return self._create_result(memory, action["question"])
         
+        if action.get("action") == "FETCH_CONNECTIONS":
+            return await self._fetch_connections(memory)
+        
         if action.get("action") == "FETCH_SCHEMAS":
             return await self._fetch_schemas_for_result(memory, action.get("connection"))
         
@@ -359,6 +362,27 @@ class ReadSQLHandler(BaseStageHandler):
             memory,
             "Please specify: 'write to <table>', 'email to <address>', or 'done'"
         )
+    
+    async def _fetch_connections(self, memory: Memory) -> StageHandlerResult:
+        """Fetch all available connections for write_count."""
+        # Only fetch from API if not already in memory
+        if not memory.connections:
+            result = await ConnectionFetcher.fetch_connections(memory)
+            if not result["success"]:
+                return self._create_result(
+                    memory,
+                    f"❌ Error: {result['message']}\nPlease try again."
+                )
+        
+        # For read_sql, connections are only needed for write_count
+        param_name = "write_count_connection"
+        question_text = "Which connection should I use for the row count?"
+        
+        # Return special format for UI to show dropdown
+        connections_list = list(memory.connections.keys())
+        response = f"CONNECTION_DROPDOWN:{json.dumps({'connections': connections_list, 'param_name': param_name, 'question': question_text})}"
+        memory.last_question = question_text
+        return self._create_result(memory, response)
     
     async def _fetch_schemas_for_result(self, memory: Memory, connection_name: str) -> StageHandlerResult:
         """Fetch schemas for result connection (read_sql with execute_query or write_count)."""

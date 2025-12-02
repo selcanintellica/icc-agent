@@ -306,6 +306,34 @@ def format_message(role, content, timestamp=None, **kwargs):
             ])
         ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
     
+    elif role == "connection_dropdown":
+        connections = kwargs.get("connections", [])
+        param_name = kwargs.get("param_name", "")
+        
+        return dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Strong("🤖 ICC Agent", className="text-success"),
+                    html.Small(f" • {timestamp}", className="text-muted ms-2")
+                ]),
+                html.P(content, className="mb-2 mt-2"),
+                dcc.Dropdown(
+                    id={"type": "connection-selector", "param": param_name},
+                    options=[{"label": conn, "value": conn} for conn in connections],
+                    placeholder="Select a connection...",
+                    className="mt-2",
+                    style={"marginBottom": "10px"}
+                ),
+                dbc.Button(
+                    "Confirm Selection",
+                    id={"type": "connection-confirm", "param": param_name},
+                    color="primary",
+                    size="sm",
+                    className="mt-2"
+                )
+            ])
+        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
+    
     elif role == "agent":
         return dbc.Card([
             dbc.CardBody([
@@ -735,6 +763,26 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
                 chat_display = [format_message(**msg) for msg in chat_data]
                 return chat_display, chat_data, "", "", False, map_data, [], [], None
             
+            # Check if this is a CONNECTION_DROPDOWN response
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+                
+                # Add message with dropdown for connection selection
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+                
+                chat_display = [format_message(**msg) for msg in chat_data]
+                return chat_display, chat_data, "", "", False, map_data, [], [], None
+            
             # Check if this is a MAP_TABLE_POPUP response
             elif response_text.startswith("MAP_TABLE_POPUP:"):
                 popup_data = json.loads(response_text.replace("MAP_TABLE_POPUP:", ""))
@@ -1081,6 +1129,123 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
             
         except Exception as e:
             logger.error(f"❌ Error after schema selection: {e}")
+            error_message = {
+                "role": "error",
+                "content": f"Error: {str(e)}",
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(error_message)
+    
+    chat_display = [format_message(**msg) for msg in chat_data]
+    return chat_display, chat_data, ""
+
+
+# Callback to handle connection dropdown selection (bypass LLM)
+@app.callback(
+    [Output("chat-history", "children", allow_duplicate=True),
+     Output("chat-store", "data", allow_duplicate=True),
+     Output("user-input", "value", allow_duplicate=True)],
+    [Input({"type": "connection-confirm", "param": ALL}, "n_clicks")],
+    [State({"type": "connection-selector", "param": ALL}, "value"),
+     State({"type": "connection-confirm", "param": ALL}, "id"),
+     State("chat-store", "data"),
+     State("config-store", "data")],
+    prevent_initial_call=True
+)
+def handle_connection_selection(n_clicks, selected_connections, button_ids, chat_data, config):
+    """Handle connection selection from dropdown WITHOUT using LLM"""
+    ctx = callback_context
+    
+    logger.info(f"🔘 Connection callback triggered")
+    logger.info(f"   n_clicks: {n_clicks}")
+    logger.info(f"   selected_connections: {selected_connections}")
+    logger.info(f"   button_ids: {button_ids}")
+    
+    # Check if any button was actually clicked
+    if not ctx.triggered:
+        logger.warning("⚠️ No trigger context")
+        raise dash.exceptions.PreventUpdate
+    
+    # Get the triggered button info
+    triggered_id = ctx.triggered[0]["prop_id"]
+    logger.info(f"   triggered_id: {triggered_id}")
+    
+    if ".n_clicks" not in triggered_id:
+        logger.warning("⚠️ Not a button click")
+        raise dash.exceptions.PreventUpdate
+    
+    # Parse the button ID to get param_name
+    try:
+        button_id_dict = json.loads(triggered_id.split(".")[0])
+        param_name = button_id_dict.get("param")
+        
+        # Find the corresponding connection value
+        triggered_idx = None
+        for i, bid in enumerate(button_ids):
+            if bid.get("param") == param_name:
+                triggered_idx = i
+                break
+        
+        if triggered_idx is None or not selected_connections[triggered_idx]:
+            logger.warning(f"⚠️ No connection selected for {param_name}")
+            raise dash.exceptions.PreventUpdate
+        
+        selected_connection = selected_connections[triggered_idx]
+        
+    except Exception as e:
+        logger.error(f"❌ Error parsing connection selection: {e}")
+        raise dash.exceptions.PreventUpdate
+    
+    logger.info(f"✅ Connection selected via dropdown: {selected_connection} for param: {param_name}")
+    
+    # Add user selection message
+    user_message = {
+        "role": "user",
+        "content": selected_connection,
+        "timestamp": datetime.now().strftime("%H:%M:%S")
+    }
+    chat_data.append(user_message)
+    
+    # Use hardcoded session ID (same as main chat callback)
+    session_id = "web-chat-session"
+    
+    # Directly assign the parameter in memory WITHOUT calling LLM
+    if session_id in session_memories:
+        memory = session_memories[session_id]
+        memory.gathered_params[param_name] = selected_connection
+        logger.info(f"✅ Directly assigned {param_name}={selected_connection} (bypassed LLM)")
+        
+        # After connection selection, need to fetch schemas for that connection
+        # Clear available_schemas so validator will trigger FETCH_SCHEMAS
+        memory.available_schemas = []
+        logger.info(f"🔄 Cleared available_schemas to trigger schema fetch for {selected_connection}")
+        
+        # Trigger next question by calling router with special flag
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(
+                invoke_router_async(
+                    f"__CONNECTION_SELECTED__:{selected_connection}",
+                    session_id=session_id,
+                    connection=config.get("connection"),
+                    schema=config.get("schema"),
+                    selected_tables=config.get("tables", [])
+                )
+            )
+            loop.close()
+            
+            response_text = response.get("response", "Connection selected successfully!")
+            
+            agent_message = {
+                "role": "agent",
+                "content": response_text,
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(agent_message)
+            
+        except Exception as e:
+            logger.error(f"❌ Error after connection selection: {e}")
             error_message = {
                 "role": "error",
                 "content": f"Error: {str(e)}",

@@ -108,6 +108,13 @@ class JobAgent:
             # Schema already assigned in app.py, just validate to get next question
             return self._validate_params(memory, tool_name, user_input="")
         
+        # Check if connection was directly selected via dropdown (bypass LLM)
+        if user_input.startswith("__CONNECTION_SELECTED__:"):
+            connection_name = user_input.replace("__CONNECTION_SELECTED__:", "").strip()
+            logger.info(f"✅ Connection directly selected via dropdown: {connection_name} (already assigned)")
+            # Connection already assigned in app.py, just validate to get next question
+            return self._validate_params(memory, tool_name, user_input="")
+        
         # Check for direct yes/no answers first (fastest)
         if YesNoExtractor.extract_boolean(user_input, memory, tool_name):
             # Re-run validation to get next question
