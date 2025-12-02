@@ -12,7 +12,7 @@ This module provides job parameter gathering following SOLID principles:
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -70,6 +70,7 @@ class JobAgent:
             base_url=self.config.base_url,
             num_predict=self.config.num_predict,
             timeout=30.0,  # 30 second timeout
+            keep_alive="3600s",
             model_kwargs={
                 "think": False,
                 "stream": True

@@ -1120,12 +1120,42 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
             
             response_text = response.get("response", "Schema selected successfully!")
             
-            agent_message = {
-                "role": "agent",
-                "content": response_text,
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(agent_message)
+            # Check for special formats
+            if response_text.startswith("SCHEMA_DROPDOWN:"):
+                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
+                schemas = schema_data.get("schemas", [])
+                param_name_new = schema_data.get("param_name", "")
+                question = schema_data.get("question", "Which schema should I use?")
+                
+                agent_message = {
+                    "role": "schema_dropdown",
+                    "content": question,
+                    "schemas": schemas,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name_new = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+                
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
             
         except Exception as e:
             logger.error(f"❌ Error after schema selection: {e}")
@@ -1237,12 +1267,42 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             
             response_text = response.get("response", "Connection selected successfully!")
             
-            agent_message = {
-                "role": "agent",
-                "content": response_text,
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(agent_message)
+            # Check for special formats
+            if response_text.startswith("SCHEMA_DROPDOWN:"):
+                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
+                schemas = schema_data.get("schemas", [])
+                param_name_new = schema_data.get("param_name", "")
+                question = schema_data.get("question", "Which schema should I use?")
+                
+                agent_message = {
+                    "role": "schema_dropdown",
+                    "content": question,
+                    "schemas": schemas,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name_new = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+                
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
             
         except Exception as e:
             logger.error(f"❌ Error after connection selection: {e}")
