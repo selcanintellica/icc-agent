@@ -35,6 +35,10 @@ class WriteDataWireBuilder(WirePayloadBuilder):
         """Get template key."""
         return "WRITEDATA"
     
+    def get_excluded_fields(self) -> List[str]:
+        """Exclude columns and add_columns from base processing since we handle them specially."""
+        return ["columns", "add_columns"]
+    
     def build_template_specific_variables(
         self,
         request: BaseModel,
