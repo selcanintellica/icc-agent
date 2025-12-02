@@ -118,9 +118,9 @@ class WriteDataHandler(BaseStageHandler):
         if result["success"]:
             # Determine purpose
             params = memory.gathered_params
-            if params.get("write_count") and not params.get("write_count_schemas"):
+            if params.get("write_count") and not params.get("write_count_schema"):
                 purpose = "write_count"
-                param_name = "write_count_schemas"
+                param_name = "write_count_schema"
                 question_text = "Which schema should I write the row count to?"
             else:
                 purpose = "data"
@@ -195,7 +195,7 @@ class WriteDataHandler(BaseStageHandler):
                         )
                 
                 write_data_vars.write_count_connection = write_count_conn_id
-                write_data_vars.write_count_schemas = params.get("write_count_schemas")
+                write_data_vars.write_count_schemas = params.get("write_count_schema")
                 write_data_vars.write_count_table = params.get("write_count_table")
             
             # Create request and execute job

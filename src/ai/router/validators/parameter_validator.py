@@ -282,7 +282,8 @@ class ParameterValidator:
         Returns:
             Dict with ASK/FETCH_CONNECTIONS/FETCH_SCHEMAS action if missing parameters, None if all valid
         """
-        schema_param = f"{param_prefix}_schema" if param_prefix == "write_count" else f"{param_prefix}_schemas"
+        # Always use singular for consistency
+        schema_param = f"{param_prefix}_schema"
         
         # Step 1: Check if connection is selected
         if not params.get(f"{param_prefix}_connection"):
@@ -312,12 +313,12 @@ class ParameterValidator:
                     "question": f"Fetching available schemas from {connection_name}..."
                 }
             elif memory.available_schemas:
-                # Have schemas, ask user to select
+                # Have schemas, return FETCH_SCHEMAS to trigger dropdown
                 logger.info(f"❌ Missing: {schema_param} (have cached list)")
-                schema_list = memory.get_schema_list_for_llm()
                 return {
-                    "action": "ASK",
-                    "question": f"Which schema should I write the row count to?\n\nAvailable schemas:\n{schema_list}"
+                    "action": "FETCH_SCHEMAS",
+                    "connection": connection_name,
+                    "question": "Fetching schema dropdown..."
                 }
             else:
                 # Fallback: ask without list
