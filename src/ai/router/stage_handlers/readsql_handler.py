@@ -186,6 +186,12 @@ class ReadSQLHandler(BaseStageHandler):
         """Handle EXECUTE_SQL stage."""
         logger.info("🔧 Gathering parameters for read_sql...")
         
+        # If no parameters gathered yet and user just confirmed (said "yes"/"okay"), 
+        # ignore that confirmation message and start fresh
+        if not memory.gathered_params and user_input.lower().strip() in ["yes", "ok", "okay", "sure", "correct"]:
+            logger.info(f"🔄 Ignoring confirmation message '{user_input}' - starting fresh parameter gathering")
+            user_input = ""
+        
         action = call_job_agent(memory, user_input, tool_name="read_sql")
         
         if action.get("action") == "ASK":
