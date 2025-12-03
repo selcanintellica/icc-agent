@@ -166,3 +166,6 @@ uv.lock
 
 # Local test output via src/utils/fetch_connections.py
 data/test_connections_*.json
+
+
+*.txt

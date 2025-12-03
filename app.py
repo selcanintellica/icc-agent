@@ -37,6 +37,9 @@ logging.basicConfig(
 logging.getLogger("langchain").setLevel(logging.DEBUG)
 logging.getLogger("langgraph").setLevel(logging.DEBUG)
 
+# Suppress werkzeug reload-hash logs
+logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 # Print to console directly to ensure visibility
@@ -48,6 +51,7 @@ print("="*60 + "\n")
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
 from src.utils.connection_api_client import populate_memory_connections
+from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.errors import (
     ICCBaseError,
     AuthenticationError,
@@ -60,6 +64,14 @@ from src.errors import (
     ErrorCode,
     ErrorCategory,
 )
+
+# Enable prompt logging if configured
+if os.getenv("ENABLE_PROMPT_LOGGING", "false").lower() in ["true", "1", "yes"]:
+    log_dir = os.getenv("PROMPT_LOG_DIR", "prompt_logs")
+    enable_prompt_logging(log_dir)
+    print(f"\n{'='*60}")
+    print(f"PROMPT LOGGING ENABLED - Saving to {log_dir}/")
+    print(f"{'='*60}\n")
 
 # Initialize the Dash app with a nice theme
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
@@ -1368,12 +1380,19 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
                 triggered_idx = i
                 break
 
-        if triggered_idx is None or not selected_connections[triggered_idx]:
+        if triggered_idx is None:
+            # This can happen during initial render or race conditions - not an error
+            logger.debug(f"No triggered button found for {param_name}, likely initial render")
+            raise dash.exceptions.PreventUpdate
+
+        if not selected_connections[triggered_idx]:
             logger.warning(f"⚠️ No connection selected for {param_name}")
             raise dash.exceptions.PreventUpdate
 
         selected_connection = selected_connections[triggered_idx]
 
+    except dash.exceptions.PreventUpdate:
+        raise
     except Exception as e:
         logger.error(f"❌ Error parsing connection selection: {e}")
         raise dash.exceptions.PreventUpdate

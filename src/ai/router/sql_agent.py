@@ -24,10 +24,10 @@ from src.errors import (
     LLMParsingError,
     LLMUnavailableError,
     InvalidSQLError,
-    ValidationError,
     ErrorCode,
     ErrorHandler,
 )
+from src.utils.prompt_logger import get_prompt_logger, is_prompt_logging_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +378,18 @@ class SQLAgent:
                 HumanMessage(content=user_input)
             ]
             
+            # Log prompt if enabled
+            if is_prompt_logging_enabled():
+                get_prompt_logger().log_full_conversation(
+                    agent_type="sql_agent",
+                    messages=messages,
+                    metadata={
+                        "model": self.config.model_name,
+                        "temperature": self.config.temperature,
+                        "user_input": user_input[:100]
+                    }
+                )
+            
             response = self.llm.invoke(messages)
             
             if not response or not response.content:
@@ -386,8 +398,23 @@ class SQLAgent:
                     user_message="The AI returned an empty response. Please try again."
                 )
             
+            content = response.content.strip()
+            
+            # Log response if enabled
+            if is_prompt_logging_enabled():
+                get_prompt_logger().log_full_conversation(
+                    agent_type="sql_agent",
+                    messages=messages,
+                    response=content,
+                    metadata={
+                        "model": self.config.model_name,
+                        "temperature": self.config.temperature,
+                        "user_input": user_input[:100]
+                    }
+                )
+            
             # Parse response
-            return self.parser.parse_response(response.content.strip())
+            return self.parser.parse_response(content)
             
         except TimeoutError as e:
             raise LLMTimeoutError(
