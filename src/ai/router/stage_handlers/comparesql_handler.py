@@ -422,24 +422,41 @@ class CompareSQLHandler(BaseStageHandler):
         )
     
     async def _handle_waiting_map_table(self, memory: Memory, user_input: str) -> StageHandlerResult:
-        """Handle WAITING_MAP_TABLE stage."""
+        """Handle WAITING_MAP_TABLE stage.
+        
+        New format from UI:
+        - key_mappings: [{"FirstKey": "COL1", "SecondKey": "COL2"}] - pairs where key checkboxes are checked
+        - column_mappings: [{"FirstMappedColumn": "COL1", "SecondMappedColumn": "COL2"}] - all column pairs
+        
+        Maps to API fields:
+        - keys: JSON string of key_mappings
+        - map_table: JSON string of column_mappings
+        - first_table_keys/second_table_keys: empty strings (keys stored in 'keys' field)
+        """
         try:
             mapping_data = json.loads(user_input)
             
             memory.key_mappings = mapping_data.get("key_mappings", [])
             memory.column_mappings = mapping_data.get("column_mappings", [])
             
-            first_keys = [m["FirstKey"] for m in memory.key_mappings]
-            second_keys = [m["SecondKey"] for m in memory.key_mappings]
-            memory.gathered_params["first_table_keys"] = ",".join(first_keys)
-            memory.gathered_params["second_table_keys"] = ",".join(second_keys)
+            # Store as JSON strings for API payload
+            memory.gathered_params["keys"] = json.dumps(memory.key_mappings) if memory.key_mappings else "[]"
+            memory.gathered_params["map_table"] = json.dumps(memory.column_mappings) if memory.column_mappings else "[]"
+            
+            # Keep first_table_keys and second_table_keys empty (keys are in 'keys' field)
+            memory.gathered_params["first_table_keys"] = ""
+            memory.gathered_params["second_table_keys"] = ""
             
             logger.info(f"Key mappings: {memory.key_mappings}")
             logger.info(f"Column mappings: {memory.column_mappings}")
             
+            key_display = []
+            for km in memory.key_mappings:
+                key_display.append(f"{km.get('FirstKey', '?')} -> {km.get('SecondKey', '?')}")
+            
             response = (
                 f"Mappings received!\n\n"
-                f"Keys: {first_keys if first_keys else '(none)'}\n"
+                f"Keys: {', '.join(key_display) if key_display else '(none)'}\n"
                 f"Mapped columns: {len(memory.column_mappings)} pairs\n\n"
                 f"What type of reporting do you want?\n"
                 f"- 'identical' - Show only identical records\n"
@@ -535,7 +552,14 @@ class CompareSQLHandler(BaseStageHandler):
         )
     
     async def _execute_compare_job(self, memory: Memory, job_name: str) -> StageHandlerResult:
-        """Execute the compare_sql job with error handling."""
+        """Execute the compare_sql job with error handling.
+        
+        Uses the new API field structure:
+        - map_table: JSON array of column mappings
+        - keys: JSON array of key pairs
+        - first_table_keys/second_table_keys: usually empty (keys in 'keys' field)
+        - save_result_in_cache: new boolean field (default False)
+        """
         logger.info(f"Executing compare_sql_job with name '{job_name}'...")
         
         try:
@@ -551,8 +575,6 @@ class CompareSQLHandler(BaseStageHandler):
                 )
             
             params = memory.gathered_params
-            first_keys = params.get("first_table_keys", "")
-            second_keys = params.get("second_table_keys", "")
             
             request = CompareSqlLLMRequest(
                 rights={"owner": "184431757886694"},
@@ -561,16 +583,16 @@ class CompareSQLHandler(BaseStageHandler):
                     connection=connection_id,
                     first_sql_query=memory.first_sql,
                     second_sql_query=memory.second_sql,
-                    first_table_keys=first_keys,
-                    second_table_keys=second_keys,
-                    first_table_columns=",".join(memory.first_columns) if memory.first_columns else "",
-                    second_table_columns=",".join(memory.second_columns) if memory.second_columns else "",
+                    first_table_keys=params.get("first_table_keys", ""),
+                    second_table_keys=params.get("second_table_keys", ""),
+                    map_table=params.get("map_table"),
+                    keys=params.get("keys"),
                     case_sensitive=params.get("case_sensitive", False),
+                    save_result_in_cache=params.get("save_result_in_cache", False),
                     reporting=params.get("reporting", "identical"),
                     schemas=params.get("schemas", "cache"),
                     table_name=params.get("table_name", "cache"),
-                    drop_before_create=params.get("drop_before_create", True),
-                    calculate_difference=params.get("calculate_difference", False)
+                    drop_before_create=params.get("drop_before_create", False),
                 )]
             )
             
