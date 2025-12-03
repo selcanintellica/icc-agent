@@ -441,9 +441,14 @@ class ReadSQLHandler(BaseStageHandler):
     
     async def _handle_need_write_or_email(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_WRITE_OR_EMAIL stage."""
-        user_lower = user_input.lower()
+        user_lower = user_input.lower().strip()
         
-        if any(word in user_lower for word in ["done", "finish", "complete", "no", "nothing"]):
+        # Check for "done" intent - use word boundaries to avoid false positives
+        # e.g., "i do not know" should NOT match because "no" is part of "not"
+        done_patterns = ["done", "finish", "complete", "nothing"]
+        # Only match "no" if it's a standalone word or at start/end
+        if (user_lower in ["no", "nope", "nah"] or 
+            any(pattern in user_lower for pattern in done_patterns)):
             return self._create_result(
                 memory,
                 "All done! Say 'new query' or 'start' to create another job.",
