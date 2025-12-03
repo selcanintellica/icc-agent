@@ -162,7 +162,13 @@ class JobAgent:
             
             logger.info(f"Job Agent action: {result.get('action')}, params: {result.get('params')}")
             
-            # After extracting params, ALWAYS validate to get the correct next question
+            # If this was conversational input with ASK action and a question, return it directly
+            # Don't override with validation
+            if result.get('action') == 'ASK' and result.get('question') and self._is_conversational_input(user_input):
+                logger.info("Returning conversational response directly (skipping validation override)")
+                return result
+            
+            # After extracting params, validate to get the correct next question
             return self._validate_params(memory, tool_name, user_input)
 
         except LLMError as e:
@@ -200,6 +206,8 @@ class JobAgent:
             "can you", "could you", "would you", "will you",
             "tell me", "explain", "show me", "help",
             "i don't understand", "i'm confused", "not sure",
+            "i don't know", "i do not know", "don't know", "do not know",
+            "no idea", "not certain", "unsure", "unclear",
             "what does", "what is", "what are",
             "?"
         ]

@@ -163,7 +163,7 @@ cython_debug/
 uv.lock
 .langgraph_api/
 
-
+*.jsonl
 # Local test output via src/utils/fetch_connections.py
 data/test_connections_*.json
 
