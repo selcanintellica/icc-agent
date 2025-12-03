@@ -133,12 +133,14 @@ class WriteDataHandler(BaseStageHandler):
             return self._create_result(memory, response)
 
         except Exception as e:
-        logger.error(f"Error fetching connections: {e}", exc_info=True)
+            logger.error(f"Error fetching connections: {e}", exc_info=True)
+
         return self._create_result(
             memory,
             "Unable to fetch available connections. Please specify the connection name directly.",
             is_error=True
         )
+
     async def _fetch_schemas(self, memory: Memory, connection_name: str) -> StageHandlerResult:
         """Fetch schemas for the selected connection."""
         try:

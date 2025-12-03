@@ -116,7 +116,7 @@ class JobAgent:
         """
         logger.info(f"Job Agent: Gathering params for '{tool_name}'")
         logger.info(f"Current params: {memory.gathered_params}")
-        
+
         try:
             # Check if schema was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__SCHEMA_SELECTED__:"):
