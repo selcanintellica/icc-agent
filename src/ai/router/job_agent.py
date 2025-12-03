@@ -29,6 +29,7 @@ from src.errors import (
     ErrorCode,
     ErrorHandler,
 )
+from src.utils.prompt_logger import get_prompt_logger, is_prompt_logging_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,13 @@ class JobAgent:
             
             logger.info(f"Job Agent action: {result.get('action')}, params: {result.get('params')}")
             
-            # After extracting params, ALWAYS validate to get the correct next question
+            # If this was conversational input with ASK action and a question, return it directly
+            # Don't override with validation
+            if result.get('action') == 'ASK' and result.get('question') and self._is_conversational_input(user_input):
+                logger.info("Returning conversational response directly (skipping validation override)")
+                return result
+            
+            # After extracting params, validate to get the correct next question
             return self._validate_params(memory, tool_name, user_input)
 
         except LLMError as e:
@@ -199,6 +206,8 @@ class JobAgent:
             "can you", "could you", "would you", "will you",
             "tell me", "explain", "show me", "help",
             "i don't understand", "i'm confused", "not sure",
+            "i don't know", "i do not know", "don't know", "do not know",
+            "no idea", "not certain", "unsure", "unclear",
             "what does", "what is", "what are",
             "?"
         ]
@@ -365,13 +374,39 @@ Extract parameters or ask for missing ones."""
     ) -> Dict[str, Any]:
         """Invoke LLM with automatic retry on failure."""
         try:
+            system_content = "You are a helpful assistant helping configure database jobs. Be friendly and concise." if is_conversation else "You are a parameter extraction assistant. Output JSON only."
             messages = [
-                SystemMessage(content="You are a helpful assistant helping configure database jobs. Be friendly and concise." if is_conversation else "You are a parameter extraction assistant. Output JSON only."),
+                SystemMessage(content=system_content),
                 HumanMessage(content=prompt)
             ]
+            
+            # Log prompt if enabled
+            if is_prompt_logging_enabled():
+                get_prompt_logger().log_full_conversation(
+                    agent_type="job_agent",
+                    messages=messages,
+                    metadata={
+                        "model": self.config.model_name,
+                        "temperature": self.config.temperature,
+                        "is_conversation": is_conversation
+                    }
+                )
 
             response = self.llm.invoke(messages)
             content = response.content.strip()
+            
+            # Log response if enabled
+            if is_prompt_logging_enabled():
+                get_prompt_logger().log_full_conversation(
+                    agent_type="job_agent",
+                    messages=messages,
+                    response=content,
+                    metadata={
+                        "model": self.config.model_name,
+                        "temperature": self.config.temperature,
+                        "is_conversation": is_conversation
+                    }
+                )
             
             logger.info(f"Job Agent raw response: {content[:300]}...")
             
