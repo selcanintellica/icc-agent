@@ -357,25 +357,29 @@ class CompareSqlVariables(BaseModel):
         ...,
         description="Second SQL query to execute for comparison."
     )
-    first_table_keys: str = Field(
-        ...,
-        description="Key columns for first table (comma separated)."
+    first_table_keys: Optional[str] = Field(
+        "",
+        description="Key columns for first table (comma separated). Usually empty, keys are in 'keys' field."
     )
-    second_table_keys: str = Field(
-        ...,
-        description="Key columns for second table (comma separated)."
+    second_table_keys: Optional[str] = Field(
+        "",
+        description="Key columns for second table (comma separated). Usually empty, keys are in 'keys' field."
     )
-    first_table_columns: Optional[str] = Field(
+    map_table: Optional[str] = Field(
         None,
-        description="First table columns (comma separated). Auto-populated from query."
+        description="JSON array of column mappings. E.g., [{\"FirstMappedColumn\":\"ID\",\"SecondMappedColumn\":\"ID\"}]"
     )
-    second_table_columns: Optional[str] = Field(
+    keys: Optional[str] = Field(
         None,
-        description="Second table columns (comma separated). Auto-populated from query."
+        description="JSON array of key pairs. E.g., [{\"FirstKey\":\"EMPLOYEE_ID\",\"SecondKey\":\"FIRST_NAME\"}]"
     )
     case_sensitive: bool = Field(
         False,
         description="Whether comparison should be case sensitive. False by default."
+    )
+    save_result_in_cache: bool = Field(
+        False,
+        description="Whether to save comparison results in cache. False by default."
     )
     reporting: str = Field(
         "identical",
@@ -390,24 +394,12 @@ class CompareSqlVariables(BaseModel):
         description="Schema name for organizing results. Default 'cache'."
     )
     drop_before_create: bool = Field(
-        True,
-        description="Whether to drop existing table before creating. True by default."
-    )
-    calculate_difference: bool = Field(
         False,
-        description="Whether to calculate differences. False by default."
+        description="Whether to drop existing table before creating. False by default."
     )
     columns_output: Optional[str] = Field(
         None,
         description="Columns output definition (JSON string). Auto-generated if not provided."
-    )
-    keys_mapping: Optional[str] = Field(
-        None,
-        description="JSON array of key pairs. E.g., [{\"FirstKey\":\"NAME\",\"SecondKey\":\"NAME\"}]"
-    )
-    column_mapping: Optional[str] = Field(
-        None,
-        description="JSON array of mapped column pairs. E.g., [{\"FirstMappedColumn\":\"ID\",\"SecondMappedColumn\":\"ID\"}]"
     )
 
 class CompareSqlLLMRequest(BaseLLMRequest):
@@ -423,15 +415,15 @@ class CompareSqlLLMRequest(BaseLLMRequest):
             "connection": var.connection,
             "first_sql_query": var.first_sql_query,
             "second_sql_query": var.second_sql_query,
-            "first_table_keys": var.first_table_keys,
-            "second_table_keys": var.second_table_keys,
-            "first_table_columns": var.first_table_columns,
-            "second_table_columns": var.second_table_columns,
+            "first_table_keys": var.first_table_keys or "",
+            "second_table_keys": var.second_table_keys or "",
+            "map_table": var.map_table,
+            "keys": var.keys,
             "case_sensitive": var.case_sensitive,
+            "save_result_in_cache": var.save_result_in_cache,
             "reporting": var.reporting,
             "table_name": var.table_name,
             "schemas": var.schemas,
             "drop_before_create": var.drop_before_create,
-            "calculate_difference": var.calculate_difference,
             "columns_output": var.columns_output,
         }
