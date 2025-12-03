@@ -275,6 +275,8 @@ class SQLAgent:
             model=self.config.model_name,
             temperature=self.config.temperature,
             base_url=self.config.base_url,
+            keep_alive="3600s",  # Keep model loaded for 1 hour
+            num_predict=2048,  # SQL queries can be longer than parameter extraction
         )
     
     def generate_sql(

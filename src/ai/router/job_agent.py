@@ -10,8 +10,7 @@ This module provides job parameter gathering following SOLID principles with:
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
-
+from typing import Dict, Any, Optional, Tuple
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -86,8 +85,9 @@ class JobAgent:
             base_url=self.config.base_url,
             num_predict=self.config.num_predict,
             timeout=self.config.timeout,
+            keep_alive="3600s",
             model_kwargs={
-                "think": True,
+                "think": False,
                 "stream": True
             }
         )
@@ -116,22 +116,35 @@ class JobAgent:
         """
         logger.info(f"Job Agent: Gathering params for '{tool_name}'")
         logger.info(f"Current params: {memory.gathered_params}")
-        
+
         try:
+            # Check if schema was directly selected via dropdown (bypass LLM)
+            if user_input.startswith("__SCHEMA_SELECTED__:"):
+                schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
+                logger.info(f"✅ Schema directly selected via dropdown: {schema_name} (already assigned)")
+                # Schema already assigned in app.py, just validate to get next question
+                return self._validate_params(memory, tool_name, user_input="")
+
+            # Check if connection was directly selected via dropdown (bypass LLM)
+            if user_input.startswith("__CONNECTION_SELECTED__:"):
+                connection_name = user_input.replace("__CONNECTION_SELECTED__:", "").strip()
+                logger.info(f"✅ Connection directly selected via dropdown: {connection_name} (already assigned)")
+                # Connection already assigned in app.py, just validate to get next question
+                return self._validate_params(memory, tool_name, user_input="")
+
             # Check for direct yes/no answers first (fastest)
             if YesNoExtractor.extract_boolean(user_input, memory, tool_name):
                 # Re-run validation to get next question
                 return self._validate_params(memory, tool_name, user_input="")
-            
+
             # Skip LLM only for simple commands when params are empty
             user_input_lower = user_input.lower().strip()
             simple_commands = {"write", "email", "send", "done", "finish", "complete", "both"}
-            
+
             if not memory.gathered_params and user_input_lower in simple_commands:
-                logger.info(f"Skipping LLM extraction for command: '{user_input}'")
+                logger.info(f"📝 Skipping LLM extraction for command: '{user_input}'")
                 return self._validate_params(memory, tool_name, user_input="")
-            
-            # Try to use LLM to extract parameters
+
             result = self._extract_with_llm(memory, user_input, tool_name)
             
             # Normalize schemas if it's a list
@@ -150,7 +163,7 @@ class JobAgent:
             
             # After extracting params, ALWAYS validate to get the correct next question
             return self._validate_params(memory, tool_name, user_input)
-            
+
         except LLMError as e:
             logger.error(f"LLM error in job agent: {e}")
             # Return validation result with error context
@@ -158,7 +171,7 @@ class JobAgent:
             if "error" not in result:
                 result["error"] = e.user_message
             return result
-            
+
         except Exception as e:
             logger.error(f"Job Agent unexpected error: {type(e).__name__}: {str(e)}", exc_info=True)
             # Convert to ICC error and continue with validation
@@ -279,19 +292,18 @@ Output format:
         # Check if input is conversational (question/clarification)
         if self._is_conversational_input(user_input):
             return self._handle_conversation(memory, user_input, tool_name)
-        
+
         # Get appropriate prompt for the tool
         if tool_name == "write_data":
             missing = self._get_missing_params_write_data(memory.gathered_params)
             
-            needs_connection = "connection" in missing and "connection" not in memory.gathered_params
-            connection_already_in_question = memory.last_question and "Available connections:" in memory.last_question
+            # Only include connection list in system prompt if:
+            # 1. We need connection AND it's not in last_question already
+            # Check if write_count is enabled to add conditional hints
+            write_count = memory.gathered_params.get("write_count", False)
             
-            connection_list = ""
-            if needs_connection and memory.connections and not connection_already_in_question:
-                connection_list = memory.get_connection_list_for_llm()
-            
-            system_prompt = self.prompt_manager.get_prompt("write_data", connections=connection_list)
+            # Don't include connection list - we use dropdowns now
+            system_prompt = self.prompt_manager.get_prompt("write_data", connections="", write_count=write_count)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"
@@ -302,7 +314,12 @@ Output JSON only:"""
             
         elif tool_name == "read_sql":
             missing = self._get_missing_params_read_sql(memory.gathered_params)
-            system_prompt = self.prompt_manager.get_prompt("read_sql")
+
+            # Check if execute_query or write_count is enabled to add conditional hints
+            execute_query = memory.gathered_params.get("execute_query", False)
+            write_count = memory.gathered_params.get("write_count", False)
+
+            system_prompt = self.prompt_manager.get_prompt("read_sql", execute_query=execute_query, write_count=write_count)
             
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"
@@ -339,7 +356,7 @@ Extract parameters or ask for missing ones."""
         
         full_prompt = f"{system_prompt}\n\n{prompt_text}"
         return self._invoke_llm_with_retry(full_prompt)
-    
+
     @retry(config=RetryPresets.LLM_CALL)
     def _invoke_llm_with_retry(
         self,
@@ -352,7 +369,7 @@ Extract parameters or ask for missing ones."""
                 SystemMessage(content="You are a helpful assistant helping configure database jobs. Be friendly and concise." if is_conversation else "You are a parameter extraction assistant. Output JSON only."),
                 HumanMessage(content=prompt)
             ]
-            
+
             response = self.llm.invoke(messages)
             content = response.content.strip()
             
@@ -363,9 +380,9 @@ Extract parameters or ask for missing ones."""
                     message="LLM returned empty response",
                     user_message="The AI returned an empty response. Please try again."
                 )
-            
+
             return self._parse_llm_response(content)
-            
+
         except TimeoutError as e:
             raise LLMTimeoutError(
                 message=f"Job agent LLM timeout: {e}",
@@ -402,7 +419,7 @@ Extract parameters or ask for missing ones."""
                 user_message="The AI encountered an error. Please try again.",
                 cause=e
             )
-    
+
     def _parse_llm_response(self, content: str) -> Dict[str, Any]:
         """Parse JSON response from LLM."""
         try:

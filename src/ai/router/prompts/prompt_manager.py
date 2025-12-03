@@ -24,24 +24,29 @@ class WriteDataPrompt:
 
 IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Params needed:
-1. name (string): Job name
-2. table (string): Target table
-3. connection (string): Database connection
-4. schemas (string): Schema (system fetches after connection)
-5. drop_or_truncate (string): "drop", "truncate", or "none"
-6. write_count (boolean): true/false
+Required params:
+1. name: Job name
+2. table: Target table name
+3. connection: Database connection (UI shows dropdown)
+4. schemas: Schema name (system fetches after connection)
+5. drop_or_truncate: "drop", "truncate", or "none"
+6. write_count: Track row count? (yes=true, no=false)
 
-Available connections:
-{connections}
+{write_count_hint}
 
-Types: schemas=STRING, write_count=BOOLEAN. Ask ONE question at a time.
+IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
-    def get_prompt(self, connections: str = "") -> str:
-        """Get the write_data prompt with connection list injected."""
-        return self.TEMPLATE.format(connections=connections)
+    def get_prompt(self, connections: str = "", write_count: bool = False) -> str:
+        """Get the write_data prompt with conditional hints."""
+        write_count_hint = ""
+        if write_count:
+            write_count_hint = """IF write_count=true, ALSO need:
+- write_count_connection: Connection for row count (can be different from main)
+- write_count_schema: Schema for row count table
+- write_count_table: Table name to store row count"""
+        return self.TEMPLATE.format(write_count_hint=write_count_hint)
 
 
 class ReadSQLPrompt:
@@ -51,18 +56,36 @@ class ReadSQLPrompt:
 
 IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
 
-Params:
-- name (string): Job name
-- execute_query (boolean): Save results to DB? (yes=true, no=false)
-- write_count (boolean): Track row count? (yes=true, no=false)
+Required params:
+- name: Job name
+- execute_query: Save results to DB? (yes=true, no=false)
+- write_count: Track row count? (yes=true, no=false)
 
-Types: execute_query and write_count must be BOOLEAN. Ask ONE question at a time.
+{execute_query_hint}
+
+{write_count_hint}
+
+IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
-    def get_prompt(self) -> str:
-        """Get the read_sql prompt."""
-        return self.TEMPLATE
+    def get_prompt(self, execute_query: bool = False, write_count: bool = False) -> str:
+        """Get the read_sql prompt with conditional hints."""
+        execute_query_hint = ""
+        if execute_query:
+            execute_query_hint = """IF execute_query=true, ALSO need:
+- result_schema (string): Schema to write query results
+- table_name (string): Table name to store query results
+- drop_before_create (boolean): Drop table before creating? (yes=true, no=false)"""
+        
+        write_count_hint = ""
+        if write_count:
+            write_count_hint = """IF write_count=true, ALSO need:
+- write_count_connection (string): Connection for row count (default: same as query connection)
+- write_count_schema (string): Schema for row count table
+- write_count_table (string): Table name to store row count"""
+        
+        return self.TEMPLATE.format(execute_query_hint=execute_query_hint, write_count_hint=write_count_hint)
 
 
 class SendEmailPrompt:
@@ -72,14 +95,14 @@ class SendEmailPrompt:
 
 CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
 
-Parameters needed with EXACT types:
-- name (string): Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
-- to (string): Recipient email address
-- subject (string): Email subject line
-- cc (string): CC email addresses (optional, can be empty string)
-- text (string): Email body text (optional)
+Parameters needed:
+- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
+- to: Recipient email address
+- subject: Email subject line
+- cc: CC email addresses (optional, can be empty string)
+- text: Email body text (optional)
 
-Ask ONE clear, friendly question at a time. Don't list all parameters at once.
+IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE clear, friendly question at a time.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     

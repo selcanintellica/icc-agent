@@ -318,12 +318,65 @@ def create_router_orchestrator(
     return RouterOrchestrator(config)
 
 
+# Create singleton agents to reuse LLM instances across all requests
+_default_sql_agent = None
+_default_job_agent = None
+_default_router_orchestrator = None
+
+
+def get_default_agents() -> tuple:
+    """
+    Get or create singleton agents with persistent LLM instances.
+    
+    Returns:
+        tuple: (sql_agent, job_agent)
+    """
+    global _default_sql_agent, _default_job_agent
+    
+    if _default_sql_agent is None:
+        logger.info("🏗️ Creating singleton SQL agent...")
+        _default_sql_agent = create_sql_agent()
+        logger.info(f"✅ SQL agent created (id: {id(_default_sql_agent)})")
+    
+    if _default_job_agent is None:
+        logger.info("🏗️ Creating singleton Job agent...")
+        _default_job_agent = create_job_agent()
+        logger.info(f"✅ Job agent created (id: {id(_default_job_agent)})")
+    
+    return _default_sql_agent, _default_job_agent
+
+
+def get_default_router_orchestrator() -> RouterOrchestrator:
+    """
+    Get or create the default router orchestrator singleton.
+    
+    This ensures LLM instances are reused across requests, keeping them loaded in memory
+    and respecting the keep_alive setting.
+    
+    Returns:
+        RouterOrchestrator: Singleton router instance
+    """
+    global _default_router_orchestrator
+    if _default_router_orchestrator is None:
+        logger.info("🏗️ Creating singleton router orchestrator...")
+        # Get singleton agents to ensure LLM instances are reused
+        sql_agent, job_agent = get_default_agents()
+        _default_router_orchestrator = create_router_orchestrator(
+            sql_agent=sql_agent,
+            job_agent=job_agent
+        )
+        logger.info(f"✅ Created singleton router orchestrator (id: {id(_default_router_orchestrator)})")
+    else:
+        logger.debug(f"♻️ Reusing existing router orchestrator (id: {id(_default_router_orchestrator)})")
+    return _default_router_orchestrator
+
+
 # Backward compatibility wrapper
 async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
     """
     Backward compatibility wrapper for handle_turn.
     
-    Creates a router orchestrator and delegates to it.
+    Uses singleton router orchestrator to maintain persistent LLM instances.
     
     Args:
         memory: Current conversation memory
@@ -332,5 +385,5 @@ async def handle_turn(memory: Memory, user_utterance: str) -> Tuple[Memory, str]
     Returns:
         Tuple of (updated memory, response message)
     """
-    orchestrator = create_router_orchestrator()
+    orchestrator = get_default_router_orchestrator()
     return await orchestrator.handle_turn(memory, user_utterance)

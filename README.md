@@ -1,110 +1,133 @@
-# ICC Agent - Intelligent Database Assistant
+# ICC Agent - Natural Language Database Interface
 
 ## Overview
 
-ICC Agent is an AI-powered database assistant that helps users create, execute, and manage SQL queries through natural conversation. Built with a **staged router architecture** optimized for small language models (7B-8B parameters), it provides reliable SQL generation and database operations without complex reasoning loops.
+ICC Agent is a conversational AI system that translates natural language requests into database operations. Users describe what they want in plain English, and the system executes the appropriate database jobs (ReadSQL, WriteData, SendEmail, CompareSQL).
+
+Built with a **handler-based architecture** using specialized LLM agents (7B-8B parameters), it provides reliable parameter extraction and SQL generation optimized for production workloads.
 
 ### Key Features
 
-- 🤖 **Dual SQL Creation** - Generate SQL from natural language OR provide your own SQL directly
-- 🎯 **Staged Router Architecture** - Purpose-built workflow optimized for small LLMs
-- 🔄 **Smart SQL Agent** - Context-aware SQL generation using table definitions
-- 🔌 **Database Operations** - Execute queries, write results, send email reports
-- 🌐 **Web Interface** - Clean Dash-based chat interface with database configuration
-- 🔐 **Secure Authentication** - Token-based API authentication
-- 📊 **Persistent Memory** - Conversation state maintained across turns
-- 🎭 **Mock Mode** - Built-in mock data for development without API dependencies
+- 💬 **Natural Language Interface** - Describe database operations in plain English
+- 🎯 **Handler Architecture** - Specialized handlers for each job type (ReadSQL, WriteData, SendEmail, CompareSQL)
+- 🤖 **Dual LLM Agents** - SQL generation (qwen2.5-coder:7b) + parameter extraction (qwen3:8b)
+- 🔄 **Flexible SQL Options** - Generate SQL from natural language OR provide your own
+- 📊 **Complete Workflows** - Query → Write → Email in single conversation
+- 🌐 **Web Interface** - Dash-based chat with dynamic dropdowns for connections/schemas
+- 🔐 **API Integration** - Full integration with database and table metadata APIs
+- ⚡ **Singleton Pattern** - LLM instances stay loaded in memory for fast responses (~0.5-2s)
+- 📋 **Smart Parameter Extraction** - Dropdown optimization (FETCH vs ASK) for better UX
 
 ## Architecture
 
-The system uses a **staged conversation flow** with 10 distinct stages:
+The system uses a **handler-based router architecture** with specialized stage handlers for each job type:
 
 ```
-START → ASK_SQL_METHOD → [Generate Path OR Provide Path] → EXECUTE_SQL → SHOW_RESULTS → NEED_WRITE_OR_EMAIL → DONE
+User Input → Router Orchestrator → Stage Handler → LLM Agents → Parameter Validator → Execute Job
+                    ↓
+    ┌───────────────┼───────────────┬───────────────┬───────────────┐
+    ▼               ▼               ▼               ▼               ▼
+ReadSQLHandler  WriteDataHandler SendEmailHandler CompareSQLHandler  RouterHandler
+(both agents)   (job agent)      (job agent)      (both agents)      (job agent)
 ```
 
-### Specialized Components
+### Core Components
 
-- **SQL Agent** (7B model, temp=0.1) - Generates SQL from natural language using table definitions
-- **Job Agent** (8B model, temp=0.3) - Extracts parameters for job creation
-- **Router** - Orchestrates conversation flow through stages
-- **Config Loader** - Manages database connection hierarchy from JSON
-- **Table API Client** - Fetches table definitions (supports mock mode)
-- **Connection Manager** - Maps connection names to IDs for API calls
-
+- **Router Orchestrator** - Singleton orchestrator that routes stages to appropriate handlers
+- **Stage Handlers** - Specialized handlers manage stage transitions for each job type
 ## How It Works
 
-### Staged Router Pattern
+### Handler-Based Router Pattern
 
-Traditional AI agents use ReAct (Reasoning + Acting) patterns that require large models (70B+) for reliable multi-step reasoning. Our **Staged Router** architecture is specifically designed for small models (7B-8B parameters) by eliminating complex reasoning loops.
+Each job type (ReadSQL, WriteData, SendEmail, CompareSQL) has a dedicated handler that manages its conversation stages. The router orchestrator dispatches work to the appropriate handler based on the current stage.
 
-### 10-Stage Conversation Flow
+**Example: ReadSQL Flow**
 
-**1. START** - Initial greeting and connection selection
+```
+User: "Get customers from USA"
+  ↓
+Router → ReadSQLHandler (ASK_SQL_METHOD stage)
+  ↓
+Handler asks: "Generate SQL or provide your own?"
+  ↓
+User: "generate"
+  ↓
+Router → ReadSQLHandler (NEED_NATURAL_LANGUAGE stage)
+  ↓
+SQL Agent generates: SELECT * FROM customers WHERE country = 'USA'
+  ↓
+Router → ReadSQLHandler (CONFIRM_GENERATED_SQL stage)
+  ↓
+User: "yes"
+  ↓
+Router → ReadSQLHandler (EXECUTE_SQL stage)
+  ↓
+Job Agent extracts parameters → Validator checks completeness
+  ↓
+Execute job via API → Show results
+  ↓
+Router → ReadSQLHandler (NEED_WRITE_OR_EMAIL stage)
+  ↓
+User: "write to database"
+  ↓
+Router → WriteDataHandler (NEED_WRITE_OR_EMAIL stage)
+  ↓
+[WriteData flow continues...]
+```
 
-**2. ASK_SQL_METHOD** - User chooses their preferred path:
-   - Generate SQL from natural language (agent creates query)
-   - Provide SQL directly (user writes query)
+### Key Architecture Benefits
 
-**3A. NEED_NATURAL_LANGUAGE** (Generation Path)
-   - User describes what they want in natural language
-   - SQL Agent fetches table definitions via API (or mock data)
-   - Agent generates SQL query with context
+✅ **Separation of Concerns** - Each handler manages its own stages independently  
+✅ **Singleton LLM Agents** - Single instances stay loaded, keep_alive="3600s" prevents reload  
+✅ **Smart Parameter Extraction** - FETCH dropdowns when available, ASK only when needed  
+✅ **Optimized for Small LLMs** - Temperature=0.1 for deterministic outputs  
+✅ **Flexible Workflows** - ReadSQL → WriteData → SendEmail in single conversation  
+✅ **Production Ready** - Handles errors, validates parameters, confirms actions  
 
-**3B. NEED_USER_SQL** (Direct Path)
-   - User provides their own SQL query
-   - No agent generation needed
-
-**4A. CONFIRM_GENERATED_SQL** - Review agent-generated SQL before execution
-
-**4B. CONFIRM_USER_SQL** - Review user-provided SQL before execution
-
-**5. EXECUTE_SQL** - Create read job and execute query via API
-
-**6. SHOW_RESULTS** - Display query results and ask what's next
-
-**7. NEED_WRITE_OR_EMAIL** - User chooses follow-up action:
-   - Write results to database
-   - Send results via email
-   - Done
-
-**8. DONE** - Conversation complete
-
-### Why This Works for Small LLMs
-
-✅ **Single-task focus** - Each stage has one clear purpose  
-✅ **No reasoning loops** - Router handles all flow logic  
-✅ **Optimized temperatures** - SQL generation (0.1), parameter extraction (0.3)  
-✅ **Context management** - Table definitions loaded on-demand  
-✅ **User control** - Choice between agent generation and direct SQL  
-✅ **Deterministic transitions** - Clear success/failure paths  
-
-This architecture allows 7B-8B parameter models to reliably:
-- Generate correct SQL from natural language using table schemas
-- Execute queries across multiple database types
-- Write results to target databases
-- Send email reports with query results
-
-## Folder Structure
+This architecture allows 7B-8B parameter models to:
+- Generate accurate SQL from natural language with table schema context
+- Extract parameters from conversational input while filtering confirmations
+- Execute complete multi-step workflows (query → write → email)
+## Project Structure
 
 ```
 src/
   ai/
-    router/              # Staged router components (10-stage flow)
-      memory.py          # Stage definitions and conversation state
-      sql_agent.py       # Natural language to SQL generation
-      job_agent.py       # Parameter extraction for jobs
-      router.py          # Main orchestrator (stage transitions)
-    toolkits/            # Tool implementations
-      icc_toolkit.py     # Database and email operations
-  models/                # Pydantic models for API requests
-  repositories/          # API communication layer
-  payload_builders/      # Request builders for job creation
+    router/
+      router.py                  # RouterOrchestrator (singleton pattern)
+      memory.py                  # Memory state and Stage enum
+      sql_agent.py               # SQL generation from natural language
+      job_agent.py               # Parameter extraction from user input
+      stage_handlers/
+        base_handler.py          # BaseStageHandler abstract class
+        readsql_handler.py       # ReadSQL workflow (8 stages)
+        writedata_handler.py     # WriteData workflow (1 stage)
+        sendemail_handler.py     # SendEmail workflow (3 stages)
+        comparesql_handler.py    # CompareSQL workflow (14 stages)
+        router_handler.py        # Initial routing (2 stages)
+      validators/
+        parameter_validator.py   # Parameter completeness checker
+    toolkits/
+      icc_toolkit.py             # Job execution functions
+  models/                        # Pydantic request/response models
+  repositories/                  # API communication layer
+  payload_builders/              # Wire protocol builders
   utils/
-    config_loader.py     # JSON-based database configuration
-    table_api_client.py  # Table definition fetcher (mock mode support)
-    connections.py       # Connection name to ID mapping
-    mock_table_data.py   # Mock table definitions for development
+    connection_api_client.py     # Fetch connections/schemas from API
+    table_api_client.py          # Fetch table schemas (with mock mode)
+    auth.py                      # Token-based authentication
+    config.py                    # Environment configuration
+app.py                           # Dash web interface
+db_config.json                   # Database configuration (deprecated)
+docs/                            # Comprehensive documentation
+  ARCHITECTURE.md                # System architecture overview
+### Prerequisites
+
+- Python 3.10+
+- [Ollama](https://ollama.ai) with models:
+  - `qwen3:8b` (job agent - parameter extraction)
+  - `qwen2.5-coder:7b` (SQL agent - SQL generation)
+- API access for job execution and metadatavelopment
     auth.py              # Token-based authentication
 db_config.json           # Database hierarchy (connections/schemas/tables)
 docs/                    # Detailed documentation
@@ -114,52 +137,36 @@ docs/                    # Detailed documentation
 
 ### Prerequisites
 
-- Python 3.10+
-- [Ollama](https://ollama.ai) with models:
-  - `qwen3:8b` (main agent, 8B parameters)
-  - `qwen2.5-coder:7b` (SQL generation, 7B parameters)
-- Database API access (or use mock mode for development)
-
-### Installation
-
-1. **Clone the repository:**
-   ```sh
-   git clone <repo-url>
-   cd ICC_try
-   ```
-
 2. **Install dependencies:**
    ```sh
    pip install -r requirements_app.txt
    ```
 
-3. **Install Ollama and pull the models:**
+3. **Install Ollama and pull models:**
    ```sh
    # Install Ollama from https://ollama.ai
    ollama pull qwen3:8b
    ollama pull qwen2.5-coder:7b
    ```
 
-4. **Configure database hierarchy:**
+4. **Configure environment variables:**
    
-   Edit `db_config.json` to define your database connections, schemas, and tables:
-   ```json
-   {
-     "connections": [
-       {
-         "name": "ORACLE_10",
-         "schemas": [
-           {
-             "name": "SALES",
-             "tables": ["customers", "orders", "order_items", "products"]
-           },
-           {
-             "name": "HR",
-             "tables": ["employees", "departments"]
-           }
-         ]
-       }
-     ]
+   Create a `.env` file with:
+   ```env
+   # LLM Configuration
+   MODEL_NAME=qwen3:8b              # Job agent model
+   SQL_MODEL_NAME=qwen2.5-coder:7b  # SQL agent model
+   OLLAMA_BASE_URL=http://localhost:11434
+   
+   # API Configuration
+   BASE_URL=https://your-api-endpoint.com
+   TOKEN_ENDPOINT=https://your-auth-endpoint.com/token
+   AUTH_USERPASS=base64_encoded_username:password
+   
+   # Table API (for schema fetching)
+   TABLE_API_BASE_URL=https://your-table-api.com
+   TABLE_API_MOCK=false  # Set to true for mock mode
+   ```
    }
    ```
 
@@ -179,122 +186,186 @@ docs/                    # Detailed documentation
 
 ### Running the Chat Interface
 
+## Usage
+
+### Start the Application
+
 ```sh
 python app.py
 ```
 
-Then open your browser to: http://localhost:8050
+Open browser to: **http://localhost:8050**
 
-### Example Conversation (Agent Generates SQL)
+### Example Conversations
 
+**ReadSQL → WriteData Flow:**
 ```
-Agent: Would you like me to generate SQL or provide your own? (generate/provide)
-User: generate
-Agent: What would you like to query?
-User: Get all customers from USA
-Agent: [Fetches table definitions for SALES.customers]
-Agent: [Generates SQL] → SELECT * FROM customers WHERE country = 'USA'
-Agent: Shall I execute this query? (yes/no)
-User: yes
-Agent: [Executes query via API] ✅ Query executed successfully! Found 150 rows.
-Agent: What would you like to do next? (write/email/done)
-User: done
-```
-
-### Example Conversation (User Provides SQL)
-
-```
-Agent: Would you like me to generate SQL or provide your own? (generate/provide)
-User: provide
-Agent: Please provide your SQL query:
-User: SELECT * FROM employees WHERE salary > 50000
-Agent: Review your SQL:
-      SELECT * FROM employees WHERE salary > 50000
-      Should I execute this? (yes/no)
-User: yes
-Agent: [Executes query via API] ✅ Query executed successfully!
+User: "Get all customers from USA"
+Agent: "Would you like me to generate SQL or provide your own? (generate/provide)"
+User: "generate"
+Agent: [Generates SQL with table schema context]
+      "Here's the SQL: SELECT * FROM customers WHERE country = 'USA'
+       Shall I execute? (yes/no)"
+User: "yes"
+Agent: [Executes via API] "✅ Query completed! Found 150 rows.
+       What would you like to do? (write/email/done)"
+User: "write"
+Agent: "Which schema? (dropdown appears)"
+User: [Selects schema]
+Agent: "Table name?"
+User: "usa_customers"
+Agent: [Writes data] "✅ Data written to usa_customers!"
 ```
 
-### Mock Mode (Development)
-
-Set `TABLE_API_MOCK=true` in `.env` to use mock table definitions without API access:
-
-```env
-TABLE_API_MOCK=true
+**Natural Language → Full Workflow:**
+```
+User: "Pull customer orders and email them to sales team"
+Agent: [Guides through ReadSQL → confirms parameters → executes]
+Agent: "What would you like to do? (write/email/done)"
+User: "email"
+Agent: [Auto-generates email query from result table]
+      "Query: SELECT * FROM schema.temp_table
+       Should I send email with this data? (yes/no)"
+User: "yes"
+Agent: [Collects email parameters → sends] "✅ Email sent!"
 ```
 
-Mock data includes sample tables:
-- ORACLE_10.SALES: customers, orders, order_items, products
-- ORACLE_10.HR: employees, departments
-- POSTGRE_11.PUBLIC: users
+**CompareSQL (Two Queries):**
+```
+User: "compare sales"
+Agent: [Guides through first SQL → second SQL → column mapping → reporting type]
+Agent: "✅ Comparison complete! Results saved to comparison_table."
+```
 
 ### Configuration
 
+**LLM Models:**
+- Job Agent: `qwen3:8b` (temperature=0.1, num_predict=4096, timeout=30s)
+- SQL Agent: `qwen2.5-coder:7b` (temperature=0.1, num_predict=2048)
+- Both use `keep_alive="3600s"` for fast responses (~0.5-2s)
+
 **Connection Management:**
-- Connections defined in `db_config.json` (name, schemas, tables hierarchy)
-- Connection IDs mapped in `src/utils/connections.py` (18 connections)
-- User selects connection in UI dropdowns (via `config_loader.py`)
-- Connection names automatically converted to IDs for API calls
+- Connections fetched dynamically from API via `connection_api_client.py`
+- Dropdowns populated on-demand (FETCH optimization)
+- Connection selection triggers schema dropdown
 
-**Model Configuration:**
-- Main agent: `qwen3:8b` (temperature=0.3) - Parameter extraction and orchestration
-- SQL agent: `qwen2.5-coder:7b` (temperature=0.1) - SQL generation (more precise)
-- Both models run via Ollama (localhost:11434)
-
-**Authentication:**
-- Token-based authentication configured in `.env`
-- Set `TOKEN_ENDPOINT` and `AUTH_USERPASS` (base64 encoded username:password)
-- Tokens automatically included in all API requests
-
-## Documentation
-
-Detailed documentation is available in the `docs/` folder:
+**Mock Mode (Development):**
+Set `TABLE_API_MOCK=true` to use built-in mock table schemas without API:
+```env
+TABLE_API_MOCK=true
+```folder:
 
 - **[SQL Agent Guide](docs/SQL_AGENT.md)** - Natural language to SQL conversion
 - **[Job Agent Guide](docs/JOB_AGENT.md)** - Parameter extraction and job creation
-- **[Router Architecture](docs/ROUTER_ARCHITECTURE.md)** - Complete 10-stage system design
-- **[Visual Guide](docs/VISUAL_GUIDE.md)** - Flow diagrams and conversation paths
+## Documentation
 
-Technical references:
-- [DB Config Migration](docs/DB_CONFIG_MIGRATION.md) - JSON configuration system
-- [Connection ID Implementation](docs/CONNECTION_ID_IMPLEMENTATION.md) - API integration
-- [Mock Table API](docs/MOCK_TABLE_API.md) - Development without API
-- [Updated State Flow](docs/UPDATED_STATE_FLOW.md) - 10-stage implementation details
+Comprehensive documentation in the `docs/` folder:
 
+### Main Documentation
+
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture overview with diagrams
+- **[TECHNICAL_DETAILS.md](docs/TECHNICAL_DETAILS.md)** - Deep dive into implementation details
+- **[DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Development guide with code examples
+- **[ARCHITECTURE_DECISIONS.md](docs/ARCHITECTURE_DECISIONS.md)** - Why semi-static router over agentic systems
+
+### Additional Documentation
+
+- [SQL_AGENT.md](docs/SQL_AGENT.md) - SQL generation from natural language
+- [JOB_AGENT.md](docs/JOB_AGENT.md) - Parameter extraction logic
+- [ROUTER_ARCHITECTURE.md](docs/ROUTER_ARCHITECTURE.md) - Router orchestrator patterns
 ## Development
 
-### Why Staged Router for Small LLMs?
+### Architecture Principles
 
-Traditional ReAct agents require large models (70B+) for reliable multi-step reasoning. Our staged approach is optimized for 7B-8B models:
+**Handler-Based Design:**
+- Each job type has a dedicated handler (ReadSQL, WriteData, SendEmail, CompareSQL)
+- Handlers manage their own stages independently
+- Router orchestrator dispatches based on current stage
+- Clean separation of concerns following SOLID principles
 
-**Problems with ReAct for Small LLMs:**
-- Complex reasoning loops fail or loop infinitely
-- Tool selection is ambiguous without strong reasoning
-- Multi-step planning overwhelms smaller models
+**Singleton Pattern for Performance:**
+- Single LLM instances shared across all requests
+- `keep_alive="3600s"` keeps models loaded in Ollama
+- Response times: ~0.5-2s (vs 5-10s without singleton)
+- Check with `ollama ps` - timer resets but model stays loaded
 
-**Staged Router Solution:**
-- ✅ Each stage has ONE clear purpose (no ambiguity)
-- ✅ Router handles flow logic (no LLM reasoning about transitions)
-- ✅ Specialized agents with optimized temperatures
-- ✅ Deterministic success/failure paths
-- ✅ Memory-driven context (persistent state across turns)
+**Optimized for Small LLMs (7B-8B):**
+- Temperature=0.1 for deterministic, consistent outputs
+- Specialized agents (SQL generation vs parameter extraction)
+- No complex reasoning loops - handlers manage flow logic
+- Context-aware prompts with table schemas and current parameters
 
-### Key Components
+### Adding a New Handler
 
-- `app.py` - Dash web interface with database selection
-- `db_config.json` - Database hierarchy configuration
-- `src/ai/router/router.py` - Main orchestrator (10-stage flow)
-- `src/ai/router/memory.py` - Stage definitions and conversation state
-- `src/ai/router/sql_agent.py` - Natural language to SQL generation
-- `src/ai/router/job_agent.py` - Parameter extraction for jobs
-- `src/utils/config_loader.py` - JSON configuration reader
-- `src/utils/table_api_client.py` - Table definition fetcher
-- `src/utils/connections.py` - Connection name to ID mapping
-- `src/utils/mock_table_data.py` - Mock data for development
+See [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for step-by-step instructions on:
+1. Creating a new stage handler class
+2. Defining managed stages
+3. Implementing stage transition logic
+4. Registering with router orchestrator
+5. Writing tests
+
+### Testing
+
+```sh
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_router.py
+
+# Run with coverage
+pytest --cov=src
+```
+
+## Performance
+
+**Response Times:**
+- With singleton + keep_alive: **0.5-2 seconds** per request
+- Without singleton: 5-10 seconds (model reload overhead)
+
+**LLM Configuration:**
+- Both agents use `temperature=0.1` for consistency
+- `num_predict`: 4096 (job agent), 2048 (SQL agent)
+- `keep_alive="3600s"` prevents model unload
+- `timeout=30.0` for job agent operations
+
+**Monitoring:**
+```sh
+# Check loaded models
+ollama ps
+
+# Expected output (singleton working):
+# NAME              ID          SIZE    GPU    EXPIRES
+# qwen3:8b          abc123...   5.5 GB  100%   59 minutes from now
+# qwen2.5-coder:7b  def456...   4.7 GB  100%   59 minutes from now
+```
+
+## Troubleshooting
+
+**Slow responses?**
+- Check `ollama ps` - models should stay loaded between requests
+- Verify singleton pattern: Look for "🏗️ Creating singleton" logs only once
+- Ensure `keep_alive="3600s"` is configured
+
+**SQL generation errors?**
+- Check table API connectivity or enable mock mode
+- Verify schema/table names in user input
+- Review SQL agent logs for API errors
+
+**Parameter extraction issues?**
+- Check job agent is filtering confirmation words correctly
+- Verify dropdown optimization (FETCH vs ASK) is working
+- Review parameter validator logic
+
+See [DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md) for detailed debugging steps.
 
 ## Contributing
 
-Feel free to open issues or submit pull requests for improvements or bug fixes.
+Contributions welcome! Please:
+1. Review architecture documentation before major changes
+2. Follow existing code patterns (handlers, singleton, validators)
+3. Add tests for new functionality
+4. Update documentation for significant changes
 
 ## License
 

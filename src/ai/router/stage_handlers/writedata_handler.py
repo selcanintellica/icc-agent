@@ -106,49 +106,69 @@ class WriteDataHandler(BaseStageHandler):
             )
     
     async def _fetch_connections(self, memory: Memory) -> StageHandlerResult:
-        """Fetch all available connections for write_data."""
+        """Fetch all available connections and show dropdown."""
         try:
-            result = await ConnectionFetcher.fetch_connections(memory)
-            
-            if result["success"]:
-                question = ConnectionFetcher.create_connection_question(memory, purpose="main")
-                memory.last_question = question
-                return self._create_result(memory, question)
+            # Only fetch from API if not already in memory
+            if not memory.connections:
+                result = await ConnectionFetcher.fetch_connections(memory)
+                if not result["success"]:
+                    return self._create_result(
+                        memory,
+                        f"Error: {result['message']}\nPlease try again."
+                    )
+
+            # Determine purpose
+            params = memory.gathered_params
+            if params.get("write_count") and not params.get("write_count_connection"):
+                param_name = "write_count_connection"
+                question_text = "Which connection should I use for the row count?"
             else:
-                return self._create_result(
-                    memory,
-                    f"Unable to fetch connections: {result['message']}\n\nPlease specify the connection name directly.",
-                    is_error=True
-                )
+                param_name = "connection"
+                question_text = "Which connection should I use to write the data?"
+
+            # Return special format for UI to show dropdown
+            connections_list = list(memory.connections.keys())
+            response = f"CONNECTION_DROPDOWN:{json.dumps({'connections': connections_list, 'param_name': param_name, 'question': question_text})}"
+            memory.last_question = question_text
+            return self._create_result(memory, response)
+
         except Exception as e:
             logger.error(f"Error fetching connections: {e}", exc_info=True)
-            return self._create_result(
-                memory,
-                "Unable to fetch available connections. Please specify the connection name directly.",
-                is_error=True
-            )
-    
+
+        return self._create_result(
+            memory,
+            "Unable to fetch available connections. Please specify the connection name directly.",
+            is_error=True
+        )
+
     async def _fetch_schemas(self, memory: Memory, connection_name: str) -> StageHandlerResult:
         """Fetch schemas for the selected connection."""
         try:
             result = await ConnectionFetcher.fetch_schemas(connection_name, memory)
-            
+
             if result["success"]:
+                # Determine purpose
                 params = memory.gathered_params
-                if params.get("write_count") and not params.get("write_count_schemas") and params.get("write_count_connection"):
+                if params.get("write_count") and not params.get("write_count_schema"):
                     purpose = "write_count"
+                    param_name = "write_count_schema"
+                    question_text = "Which schema should I write the row count to?"
                 else:
                     purpose = "data"
-                
-                question = ConnectionFetcher.create_schema_question(memory, purpose=purpose)
-                memory.last_question = question
-                return self._create_result(memory, question)
+                    param_name = "schemas"
+                    question_text = "Which schema should I write the data to?"
+
+                # Return special format for UI to show dropdown
+                response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': param_name, 'question': question_text})}"
+                memory.last_question = question_text
+                return self._create_result(memory, response)
             else:
                 return self._create_result(
                     memory,
                     f"Unable to fetch schemas for '{connection_name}': {result['message']}\n\nPlease specify the schema name directly.",
                     is_error=True
                 )
+
         except Exception as e:
             logger.error(f"Error fetching schemas: {e}", exc_info=True)
             return self._create_result(
@@ -156,11 +176,11 @@ class WriteDataHandler(BaseStageHandler):
                 "Unable to fetch available schemas. Please specify the schema name directly.",
                 is_error=True
             )
-    
+
     async def _execute_write_data_job(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
         """Execute write_data job with error handling."""
         logger.info("Executing write_data_job...")
-        
+
         job_name = params.get("name", "WriteData_Job")
         
         try:
@@ -170,7 +190,7 @@ class WriteDataHandler(BaseStageHandler):
                     message="No dataset available for write operation",
                     user_message="No data available to write. Please run a query first."
                 )
-            
+
             # Get connection ID
             connection_name = params.get("connection", memory.connection)
             connection_id = memory.get_connection_id(connection_name)
@@ -225,7 +245,7 @@ class WriteDataHandler(BaseStageHandler):
                         )
                 
                 write_data_vars.write_count_connection = write_count_conn_id
-                write_data_vars.write_count_schemas = params.get("write_count_schemas")
+                write_data_vars.write_count_schemas = params.get("write_count_schema")
                 write_data_vars.write_count_table = params.get("write_count_table")
             
             # Create request and execute job
@@ -256,7 +276,7 @@ class WriteDataHandler(BaseStageHandler):
                 f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
             )
             return self._create_result(memory, response)
-        
+
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name: {e}")
             return self._create_result(
@@ -265,7 +285,7 @@ class WriteDataHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except UnknownConnectionError as e:
             logger.error(f"Unknown connection: {e}")
             return self._create_result(
@@ -274,7 +294,7 @@ class WriteDataHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except MissingDatasetError as e:
             logger.error(f"Missing dataset: {e}")
             return self._create_result(
@@ -283,7 +303,7 @@ class WriteDataHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout: {e}")
             return self._create_result(
@@ -292,7 +312,7 @@ class WriteDataHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except ICCBaseError as e:
             logger.error(f"ICC error in write_data: {e}")
             return self._create_result(

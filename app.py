@@ -292,34 +292,34 @@ def get_error_category_icon(category: ErrorCategory) -> str:
 def format_error_for_ui(error: Exception) -> dict:
     """
     Format an error for UI display with user-friendly message.
-    
+
     Args:
         error: The exception
-        
+
     Returns:
         Dictionary with formatted error info
     """
     if isinstance(error, ICCBaseError):
         icon = get_error_category_icon(error.category)
         message = error.user_message
-        
+
         # Add suggestions for retryable errors
         if error.is_retryable:
             message += "\n\nThis may be a temporary issue. Please try again."
-        
+
         return {
             "message": message,
             "icon": icon,
             "code": error.code,
             "is_retryable": error.is_retryable,
         }
-    
+
     # For non-ICC errors, convert first
     icc_error = ErrorHandler.handle(error)
     return format_error_for_ui(icc_error)
 
 
-def format_message(role, content, timestamp=None, error_info=None):
+def format_message(role, content, timestamp=None, error_info=None,  **kwargs):
     """Format a chat message for display"""
     if timestamp is None:
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -335,10 +335,66 @@ def format_message(role, content, timestamp=None, error_info=None):
             ])
         ], className="mb-3", style={"backgroundColor": "#e3f2fd"})
     
+    elif role == "schema_dropdown":
+        schemas = kwargs.get("schemas", [])
+        param_name = kwargs.get("param_name", "")
+
+        return dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Strong("🤖 ICC Agent", className="text-success"),
+                    html.Small(f" • {timestamp}", className="text-muted ms-2")
+                ]),
+                html.P(content, className="mb-2 mt-2"),
+                dcc.Dropdown(
+                    id={"type": "schema-selector", "param": param_name},
+                    options=[{"label": schema, "value": schema} for schema in schemas],
+                    placeholder="Select a schema...",
+                    className="mt-2",
+                    style={"marginBottom": "10px"}
+                ),
+                dbc.Button(
+                    "Confirm Selection",
+                    id={"type": "schema-confirm", "param": param_name},
+                    color="primary",
+                    size="sm",
+                    className="mt-2"
+                )
+            ])
+        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
+
+    elif role == "connection_dropdown":
+        connections = kwargs.get("connections", [])
+        param_name = kwargs.get("param_name", "")
+
+        return dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Strong("🤖 ICC Agent", className="text-success"),
+                    html.Small(f" • {timestamp}", className="text-muted ms-2")
+                ]),
+                html.P(content, className="mb-2 mt-2"),
+                dcc.Dropdown(
+                    id={"type": "connection-selector", "param": param_name},
+                    options=[{"label": conn, "value": conn} for conn in connections],
+                    placeholder="Select a connection...",
+                    className="mt-2",
+                    style={"marginBottom": "10px"}
+                ),
+                dbc.Button(
+                    "Confirm Selection",
+                    id={"type": "connection-confirm", "param": param_name},
+                    color="primary",
+                    size="sm",
+                    className="mt-2"
+                )
+            ])
+        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
+
     elif role == "agent":
         # Check if this is an error message (starts with "Error:")
         is_error_response = content.startswith("Error:")
-        
+
         if is_error_response:
             # Format error response with better styling
             error_text = content[6:].strip()  # Remove "Error:" prefix
@@ -354,7 +410,7 @@ def format_message(role, content, timestamp=None, error_info=None):
                     ], color="warning", className="mb-0 mt-2")
                 ])
             ], className="mb-3", style={"backgroundColor": "#fff3cd"})
-        
+
         return dbc.Card([
             dbc.CardBody([
                 html.Div([
@@ -371,30 +427,30 @@ def format_message(role, content, timestamp=None, error_info=None):
             icon = error_info.get("icon", "[Error]")
             is_retryable = error_info.get("is_retryable", False)
             error_code = error_info.get("code", "")
-            
+
             # Add code badge if available
             code_badge = ""
             if error_code:
                 code_badge = html.Small(f" ({error_code})", className="text-muted")
-            
+
             alert_content = [
                 html.Strong(f"{icon} "),
                 content,
             ]
-            
+
             if code_badge:
                 alert_content.append(code_badge)
-            
+
             if is_retryable:
                 alert_content.append(html.Br())
                 alert_content.append(html.Small("This may be a temporary issue - please try again.", className="text-muted"))
-            
+
             return dbc.Alert(
                 alert_content,
                 color="danger",
                 className="mb-3"
             )
-        
+
         # Simple error without info
         return dbc.Alert(
             [
@@ -493,7 +549,7 @@ async def invoke_router_async(user_message, session_id="default-session", connec
                         logger.warning("API returned 0 connections! Will use static connections.py as fallback")
                 else:
                     logger.warning("Could not fetch connections from API, will use static connections.py as fallback")
-                    
+
             except AuthenticationError as e:
                 logger.error(f"Authentication error: {e.user_message}")
             except ICCConnectionError as e:
@@ -536,7 +592,7 @@ async def invoke_router_async(user_message, session_id="default-session", connec
             "stage": updated_memory.stage.value,
             "memory": updated_memory.to_dict()
         }
-        
+
     except ICCBaseError as e:
         # Handle ICC errors with user-friendly messages
         logger.error(f"ICC Error [{e.code}]: {e.technical_message}")
@@ -545,16 +601,16 @@ async def invoke_router_async(user_message, session_id="default-session", connec
             "error": e.user_message,
             "error_info": error_info
         }
-        
+
     except Exception as e:
         # Handle unexpected errors
         print(f"\nERROR: {str(e)}")
         logger.error(f"Unexpected error in router: {str(e)}", exc_info=True)
-        
+
         # Convert to ICC error for consistent handling
         icc_error = ErrorHandler.handle(e, {"user_message": user_message[:50]})
         error_info = format_error_for_ui(icc_error)
-        
+
         return {
             "error": icc_error.user_message,
             "error_info": error_info
@@ -836,8 +892,48 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
             logger.info(f"Router response: {response_text[:100]}...")
             logger.info(f"Current stage: {current_stage}")
             
+            # Check if this is a SCHEMA_DROPDOWN response
+            if response_text.startswith("SCHEMA_DROPDOWN:"):
+                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
+                schemas = schema_data.get("schemas", [])
+                param_name = schema_data.get("param_name", "")
+                question = schema_data.get("question", "Which schema should I use?")
+
+                # Add message with dropdown for schema selection
+                agent_message = {
+                    "role": "schema_dropdown",
+                    "content": question,
+                    "schemas": schemas,
+                    "param_name": param_name,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+                chat_display = [format_message(**msg) for msg in chat_data]
+                return chat_display, chat_data, "", "", False, map_data, [], [], None
+
+            # Check if this is a CONNECTION_DROPDOWN response
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+
+                # Add message with dropdown for connection selection
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+                chat_display = [format_message(**msg) for msg in chat_data]
+                return chat_display, chat_data, "", "", False, map_data, [], [], None
+
             # Check if this is a MAP_TABLE_POPUP response
-            if response_text.startswith("MAP_TABLE_POPUP:"):
+            elif response_text.startswith("MAP_TABLE_POPUP:"):
                 popup_data = json.loads(response_text.replace("MAP_TABLE_POPUP:", ""))
                 first_cols = popup_data.get("first_columns", [])
                 second_cols = popup_data.get("second_columns", [])
@@ -877,12 +973,13 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
                 return chat_display, chat_data, "", "", True, new_map_data, first_opts, second_opts, response_text
             
             # Regular response
-            agent_message = {
-                "role": "agent",
-                "content": response_text,
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
     
     except Exception as e:
         logger.error(f"Error processing request: {e}", exc_info=True)
@@ -1081,6 +1178,295 @@ def toggle_second_key(values, map_data):
         map_data["mappings"] = mappings
     
     return map_data
+
+
+# Callback to handle schema dropdown selection (bypass LLM)
+@app.callback(
+    [Output("chat-history", "children", allow_duplicate=True),
+     Output("chat-store", "data", allow_duplicate=True),
+     Output("user-input", "value", allow_duplicate=True)],
+    [Input({"type": "schema-confirm", "param": ALL}, "n_clicks")],
+    [State({"type": "schema-selector", "param": ALL}, "value"),
+     State({"type": "schema-confirm", "param": ALL}, "id"),
+     State("chat-store", "data"),
+     State("config-store", "data")],
+    prevent_initial_call=True
+)
+def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, config):
+    """Handle schema selection from dropdown WITHOUT using LLM"""
+    ctx = callback_context
+
+    logger.info(f"🔘 Schema callback triggered")
+    logger.info(f"   n_clicks: {n_clicks}")
+    logger.info(f"   selected_schemas: {selected_schemas}")
+    logger.info(f"   button_ids: {button_ids}")
+
+    # Check if any button was actually clicked
+    if not ctx.triggered:
+        logger.warning("⚠️ No trigger context")
+        raise dash.exceptions.PreventUpdate
+
+    # Get the triggered button info
+    triggered_id = ctx.triggered[0]["prop_id"]
+    logger.info(f"   triggered_id: {triggered_id}")
+
+    if ".n_clicks" not in triggered_id:
+        logger.warning("⚠️ Not a button click")
+        raise dash.exceptions.PreventUpdate
+
+    # Parse the button ID to get param_name
+    try:
+        button_id_dict = json.loads(triggered_id.split(".")[0])
+        param_name = button_id_dict.get("param")
+
+        # Find the corresponding schema value - check n_clicks to find actual clicked button
+        triggered_idx = None
+        for i, bid in enumerate(button_ids):
+            if bid.get("param") == param_name and n_clicks[i] is not None:
+                triggered_idx = i
+                break
+
+        if triggered_idx is None or not selected_schemas[triggered_idx]:
+            logger.warning(f"⚠️ No schema selected for {param_name}")
+            raise dash.exceptions.PreventUpdate
+
+        selected_schema = selected_schemas[triggered_idx]
+
+    except Exception as e:
+        logger.error(f"❌ Error parsing schema selection: {e}")
+        raise dash.exceptions.PreventUpdate
+
+    logger.info(f"✅ Schema selected via dropdown: {selected_schema} for param: {param_name}")
+
+    # Add user selection message
+    user_message = {
+        "role": "user",
+        "content": selected_schema,
+        "timestamp": datetime.now().strftime("%H:%M:%S")
+    }
+    chat_data.append(user_message)
+
+    # Use hardcoded session ID (same as main chat callback)
+    session_id = "web-chat-session"
+
+    # Directly assign the parameter in memory WITHOUT calling LLM
+    if session_id in session_memories:
+        memory = session_memories[session_id]
+        memory.gathered_params[param_name] = selected_schema
+        logger.info(f"✅ Directly assigned {param_name}={selected_schema} (bypassed LLM)")
+
+        # Trigger next question by calling router with special flag
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(
+                invoke_router_async(
+                    f"__SCHEMA_SELECTED__:{selected_schema}",
+                    session_id=session_id,
+                    connection=config.get("connection"),
+                    schema=config.get("schema"),
+                    selected_tables=config.get("tables", [])
+                )
+            )
+            loop.close()
+
+            response_text = response.get("response", "Schema selected successfully!")
+
+            # Check for special formats
+            if response_text.startswith("SCHEMA_DROPDOWN:"):
+                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
+                schemas = schema_data.get("schemas", [])
+                param_name_new = schema_data.get("param_name", "")
+                question = schema_data.get("question", "Which schema should I use?")
+
+                agent_message = {
+                    "role": "schema_dropdown",
+                    "content": question,
+                    "schemas": schemas,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name_new = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+        except Exception as e:
+            logger.error(f"❌ Error after schema selection: {e}")
+            error_message = {
+                "role": "error",
+                "content": f"Error: {str(e)}",
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(error_message)
+
+    chat_display = [format_message(**msg) for msg in chat_data]
+    return chat_display, chat_data, ""
+
+
+# Callback to handle connection dropdown selection (bypass LLM)
+@app.callback(
+    [Output("chat-history", "children", allow_duplicate=True),
+     Output("chat-store", "data", allow_duplicate=True),
+     Output("user-input", "value", allow_duplicate=True)],
+    [Input({"type": "connection-confirm", "param": ALL}, "n_clicks")],
+    [State({"type": "connection-selector", "param": ALL}, "value"),
+     State({"type": "connection-confirm", "param": ALL}, "id"),
+     State("chat-store", "data"),
+     State("config-store", "data")],
+    prevent_initial_call=True
+)
+def handle_connection_selection(n_clicks, selected_connections, button_ids, chat_data, config):
+    """Handle connection selection from dropdown WITHOUT using LLM"""
+    ctx = callback_context
+
+    logger.info(f"🔘 Connection callback triggered")
+    logger.info(f"   n_clicks: {n_clicks}")
+    logger.info(f"   selected_connections: {selected_connections}")
+    logger.info(f"   button_ids: {button_ids}")
+
+    # Check if any button was actually clicked
+    if not ctx.triggered:
+        logger.warning("⚠️ No trigger context")
+        raise dash.exceptions.PreventUpdate
+
+    # Get the triggered button info
+    triggered_id = ctx.triggered[0]["prop_id"]
+    logger.info(f"   triggered_id: {triggered_id}")
+
+    if ".n_clicks" not in triggered_id:
+        logger.warning("⚠️ Not a button click")
+        raise dash.exceptions.PreventUpdate
+
+    # Parse the button ID to get param_name
+    try:
+        button_id_dict = json.loads(triggered_id.split(".")[0])
+        param_name = button_id_dict.get("param")
+
+        # Find the corresponding connection value - check n_clicks to find actual clicked button
+        triggered_idx = None
+        for i, bid in enumerate(button_ids):
+            if bid.get("param") == param_name and n_clicks[i] is not None:
+                triggered_idx = i
+                break
+
+        if triggered_idx is None or not selected_connections[triggered_idx]:
+            logger.warning(f"⚠️ No connection selected for {param_name}")
+            raise dash.exceptions.PreventUpdate
+
+        selected_connection = selected_connections[triggered_idx]
+
+    except Exception as e:
+        logger.error(f"❌ Error parsing connection selection: {e}")
+        raise dash.exceptions.PreventUpdate
+
+    logger.info(f"✅ Connection selected via dropdown: {selected_connection} for param: {param_name}")
+
+    # Add user selection message
+    user_message = {
+        "role": "user",
+        "content": selected_connection,
+        "timestamp": datetime.now().strftime("%H:%M:%S")
+    }
+    chat_data.append(user_message)
+
+    # Use hardcoded session ID (same as main chat callback)
+    session_id = "web-chat-session"
+
+    # Directly assign the parameter in memory WITHOUT calling LLM
+    if session_id in session_memories:
+        memory = session_memories[session_id]
+        memory.gathered_params[param_name] = selected_connection
+        logger.info(f"✅ Directly assigned {param_name}={selected_connection} (bypassed LLM)")
+
+        # After connection selection, need to fetch schemas for that connection
+        # Clear available_schemas so validator will trigger FETCH_SCHEMAS
+        memory.available_schemas = []
+        logger.info(f"🔄 Cleared available_schemas to trigger schema fetch for {selected_connection}")
+
+        # Trigger next question by calling router with special flag
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            response = loop.run_until_complete(
+                invoke_router_async(
+                    f"__CONNECTION_SELECTED__:{selected_connection}",
+                    session_id=session_id,
+                    connection=config.get("connection"),
+                    schema=config.get("schema"),
+                    selected_tables=config.get("tables", [])
+                )
+            )
+            loop.close()
+
+            response_text = response.get("response", "Connection selected successfully!")
+
+            # Check for special formats
+            if response_text.startswith("SCHEMA_DROPDOWN:"):
+                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
+                schemas = schema_data.get("schemas", [])
+                param_name_new = schema_data.get("param_name", "")
+                question = schema_data.get("question", "Which schema should I use?")
+
+                agent_message = {
+                    "role": "schema_dropdown",
+                    "content": question,
+                    "schemas": schemas,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
+                connections = connection_data.get("connections", [])
+                param_name_new = connection_data.get("param_name", "")
+                question = connection_data.get("question", "Which connection should I use?")
+
+                agent_message = {
+                    "role": "connection_dropdown",
+                    "content": question,
+                    "connections": connections,
+                    "param_name": param_name_new,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+        except Exception as e:
+            logger.error(f"❌ Error after connection selection: {e}")
+            error_message = {
+                "role": "error",
+                "content": f"Error: {str(e)}",
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(error_message)
+
+    chat_display = [format_message(**msg) for msg in chat_data]
+    return chat_display, chat_data, ""
 
 
 if __name__ == "__main__":

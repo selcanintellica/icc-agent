@@ -89,9 +89,9 @@ class ReadSQLHandler(BaseStageHandler):
                 return await self._handle_show_results(memory, user_input)
             elif memory.stage == Stage.NEED_WRITE_OR_EMAIL:
                 return await self._handle_need_write_or_email(memory, user_input)
-            
+
             return self._create_result(memory, "Unhandled stage in ReadSQL flow")
-            
+
         except ICCBaseError as e:
             logger.error(f"ICC error in ReadSQL handler: {e}")
             return self._create_error_result(memory, e)
@@ -136,7 +136,7 @@ class ReadSQLHandler(BaseStageHandler):
                 memory,
                 "Please describe what data you want to query. For example: 'get all customers from USA'"
             )
-        
+
         try:
             spec = call_sql_agent(
                 user_input,
@@ -144,32 +144,32 @@ class ReadSQLHandler(BaseStageHandler):
                 schema=memory.schema,
                 selected_tables=memory.selected_tables
             )
-            
+
             # Check if SQL agent returned an error
             if spec.error:
                 logger.warning(f"SQL generation had issues: {spec.error}")
                 # Still proceed with the generated SQL but inform the user
-            
+
             if not spec.sql:
                 return self._create_result(
                     memory,
                     "I couldn't generate a SQL query from that description. Please try rephrasing it more specifically."
                 )
-            
+
             memory.last_sql = spec.sql
-            
+
             warning = ""
             if "select" not in spec.sql.lower():
                 warning = "\n\nNote: This is a non-SELECT query which may modify data."
-            
+
             if spec.error:
                 warning += f"\n\nNote: {spec.error}"
-            
+
             response = f"I prepared this SQL:\n```sql\n{spec.sql}\n```{warning}\n\nIs this okay? (yes/no)\nSay 'no' to modify, or 'yes' to execute."
             logger.info(f"SQL generated: {spec.sql}")
-            
+
             return self._create_result(memory, response, Stage.CONFIRM_GENERATED_SQL)
-            
+
         except Exception as e:
             logger.error(f"Error generating SQL: {e}", exc_info=True)
             return self._create_result(
@@ -189,11 +189,11 @@ class ReadSQLHandler(BaseStageHandler):
                 memory,
                 "Please provide your SQL query:"
             )
-        
+
         # Basic SQL validation
         sql_lower = sql.lower()
         valid_keywords = ["select", "insert", "update", "delete", "create", "drop", "alter", "with"]
-        
+
         if not any(sql_lower.startswith(kw) or f" {kw} " in sql_lower for kw in valid_keywords):
             return self._create_result(
                 memory,
@@ -205,7 +205,7 @@ class ReadSQLHandler(BaseStageHandler):
         warning = ""
         if "select" not in sql_lower:
             warning = "\n\nNote: This is a non-SELECT query which may modify data."
-        
+
         response = f"You provided this SQL:\n```sql\n{memory.last_sql}\n```{warning}\n\nIs this correct? (yes/no)"
         logger.info(f"User SQL received: {memory.last_sql}")
         
@@ -254,25 +254,33 @@ class ReadSQLHandler(BaseStageHandler):
     async def _handle_execute_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle EXECUTE_SQL stage."""
         logger.info("Gathering parameters for read_sql...")
-        
+
         try:
+            # If no parameters gathered yet and user just confirmed (said "yes"/"okay"),
+            # ignore that confirmation message and start fresh
+            if not memory.gathered_params and user_input.lower().strip() in ["yes", "ok", "okay", "sure", "correct"]:
+                logger.info(f"🔄 Ignoring confirmation message '{user_input}' - starting fresh parameter gathering")
+                user_input = ""
+
             action = call_job_agent(memory, user_input, tool_name="read_sql")
-            
+
             if action.get("action") == "ASK":
                 memory.last_question = action["question"]
                 return self._create_result(memory, action["question"])
-            
+
+            if action.get("action") == "FETCH_CONNECTIONS":
+                return await self._fetch_connections(memory)
+
             if action.get("action") == "FETCH_SCHEMAS":
                 return await self._fetch_schemas_for_result(memory, action.get("connection"))
-            
+
             if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
                 return await self._execute_read_sql_job(memory, action.get("params", {}))
-            
+
             return self._create_result(
                 memory,
-                "To execute, I need some information. What should I name this job?"
+                "To execute, I need the database connection name. What connection should I use?"
             )
-            
         except Exception as e:
             logger.error(f"Error in execute_sql stage: {e}", exc_info=True)
             return self._create_result(
@@ -284,13 +292,13 @@ class ReadSQLHandler(BaseStageHandler):
     async def _execute_read_sql_job(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
         """Execute the read_sql job with error handling."""
         logger.info("Executing read_sql_job...")
-        
+
         job_name = params.get("name", "ReadSQL_Job")
         
         try:
             from src.utils.connections import get_connection_id
             connection_id = get_connection_id(memory.connection)
-            
+
             if not connection_id:
                 logger.error(f"Unknown connection: {memory.connection}")
                 return self._create_result(
@@ -350,7 +358,7 @@ class ReadSQLHandler(BaseStageHandler):
                 memory.last_job_folder = "3023602439587835"
                 memory.last_columns = result.get("columns", [])
                 memory.execute_query_enabled = execute_query
-                
+
                 if execute_query:
                     memory.output_table_info = {
                         "schema": params.get("result_schema"),
@@ -375,7 +383,7 @@ class ReadSQLHandler(BaseStageHandler):
                     self._format_job_error("ReadSQL", Exception(error_msg), job_name),
                     is_error=True
                 )
-        
+
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name: {e}")
             return self._create_result(
@@ -384,7 +392,7 @@ class ReadSQLHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except UnknownConnectionError as e:
             logger.error(f"Unknown connection: {e}")
             return self._create_result(
@@ -393,7 +401,7 @@ class ReadSQLHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout: {e}")
             return self._create_result(
@@ -402,7 +410,7 @@ class ReadSQLHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except ICCBaseError as e:
             logger.error(f"ICC error in read_sql: {e}")
             return self._create_result(
@@ -411,7 +419,7 @@ class ReadSQLHandler(BaseStageHandler):
                 is_error=True,
                 error_code=e.code
             )
-        
+
         except Exception as e:
             logger.error(f"Error in read_sql: {str(e)}", exc_info=True)
             return self._create_result(
@@ -473,21 +481,47 @@ class ReadSQLHandler(BaseStageHandler):
             "Please specify what you'd like to do:\n- 'write' - Save to a table\n- 'email' - Send via email\n- 'done' - Finish"
         )
     
+    async def _fetch_connections(self, memory: Memory) -> StageHandlerResult:
+        """Fetch all available connections for write_count."""
+        # Only fetch from API if not already in memory
+        if not memory.connections:
+            result = await ConnectionFetcher.fetch_connections(memory)
+            if not result["success"]:
+                return self._create_result(
+                    memory,
+                    f"❌ Error: {result['message']}\nPlease try again."
+                )
+
+        # For read_sql, connections are only needed for write_count
+        param_name = "write_count_connection"
+        question_text = "Which connection should I use for the row count?"
+
+        # Return special format for UI to show dropdown
+        connections_list = list(memory.connections.keys())
+        response = f"CONNECTION_DROPDOWN:{json.dumps({'connections': connections_list, 'param_name': param_name, 'question': question_text})}"
+        memory.last_question = question_text
+        return self._create_result(memory, response)
+
     async def _fetch_schemas_for_result(self, memory: Memory, connection_name: str) -> StageHandlerResult:
-        """Fetch schemas for result connection."""
+        """Fetch schemas for result connection (read_sql with execute_query or write_count)."""
         try:
             result = await ConnectionFetcher.fetch_schemas(connection_name, memory)
-            
+
             if result["success"]:
+                # Determine purpose based on what's missing in params
                 params = memory.gathered_params
                 if params.get("write_count") and not params.get("write_count_schema") and params.get("write_count_connection"):
                     purpose = "write_count"
+                    param_name = "write_count_schema"
                 else:
                     purpose = "result"
-                
-                question = ConnectionFetcher.create_schema_question(memory, purpose=purpose)
-                memory.last_question = question
-                return self._create_result(memory, question)
+                    param_name = "result_schema"
+
+                # Return special format for UI to show dropdown
+                question_text = "Which schema should I write the results to?" if purpose == "result" else "Which schema should I write the row count to?"
+                response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': param_name, 'question': question_text})}"
+                memory.last_question = question_text
+                return self._create_result(memory, response)
             else:
                 return self._create_result(
                     memory,
