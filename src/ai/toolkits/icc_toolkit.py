@@ -1,5 +1,5 @@
 """
-ICC Toolkit - Refactored with SOLID principles.
+ICC Toolkit - Refactored with SOLID principles and comprehensive error handling.
 
 This module provides tools for ICC job operations following SOLID principles:
 - Single Responsibility: Each function has one clear purpose
@@ -19,6 +19,17 @@ from src.models.natural_language import (
 )
 from src.repositories.job_repository import JobRepository
 from src.ai.toolkits.services import HTTPClientManager
+from src.errors import (
+    ICCBaseError,
+    JobError,
+    JobCreationFailedError,
+    DuplicateJobNameError,
+    NetworkTimeoutError,
+    APIUnavailableError,
+    AuthenticationError,
+    ErrorHandler,
+    ErrorCode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +54,7 @@ class JobToolExecutor:
     
     async def execute_write_data_job(self, data: WriteDataLLMRequest) -> dict:
         """
-        Execute a write data job.
+        Execute a write data job with error handling.
         
         Args:
             data: Write data request payload
@@ -51,19 +62,47 @@ class JobToolExecutor:
         Returns:
             dict: Job execution result
         """
-        if not data.id:
-            data.id = str(uuid.uuid4())
+        job_name = data.props.get("name", "WriteData_Job") if hasattr(data, "props") and data.props else "WriteData_Job"
         
-        async with self.client_manager.get_authenticated_client() as client:
-            repo = JobRepository(client)
-            await repo.write_data_job(data)
+        try:
+            if not data.id:
+                data.id = str(uuid.uuid4())
+            
+            async with self.client_manager.get_authenticated_client() as client:
+                repo = JobRepository(client)
+                await repo.write_data_job(data)
+            
+            logger.info(f"Write data job executed successfully: {data.id}")
+            return {"message": "Success", "data": data.model_dump()}
         
-        logger.info(f"✅ Write data job executed: {data.id}")
-        return {"message": "Success", "data": data.model_dump()}
+        except DuplicateJobNameError as e:
+            logger.warning(f"Duplicate job name for WriteData: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except NetworkTimeoutError as e:
+            logger.error(f"Network timeout for WriteData job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except APIUnavailableError as e:
+            logger.error(f"API unavailable for WriteData job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except AuthenticationError as e:
+            logger.error(f"Authentication error for WriteData job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except ICCBaseError as e:
+            logger.error(f"ICC error in WriteData job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in WriteData job: {type(e).__name__}: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"job_type": "WriteData", "job_name": job_name})
+            return {"message": "Error", "error": icc_error.user_message}
     
     async def execute_read_sql_job(self, data: ReadSqlLLMRequest) -> dict:
         """
-        Execute a read SQL job.
+        Execute a read SQL job with error handling.
         
         Args:
             data: Read SQL request payload
@@ -71,33 +110,72 @@ class JobToolExecutor:
         Returns:
             dict: Job execution result with job_id and columns
         """
-        if not data.id:
-            data.id = str(uuid.uuid4())
+        job_name = data.props.get("name", "ReadSQL_Job") if hasattr(data, "props") and data.props else "ReadSQL_Job"
         
-        async with self.client_manager.get_authenticated_client() as client:
-            repo = JobRepository(client)
-            response, columns = await repo.read_sql_job(data)
+        try:
+            if not data.id:
+                data.id = str(uuid.uuid4())
+            
+            async with self.client_manager.get_authenticated_client() as client:
+                repo = JobRepository(client)
+                response, columns = await repo.read_sql_job(data)
+            
+            if response.success:
+                logger.info(f"Read SQL job executed successfully: {response.data.object_id}")
+                return {
+                    "message": "Success",
+                    "job_id": response.data.object_id,
+                    "columns": columns,
+                    "query": data.variables[0].query,
+                    "connection": data.variables[0].connection
+                }
+            else:
+                error_msg = response.error or "Unknown error"
+                logger.error(f"Read SQL job failed: {error_msg}")
+                
+                # Check for specific error patterns
+                error_lower = error_msg.lower()
+                if "same name" in error_lower or "already exists" in error_lower:
+                    return {
+                        "message": "Error",
+                        "error": f"A job named '{job_name}' already exists. Please choose a different name.",
+                        "columns": columns
+                    }
+                
+                return {
+                    "message": "Error",
+                    "error": error_msg,
+                    "columns": columns
+                }
         
-        if response.success:
-            logger.info(f"✅ Read SQL job executed: {response.data.object_id}")
-            return {
-                "message": "Success",
-                "job_id": response.data.object_id,
-                "columns": columns,
-                "query": data.variables[0].query,
-                "connection": data.variables[0].connection
-            }
-        else:
-            logger.error(f"❌ Read SQL job failed: {response.error}")
-            return {
-                "message": "Error",
-                "error": response.error,
-                "columns": columns
-            }
+        except DuplicateJobNameError as e:
+            logger.warning(f"Duplicate job name for ReadSQL: {e}")
+            return {"message": "Error", "error": e.user_message, "columns": []}
+        
+        except NetworkTimeoutError as e:
+            logger.error(f"Network timeout for ReadSQL job: {e}")
+            return {"message": "Error", "error": e.user_message, "columns": []}
+        
+        except APIUnavailableError as e:
+            logger.error(f"API unavailable for ReadSQL job: {e}")
+            return {"message": "Error", "error": e.user_message, "columns": []}
+        
+        except AuthenticationError as e:
+            logger.error(f"Authentication error for ReadSQL job: {e}")
+            return {"message": "Error", "error": e.user_message, "columns": []}
+        
+        except ICCBaseError as e:
+            logger.error(f"ICC error in ReadSQL job: {e}")
+            return {"message": "Error", "error": e.user_message, "columns": []}
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in ReadSQL job: {type(e).__name__}: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"job_type": "ReadSQL", "job_name": job_name})
+            return {"message": "Error", "error": icc_error.user_message, "columns": []}
     
     async def execute_send_email_job(self, data: SendEmailLLMRequest) -> dict:
         """
-        Execute a send email job.
+        Execute a send email job with error handling.
         
         Args:
             data: Send email request payload
@@ -105,19 +183,47 @@ class JobToolExecutor:
         Returns:
             dict: Job execution result
         """
-        if not data.id:
-            data.id = str(uuid.uuid4())
+        job_name = data.props.get("name", "Email_Job") if hasattr(data, "props") and data.props else "Email_Job"
         
-        async with self.client_manager.get_authenticated_client() as client:
-            repo = JobRepository(client)
-            await repo.send_email_job(data)
+        try:
+            if not data.id:
+                data.id = str(uuid.uuid4())
+            
+            async with self.client_manager.get_authenticated_client() as client:
+                repo = JobRepository(client)
+                await repo.send_email_job(data)
+            
+            logger.info(f"Send email job executed successfully: {data.id}")
+            return {"message": "Success", "data": data.model_dump()}
         
-        logger.info(f"✅ Send email job executed: {data.id}")
-        return {"message": "Success", "data": data.model_dump()}
+        except DuplicateJobNameError as e:
+            logger.warning(f"Duplicate job name for SendEmail: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except NetworkTimeoutError as e:
+            logger.error(f"Network timeout for SendEmail job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except APIUnavailableError as e:
+            logger.error(f"API unavailable for SendEmail job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except AuthenticationError as e:
+            logger.error(f"Authentication error for SendEmail job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except ICCBaseError as e:
+            logger.error(f"ICC error in SendEmail job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in SendEmail job: {type(e).__name__}: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"job_type": "SendEmail", "job_name": job_name})
+            return {"message": "Error", "error": icc_error.user_message}
     
     async def execute_compare_sql_job(self, data: CompareSqlLLMRequest) -> dict:
         """
-        Execute a compare SQL job.
+        Execute a compare SQL job with error handling.
         
         Args:
             data: Compare SQL request payload
@@ -125,26 +231,64 @@ class JobToolExecutor:
         Returns:
             dict: Job execution result
         """
-        if not data.id:
-            data.id = str(uuid.uuid4())
+        job_name = data.props.get("name", "CompareSQL_Job") if hasattr(data, "props") and data.props else "CompareSQL_Job"
         
-        async with self.client_manager.get_authenticated_client() as client:
-            repo = JobRepository(client)
-            response = await repo.compare_sql_job(data)
+        try:
+            if not data.id:
+                data.id = str(uuid.uuid4())
+            
+            async with self.client_manager.get_authenticated_client() as client:
+                repo = JobRepository(client)
+                response = await repo.compare_sql_job(data)
+            
+            if response.success:
+                logger.info(f"Compare SQL job executed successfully: {response.data.object_id}")
+                return {
+                    "message": "Success",
+                    "job_id": response.data.object_id,
+                    "data": data.model_dump()
+                }
+            else:
+                error_msg = response.error or "Unknown error"
+                logger.error(f"Compare SQL job failed: {error_msg}")
+                
+                # Check for specific error patterns
+                error_lower = error_msg.lower()
+                if "same name" in error_lower or "already exists" in error_lower:
+                    return {
+                        "message": "Error",
+                        "error": f"A job named '{job_name}' already exists. Please choose a different name."
+                    }
+                
+                return {
+                    "message": "Error",
+                    "error": error_msg
+                }
         
-        if response.success:
-            logger.info(f"✅ Compare SQL job executed: {response.data.object_id}")
-            return {
-                "message": "Success",
-                "job_id": response.data.object_id,
-                "data": data.model_dump()
-            }
-        else:
-            logger.error(f"❌ Compare SQL job failed: {response.error}")
-            return {
-                "message": "Error",
-                "error": response.error
-            }
+        except DuplicateJobNameError as e:
+            logger.warning(f"Duplicate job name for CompareSQL: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except NetworkTimeoutError as e:
+            logger.error(f"Network timeout for CompareSQL job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except APIUnavailableError as e:
+            logger.error(f"API unavailable for CompareSQL job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except AuthenticationError as e:
+            logger.error(f"Authentication error for CompareSQL job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except ICCBaseError as e:
+            logger.error(f"ICC error in CompareSQL job: {e}")
+            return {"message": "Error", "error": e.user_message}
+        
+        except Exception as e:
+            logger.error(f"Unexpected error in CompareSQL job: {type(e).__name__}: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"job_type": "CompareSQL", "job_name": job_name})
+            return {"message": "Error", "error": icc_error.user_message}
 
 
 # Global executor instance

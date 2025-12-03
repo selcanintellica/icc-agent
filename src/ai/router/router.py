@@ -1,5 +1,5 @@
 """
-Router Orchestrator.
+Router Orchestrator with comprehensive error handling.
 
 Coordinates stage handlers with proper dependency injection following SOLID principles.
 """
@@ -17,6 +17,13 @@ from .stage_handlers.writedata_handler import WriteDataHandler
 from .stage_handlers.sendemail_handler import SendEmailHandler
 from .sql_agent import create_sql_agent, SQLAgent
 from .job_agent import create_job_agent, JobAgent
+from src.errors import (
+    ICCBaseError,
+    ErrorHandler,
+    ErrorCode,
+    ConfigurationError,
+    ValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +96,7 @@ class HandlerRegistry:
 
 class RouterOrchestrator:
     """
-    Main router orchestrator with proper dependency injection.
+    Main router orchestrator with proper dependency injection and error handling.
     
     Following SOLID principles:
     - Single Responsibility: Orchestrates handlers, delegates work
@@ -161,7 +168,7 @@ class RouterOrchestrator:
     
     async def handle_turn(self, memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
         """
-        Handle one conversational turn.
+        Handle one conversational turn with comprehensive error handling.
         
         Args:
             memory: Current conversation memory
@@ -171,52 +178,71 @@ class RouterOrchestrator:
             Tuple of (updated memory, response message)
         """
         logger.info(f"\n{'='*60}")
-        logger.info(f"🎯 ROUTER: Stage={memory.stage.value}, Input='{user_utterance[:50]}...'")
+        logger.info(f"ROUTER: Stage={memory.stage.value}, Input='{user_utterance[:50]}...'")
         logger.info(f"{'='*60}")
         
-        # Handle initial stages
-        if memory.stage == Stage.START:
-            memory.stage = Stage.ASK_JOB_TYPE
-            return memory, "How would you like to proceed? 'readsql' or 'comparesql'?"
-        
-        if memory.stage == Stage.ASK_JOB_TYPE:
-            return await self._handle_job_type_selection(memory, user_utterance)
-        
-        # Delegate to appropriate handler
-        handler = self.registry.get_handler(memory.stage, memory)
-        
-        if handler:
-            logger.info(f"📋 Delegating to handler: {handler.__class__.__name__}")
-            result = await handler.handle(memory, user_utterance)
+        try:
+            # Validate input
+            if user_utterance is None:
+                user_utterance = ""
             
-            if result:
-                # Check for delegation markers
-                if result.response == "__DELEGATE_TO_WRITEDATA__":
-                    logger.info("🔄 Detected delegation to WriteDataHandler")
-                    writedata_handler = self.registry._handlers.get("writedata")
-                    if writedata_handler:
-                        result = await writedata_handler.handle(memory, user_utterance)
-                        return result.memory, result.response
-                    else:
-                        return memory, "❌ Error: WriteDataHandler not available."
+            # Handle initial stages
+            if memory.stage == Stage.START:
+                memory.stage = Stage.ASK_JOB_TYPE
+                return memory, "How would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
+            
+            if memory.stage == Stage.ASK_JOB_TYPE:
+                return await self._handle_job_type_selection(memory, user_utterance)
+            
+            # Delegate to appropriate handler
+            handler = self.registry.get_handler(memory.stage, memory)
+            
+            if handler:
+                logger.info(f"Delegating to handler: {handler.__class__.__name__}")
+                result = await handler.handle(memory, user_utterance)
                 
-                elif result.response == "__DELEGATE_TO_SENDEMAIL__":
-                    logger.info("🔄 Detected delegation to SendEmailHandler")
-                    sendemail_handler = self.registry._handlers.get("sendemail")
-                    if sendemail_handler:
-                        result = await sendemail_handler.handle(memory, user_utterance)
-                        return result.memory, result.response
-                    else:
-                        return memory, "❌ Error: SendEmailHandler not available."
-                
-                return result.memory, result.response
-            else:
-                logger.warning(f"⚠️ Handler returned None for stage {memory.stage.value}")
-                return memory, "I'm not sure how to proceed. Could you rephrase?"
-        
-        # No handler found
-        logger.warning(f"⚠️ No handler found for stage: {memory.stage.value}")
-        return memory, "I'm not sure how to proceed. Could you rephrase?"
+                if result:
+                    # Log if this was an error response
+                    if result.is_error:
+                        logger.warning(f"Handler returned error: {result.error_code or 'unknown'}")
+                    
+                    # Check for delegation markers
+                    if result.response == "__DELEGATE_TO_WRITEDATA__":
+                        logger.info("Detected delegation to WriteDataHandler")
+                        writedata_handler = self.registry._handlers.get("writedata")
+                        if writedata_handler:
+                            result = await writedata_handler.handle(memory, user_utterance)
+                            return result.memory, result.response
+                        else:
+                            return memory, "Unable to process write request. Please try again."
+                    
+                    elif result.response == "__DELEGATE_TO_SENDEMAIL__":
+                        logger.info("Detected delegation to SendEmailHandler")
+                        sendemail_handler = self.registry._handlers.get("sendemail")
+                        if sendemail_handler:
+                            result = await sendemail_handler.handle(memory, user_utterance)
+                            return result.memory, result.response
+                        else:
+                            return memory, "Unable to process email request. Please try again."
+                    
+                    return result.memory, result.response
+                else:
+                    logger.warning(f"Handler returned None for stage {memory.stage.value}")
+                    return memory, "I'm not sure how to proceed. Could you rephrase your request?"
+            
+            # No handler found
+            logger.warning(f"No handler found for stage: {memory.stage.value}")
+            return memory, "I'm not sure how to proceed. Could you rephrase your request?"
+            
+        except ICCBaseError as e:
+            logger.error(f"ICC error in router: {e}")
+            return memory, f"Error: {e.user_message}"
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in router: {type(e).__name__}: {str(e)}", exc_info=True)
+            # Convert to user-friendly message
+            icc_error = ErrorHandler.handle(e, {"stage": memory.stage.value, "input": user_utterance[:50]})
+            return memory, f"Error: {icc_error.user_message}"
     
     async def _handle_job_type_selection(
         self,
@@ -235,20 +261,32 @@ class RouterOrchestrator:
         """
         user_lower = user_utterance.lower()
         
-        if "compare" in user_lower:
-            logger.info("📝 User chose: COMPARE SQL")
+        if any(word in user_lower for word in ["compare", "comparesql", "diff", "difference"]):
+            logger.info("User chose: COMPARE SQL")
             memory.job_type = "comparesql"
             memory.stage = Stage.ASK_FIRST_SQL_METHOD
-            return memory, "For the FIRST query, how would you like to proceed?\n• Type 'create' - I'll generate SQL\n• Type 'provide' - You provide the SQL"
+            return memory, (
+                "For the FIRST query, how would you like to proceed?\n"
+                "- 'create' - I'll generate SQL from your description\n"
+                "- 'provide' - You provide the SQL query directly"
+            )
         
-        elif "read" in user_lower:
-            logger.info("📝 User chose: READ SQL")
+        elif any(word in user_lower for word in ["read", "readsql", "query", "select", "get"]):
+            logger.info("User chose: READ SQL")
             memory.job_type = "readsql"
             memory.stage = Stage.ASK_SQL_METHOD
-            return memory, "How would you like to proceed?\n• Type 'create' - I'll generate SQL from your natural language\n• Type 'provide' - You provide the SQL query directly"
+            return memory, (
+                "How would you like to proceed?\n"
+                "- 'create' - I'll generate SQL from your natural language description\n"
+                "- 'provide' - You provide the SQL query directly"
+            )
         
         else:
-            return memory, "Please choose: 'readsql' or 'comparesql'"
+            return memory, (
+                "Please choose one of the following:\n"
+                "- 'readsql' - Execute a single SQL query\n"
+                "- 'comparesql' - Compare two SQL queries"
+            )
     
     def add_handler(self, name: str, handler: BaseStageHandler) -> None:
         """
