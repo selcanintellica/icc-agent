@@ -191,7 +191,7 @@ docs/                    # Detailed documentation
 ### Start the Application
 
 ```sh
-python app.py
+uv run app.py
 ```
 
 Open browser to: **http://localhost:8050**
@@ -253,7 +253,24 @@ Agent: "✅ Comparison complete! Results saved to comparison_table."
 Set `TABLE_API_MOCK=true` to use built-in mock table schemas without API:
 ```env
 TABLE_API_MOCK=true
-```folder:
+```
+
+**Prompt Logging (Debugging):**
+Enable logging of all LLM prompts for analysis:
+```env
+ENABLE_PROMPT_LOGGING=true
+PROMPT_LOG_DIR=prompt_logs
+```
+
+This creates session directories with individual prompt files:
+```
+prompt_logs/
+  session_20251203_143052/
+    0001_job_agent.txt       # First prompt to job agent
+    0002_sql_agent.txt       # SQL generation prompt
+    0003_job_agent.txt       # Parameter extraction
+    all_prompts.jsonl        # Combined log file
+```
 
 - **[SQL Agent Guide](docs/SQL_AGENT.md)** - Natural language to SQL conversion
 - **[Job Agent Guide](docs/JOB_AGENT.md)** - Parameter extraction and job creation

@@ -12,10 +12,12 @@
 
 ```powershell
 # Clone repository
-cd C:\Users\yukcus\Desktop\ICC_try
+cd C:\Users\ICC_Agent
 
 # Install dependencies
 pip install -r requirements_app.txt
+#or
+uv sync
 
 # Verify Ollama models
 ollama list
@@ -44,6 +46,21 @@ uv run app.py
 # Override default LLM models
 MODEL_NAME=qwen3:8b              # Job agent model
 SQL_MODEL_NAME=qwen2.5-coder:7b  # SQL agent model
+
+# Enable prompt logging (saves all LLM prompts to files)
+ENABLE_PROMPT_LOGGING=true
+PROMPT_LOG_DIR=prompt_logs
+```
+
+**Prompt Logging** (for debugging and analysis):
+When enabled, all prompts sent to LLMs are saved to individual files:
+```
+prompt_logs/
+  session_20251203_143052/
+    0001_job_agent.txt
+    0002_sql_agent.txt
+    0003_job_agent.txt
+    all_prompts.jsonl
 ```
 
 **db_config.json**:
@@ -218,20 +235,31 @@ CONFIRMATION_WORDS = ["yes", "y", "ok", "okay", "sure", "correct", "right"]
 
 ```python
 # src/ai/router/stage_handlers/my_job_handler.py
-from .base_handler import BaseHandler
+from .base_handler import BaseStageHandler, StageHandlerResult
+from src.ai.router.context.stage_context import Stage
 
-class MyJobHandler(BaseHandler):
+class MyJobHandler(BaseStageHandler):
+    # Define which stages this handler manages
+    MANAGED_STAGES = {
+        Stage.NEED_MY_JOB_PARAMS,
+        Stage.EXECUTE_MY_JOB,
+    }
+    
     def __init__(self, sql_agent=None, job_agent=None):
         # Only include agents you need
         self.sql_agent = sql_agent  # If generating SQL from natural language
         self.job_agent = job_agent  # If extracting parameters from user input
     
-    async def handle(self, memory: Memory, user_input: str) -> RouterResponse:
-        stage = memory.current_stage
+    def can_handle(self, stage: Stage) -> bool:
+        """Check if this handler can process the given stage."""
+        return stage in self.MANAGED_STAGES
+    
+    async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        stage = memory.stage
         
-        if stage == "need_my_job_params":
+        if stage == Stage.NEED_MY_JOB_PARAMS:
             return await self._handle_need_params(memory, user_input)
-        elif stage == "execute_my_job":
+        elif stage == Stage.EXECUTE_MY_JOB:
             return await self._handle_execute(memory, user_input)
     
     async def _handle_need_params(self, memory, user_input):
@@ -240,22 +268,24 @@ class MyJobHandler(BaseHandler):
         
         # Check action type
         if action.action_type == "ASK":
-            return RouterResponse(
-                new_stage="need_my_job_params",
-                message=action.question
+            return self._create_result(
+                memory,
+                message=action.question,
+                new_stage=Stage.NEED_MY_JOB_PARAMS
             )
         
         if action.action_type == "TOOL":
-            memory.current_stage = "execute_my_job"
+            memory.stage = Stage.EXECUTE_MY_JOB
             return await self._handle_execute(memory, "")
     
     async def _handle_execute(self, memory, user_input):
         # Execute job
         result = execute_my_job(memory.gathered_params)
         
-        return RouterResponse(
-            new_stage="done",
-            message=f"Job executed! ID: {result.job_id}"
+        return self._create_result(
+            memory,
+            message=f"Job executed! ID: {result.job_id}",
+            new_stage=Stage.DONE
         )
 ```
 
@@ -331,11 +361,8 @@ def execute_my_job(params: dict) -> dict:
 class RouterOrchestrator:
     def __init__(self, config, sql_agent, job_agent):
         # ...
-        self.handlers = {
-            # ... existing handlers
-            "need_my_job_params": MyJobHandler(config, job_agent),
-            "execute_my_job": MyJobHandler(config, job_agent),
-        }
+        # Register handler (router dispatches based on stage.can_handle)
+        self.handler_registry.register_handler(MyJobHandler(sql_agent, job_agent))
 ```
 
 ### Step 7: Add Entry Point
@@ -346,11 +373,12 @@ class RouterOrchestrator:
 async def handle_router_stage(self, memory, user_input):
     # Add to intent detection
     if "my job" in user_input.lower():
-        memory.current_stage = "need_my_job_params"
+        memory.stage = Stage.NEED_MY_JOB_PARAMS
         memory.current_job_type = "my_job"
-        return RouterResponse(
-            new_stage="need_my_job_params",
-            message="Let's create a my_job job!"
+        return self._create_result(
+            memory,
+            message="Let's create a my_job job!",
+            new_stage=Stage.NEED_MY_JOB_PARAMS
         )
 ```
 
@@ -438,9 +466,9 @@ from src.ai.router.stage_handlers.readsql_handler import ReadSQLHandler
 
 @pytest.mark.asyncio
 async def test_confirmation_filtering():
-    handler = ReadSQLHandler(config, sql_agent, job_agent)
+    handler = ReadSQLHandler(sql_agent, job_agent)
     memory = create_test_memory()
-    memory.current_stage = "execute_sql"
+    memory.stage = Stage.EXECUTE_SQL
     memory.gathered_params = {}
     
     response = await handler.handle(memory, "okay")
@@ -448,7 +476,7 @@ async def test_confirmation_filtering():
     # Should not extract "okay" as parameter
     assert "okay" not in memory.gathered_params.values()
     # Should still be in same stage
-    assert response.new_stage == "execute_sql"
+    assert response.new_stage == Stage.EXECUTE_SQL
 ```
 
 **Test Parameter Validation**:
@@ -500,7 +528,7 @@ async def test_readsql_flow():
     
     # Provide job name
     r3 = await router.process_input(memory, "customer_query")
-    assert r3.new_stage == "show_results"
+    assert r3.new_stage == Stage.SHOW_RESULTS
     assert memory.job_context["job_id"]
 ```
 
@@ -564,9 +592,43 @@ ollama show qwen2.5-coder:7b
 
 ```python
 # Add to router
-logger.info(f"📍 Current stage: {memory.current_stage}")
+logger.info(f"📍 Current stage: {memory.stage.value}")
 logger.info(f"📋 Gathered params: {memory.gathered_params}")
 logger.info(f"💬 User input: {user_input}")
+```
+
+### Debug Prompt Logging
+
+```python
+# Enable prompt logging in .env
+ENABLE_PROMPT_LOGGING=true
+PROMPT_LOG_DIR=prompt_logs
+
+# Check logged prompts
+# Each session creates a directory: prompt_logs/session_20251203_143052/
+# Individual files: 0001_job_agent.txt, 0002_sql_agent.txt, etc.
+# Combined log: all_prompts.jsonl
+```
+
+**Prompt File Format:**
+```
+=== PROMPT ===
+Agent: job_agent
+Timestamp: 2025-12-03 14:30:52
+
+--- SYSTEM ---
+Extract params for read_sql job...
+
+--- USER ---
+Last question: "What job name?"
+User answer: "customer_data"
+...
+
+--- RESPONSE ---
+{"action": "TOOL", "params": {"name": "customer_data"}}
+
+--- METADATA ---
+{"stage": "execute_sql", "tool": "read_sql"}
 ```
 
 ### Debug Dropdown Selection

@@ -93,11 +93,11 @@ registry.register("sendemail", SendEmailHandler(job_agent=...))
 
 ### ReadSQL Handler (src/ai/router/stage_handlers/readsql_handler.py)
 
-**Managed Stages**: `ASK_SQL_METHOD`, `NEED_NATURAL_LANGUAGE`, `NEED_USER_SQL`, `CONFIRM_GENERATED_SQL`, `CONFIRM_USER_SQL`, `EXECUTE_SQL`, `SHOW_RESULTS`, `NEED_WRITE_OR_EMAIL`
+**Managed Stages**: `Stage.ASK_SQL_METHOD`, `Stage.NEED_NATURAL_LANGUAGE`, `Stage.NEED_USER_SQL`, `Stage.CONFIRM_GENERATED_SQL`, `Stage.CONFIRM_USER_SQL`, `Stage.EXECUTE_SQL`, `Stage.SHOW_RESULTS`, `Stage.NEED_WRITE_OR_EMAIL`
 
 **Typical Flow**:
 ```
-ask_sql_method → need_natural_language → confirm_generated_sql → execute_sql → show_results
+Stage.ASK_SQL_METHOD → Stage.NEED_NATURAL_LANGUAGE → Stage.CONFIRM_GENERATED_SQL → Stage.EXECUTE_SQL → Stage.SHOW_RESULTS
 ```
 
 **Example Logic** (simplified pseudocode):
@@ -105,12 +105,14 @@ ask_sql_method → need_natural_language → confirm_generated_sql → execute_s
 1. **Handling natural language input**:
    ```python
    async def handle(self, memory: Memory, user_input: str):
-       # Call SQL agent to generate SQL
+       # Call SQL agent to generate SQL (with prompt logging if enabled)
        sql_query = await call_sql_agent(
            memory=memory,
            user_input=user_input,
            model=self.sql_agent
        )
+       # Note: If ENABLE_PROMPT_LOGGING=true, prompt saved to:
+       # prompt_logs/session_TIMESTAMP/NNNN_sql_agent.txt
        
        # Store SQL in memory
        memory.job_context["sql_query"] = sql_query
@@ -131,7 +133,7 @@ ask_sql_method → need_natural_language → confirm_generated_sql → execute_s
        if user_input.lower() in ["yes", "y", "correct", "ok", "okay"]:
            memory.stage = Stage.EXECUTE_SQL
            return StageHandlerResult(
-               new_stage="execute_sql",
+               new_stage=Stage.EXECUTE_SQL,
                message="Great! Executing SQL..."
            )
        else:
@@ -158,9 +160,9 @@ ask_sql_method → need_natural_language → confirm_generated_sql → execute_s
        if action.action_type == "TOOL":
            # Execute job
            result = execute_read_sql_job(memory.gathered_params)
-           memory.current_stage = "show_results"
-           return RouterResponse(
-               new_stage="show_results",
+           memory.stage = Stage.SHOW_RESULTS
+           return StageHandlerResult(
+               new_stage=Stage.SHOW_RESULTS,
                message=f"Query executed! Job ID: {result.job_id}"
            )
    ```
@@ -174,9 +176,11 @@ ask_sql_method → need_natural_language → confirm_generated_sql → execute_s
 
 ### WriteData Handler (src/ai/router/stage_handlers/writedata_handler.py)
 
+**Managed Stages**: `Stage.NEED_WRITE_OR_EMAIL` (shared entry point with ReadSQL)
+
 **Stage Flow**:
 ```
-need_write_params → execute_write
+Stage.NEED_WRITE_OR_EMAIL → execute write job
 ```
 
 **Key Features**:
@@ -184,21 +188,23 @@ need_write_params → execute_write
 1. **Dropdown Optimization**
    ```python
    async def _handle_need_write_params(self, memory: Memory, user_input: str):
+       # Call job agent with prompt logging if enabled
        action = call_job_agent(memory, user_input, "write_data")
+       # Prompt saved to: prompt_logs/session_TIMESTAMP/NNNN_job_agent.txt
        
        if action.action_type == "FETCH_CONNECTIONS":
            # Return dropdown format
            connections = memory.available_connections
-           return RouterResponse(
-               new_stage="need_write_params",
+           return StageHandlerResult(
+               new_stage=Stage.NEED_WRITE_OR_EMAIL,
                message=f"CONNECTION_DROPDOWN:{json.dumps(connections)}"
            )
        
        if action.action_type == "FETCH_SCHEMAS":
            connection = memory.gathered_params["write_count_connection"]
            schemas = fetch_schemas(connection)
-           return RouterResponse(
-               new_stage="need_write_params",
+           return StageHandlerResult(
+               new_stage=Stage.NEED_WRITE_OR_EMAIL,
                message=f"SCHEMA_DROPDOWN:{json.dumps(schemas)}"
            )
    ```
@@ -237,9 +243,11 @@ need_write_params → execute_write
    - User can say "yes" to use it or "no" to provide custom query
    - Executes send_email_job with confirmed query
 
+**Managed Stages**: `Stage.CONFIRM_EMAIL_QUERY`, `Stage.NEED_EMAIL_QUERY`
+
 **Stage Flow**:
 ```
-confirm_email_query → need_email_query (optional) → execute_email_job
+Stage.CONFIRM_EMAIL_QUERY → Stage.NEED_EMAIL_QUERY (optional) → execute_email_job
 ```
 
 **Why No SQL Agent?**:
@@ -255,13 +263,15 @@ confirm_email_query → need_email_query (optional) → execute_email_job
 - SQL agent for generating queries from natural language
 - Job agent for gathering comparison parameters
 
-**Stage Flow** (17 stages total):
+**Managed Stages**: 14 stages (from `Stage.ASK_FIRST_SQL_METHOD` to `Stage.EXECUTE_COMPARE_SQL`)
+
+**Stage Flow**:
 ```
-ask_first_sql_method → [generate or manual first SQL] → confirm_first_sql
-  → ask_second_sql_method → [generate or manual second SQL] → confirm_second_sql
-  → ask_auto_match → [optional: waiting_map_table]
-  → ask_reporting_type → ask_compare_schema → ask_compare_table_name
-  → ask_compare_job_name → execute_compare_sql
+Stage.ASK_FIRST_SQL_METHOD → [generate or manual first SQL] → Stage.CONFIRM_FIRST_GENERATED_SQL
+  → Stage.ASK_SECOND_SQL_METHOD → [generate or manual second SQL] → Stage.CONFIRM_SECOND_GENERATED_SQL
+  → Stage.ASK_AUTO_MATCH → [optional: Stage.WAITING_MAP_TABLE]
+  → Stage.ASK_REPORTING_TYPE → Stage.ASK_COMPARE_SCHEMA → Stage.ASK_COMPARE_TABLE_NAME
+  → Stage.ASK_COMPARE_JOB_NAME → Stage.EXECUTE_COMPARE_SQL
 ```
 
 **Key Features**:
@@ -286,6 +296,11 @@ ChatOllama(
     timeout=30.0
 )
 ```
+
+**Prompt Logging** (when `ENABLE_PROMPT_LOGGING=true`):
+- Saves every prompt to: `prompt_logs/session_TIMESTAMP/NNNN_job_agent.txt`
+- Includes system prompt, user prompt, response, and metadata
+- Useful for debugging parameter extraction issues
 
 **Prompt Structure**:
 ```
@@ -341,6 +356,11 @@ ChatOllama(
     num_predict=2048           # Max SQL length
 )
 ```
+
+**Prompt Logging** (when `ENABLE_PROMPT_LOGGING=true`):
+- Saves every prompt to: `prompt_logs/session_TIMESTAMP/NNNN_sql_agent.txt`
+- Includes schema context, table metadata, user request, and generated SQL
+- Useful for debugging SQL generation quality and table context issues
 
 **Prompt Structure**:
 ```
