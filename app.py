@@ -735,11 +735,20 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
     # Handle Map Table confirmation
     if button_id == "confirm-map-btn" and modal_open:
         # Build mapping JSON from map_data
+        # New format:
+        # - key_mappings: rows where BOTH first and second key checkboxes are checked
+        #   Format: [{"FirstKey": "COL1", "SecondKey": "COL2"}]
+        # - column_mappings: ALL column pairs (regardless of key status)
+        #   Format: [{"FirstMappedColumn": "COL1", "SecondMappedColumn": "COL2"}]
         mappings = map_data.get("mappings", [])
-        key_mappings = [{"FirstKey": m["first_col"], "SecondKey": m["second_col"]} 
-                       for m in mappings if m.get("is_first_key") or m.get("is_second_key")]
+        
+        # All mappings go to column_mappings
         column_mappings = [{"FirstMappedColumn": m["first_col"], "SecondMappedColumn": m["second_col"]} 
-                          for m in mappings if not (m.get("is_first_key") or m.get("is_second_key"))]
+                          for m in mappings]
+        
+        # Only rows with both keys checked go to key_mappings
+        key_mappings = [{"FirstKey": m["first_col"], "SecondKey": m["second_col"]} 
+                       for m in mappings if m.get("is_first_key") and m.get("is_second_key")]
         
         mapping_json = json.dumps({
             "key_mappings": key_mappings,
