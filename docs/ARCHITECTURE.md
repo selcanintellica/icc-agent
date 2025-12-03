@@ -68,48 +68,52 @@ Each handler manages a specific job type's conversation flow:
 
 #### ReadSQL Handler (src/ai/router/stage_handlers/readsql_handler.py)
 - **Stages**: 
-  - `ask_sql_method` → Choose between generating SQL or providing manually
-  - `need_natural_language` → Generate SQL from natural language
-  - `need_user_sql` → User provides SQL manually
-  - `confirm_generated_sql` / `confirm_user_sql` → Show SQL for user approval
-  - `execute_sql` → Gather parameters (job name)
-  - `show_results` → Display results & offer next actions
-  - `need_write_or_email` → Ask what to do with results
+  - `Stage.ASK_SQL_METHOD` → Choose between generating SQL or providing manually
+  - `Stage.NEED_NATURAL_LANGUAGE` → Generate SQL from natural language
+  - `Stage.NEED_USER_SQL` → User provides SQL manually
+  - `Stage.CONFIRM_GENERATED_SQL` / `Stage.CONFIRM_USER_SQL` → Show SQL for user approval
+  - `Stage.EXECUTE_SQL` → Gather parameters (job name)
+  - `Stage.SHOW_RESULTS` → Display results & offer next actions
+  - `Stage.NEED_WRITE_OR_EMAIL` → Ask what to do with results
 - **Key Feature**: Filters confirmation words to prevent extraction as parameters
+- **Managed Stages**: 8 stages total (defined in `MANAGED_STAGES` set)
 
 #### WriteData Handler (src/ai/router/stage_handlers/writedata_handler.py)
 - **Stages**:
-  - `need_write_or_email` → Entry point (delegates from ReadSQL results)
+  - `Stage.NEED_WRITE_OR_EMAIL` → Entry point (delegates from ReadSQL results)
   - Gathers: connection, schema, table, drop_or_truncate option
 - **Parameter Optimization**: Uses dropdowns for connection/schema selection
 - **Note**: Triggered after ReadSQL execution when user chooses "write"
+- **Managed Stages**: 1 stage (shares `NEED_WRITE_OR_EMAIL` with ReadSQL)
 
 #### SendEmail Handler (src/ai/router/stage_handlers/sendemail_handler.py)
 - **Stages**:
-  - `confirm_email_query` → Confirm auto-generated query from result table
-  - `need_email_query` → User provides custom query
+  - `Stage.CONFIRM_EMAIL_QUERY` → Confirm auto-generated query from result table
+  - `Stage.NEED_EMAIL_QUERY` → User provides custom query
 - **Note**: Does NOT use SQL agent - generates query automatically from output_table_info
 - **Flow**: Requires WriteData first → auto-generates `SELECT * FROM schema.table` from result table
 - **Key Feature**: Validates that data was written to table before allowing email
+- **Managed Stages**: 2 stages for email flow
 
 #### CompareSQL Handler (src/ai/router/stage_handlers/comparesql_handler.py)
 - **Stages**:
-  - `ask_first_sql_method` → Choose generation or manual SQL for first query
-  - `need_first_natural_language` → Generate first SQL from natural language
-  - `need_first_user_sql` → User provides first SQL manually
-  - `confirm_first_generated_sql` / `confirm_first_user_sql` → Confirm first SQL
-  - `ask_second_sql_method` → Choose method for second query
-  - `need_second_natural_language` → Generate second SQL
-  - `need_second_user_sql` → User provides second SQL
-  - `confirm_second_generated_sql` / `confirm_second_user_sql` → Confirm second SQL
-  - `ask_auto_match` → Ask if auto-match columns
-  - `waiting_map_table` → Wait for manual column mapping
-  - `ask_reporting_type` → Choose reporting type
-  - `ask_compare_schema` → Select schema for comparison results
-  - `ask_compare_table_name` → Name the comparison table
-  - `ask_compare_job_name` → Name the comparison job
-  - `execute_compare_sql` → Execute comparison
+  - `Stage.ASK_FIRST_SQL_METHOD` → Choose generation or manual SQL for first query
+  - `Stage.NEED_FIRST_NATURAL_LANGUAGE` → Generate first SQL from natural language
+  - `Stage.NEED_FIRST_USER_SQL` → User provides first SQL manually
+  - `Stage.CONFIRM_FIRST_GENERATED_SQL` / `Stage.CONFIRM_FIRST_USER_SQL` → Confirm first SQL
+  - `Stage.ASK_SECOND_SQL_METHOD` → Choose method for second query
+  - `Stage.NEED_SECOND_NATURAL_LANGUAGE` → Generate second SQL
+  - `Stage.NEED_SECOND_USER_SQL` → User provides second SQL
+  - `Stage.CONFIRM_SECOND_GENERATED_SQL` / `Stage.CONFIRM_SECOND_USER_SQL` → Confirm second SQL
+  - `Stage.ASK_AUTO_MATCH` → Ask if auto-match columns
+  - `Stage.WAITING_MAP_TABLE` → Wait for manual column mapping
+  - `Stage.ASK_REPORTING_TYPE` → Choose reporting type
+  - `Stage.ASK_COMPARE_SCHEMA` → Select schema for comparison results
+  - `Stage.ASK_COMPARE_TABLE_NAME` → Name the comparison table
+  - `Stage.ASK_COMPARE_JOB_NAME` → Name the comparison job
+  - `Stage.EXECUTE_COMPARE_SQL` → Execute comparison
 - **Uses Both Agents**: SQL agent for query generation, job agent for parameters
+- **Managed Stages**: 14 stages for complete comparison workflow
 
 ### 4. LLM Agents (Singleton Pattern)
 
@@ -122,6 +126,7 @@ Each handler manages a specific job type's conversation flow:
   - `num_predict=2048`
 - **Used By**: ReadSQLHandler, CompareSQLHandler
 - **Note**: Specialized coding model for better SQL generation
+- **Prompt Logging**: When `ENABLE_PROMPT_LOGGING=true`, saves all prompts to `prompt_logs/session_TIMESTAMP/NNNN_sql_agent.txt`
 
 #### Job Agent (src/ai/router/job_agent.py)
 - **Purpose**: Extract job parameters from user input
@@ -133,6 +138,7 @@ Each handler manages a specific job type's conversation flow:
   - `timeout=30.0`
 - **Key Feature**: Filters confirmation words ("yes", "ok", "okay", etc.)
 - **Used By**: All handlers (ReadSQL, WriteData, SendEmail, CompareSQL)
+- **Prompt Logging**: When `ENABLE_PROMPT_LOGGING=true`, saves all prompts to `prompt_logs/session_TIMESTAMP/NNNN_job_agent.txt`
 
 ### 5. Parameter Validator (src/ai/router/validators/parameter_validator.py)
 - **Purpose**: Check required parameters & determine next action

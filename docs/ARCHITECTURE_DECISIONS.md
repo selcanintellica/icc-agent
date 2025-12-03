@@ -101,18 +101,18 @@ User: "Get customers from USA"
                 ↓
         ReadSQLHandler [PREDETERMINED PATH]
                 ↓
-    Stage 1: ASK_SQL_METHOD
-    Stage 2: NEED_NATURAL_LANGUAGE ← LLM generates SQL (ONE job)
-    Stage 3: CONFIRM_GENERATED_SQL
-    Stage 4: EXECUTE_SQL
-    Stage 5: SHOW_RESULTS
-    Stage 6: NEED_WRITE_OR_EMAIL
+    Stage 1: Stage.ASK_SQL_METHOD
+    Stage 2: Stage.NEED_NATURAL_LANGUAGE ← LLM generates SQL (ONE job)
+    Stage 3: Stage.CONFIRM_GENERATED_SQL
+    Stage 4: Stage.EXECUTE_SQL
+    Stage 5: Stage.SHOW_RESULTS
+    Stage 6: Stage.NEED_WRITE_OR_EMAIL
                 ↓
     User: "write"
                 ↓
         WriteDataHandler [PREDETERMINED PATH]
                 ↓
-    Stage: NEED_WRITE_OR_EMAIL ← LLM extracts parameters (ONE job)
+    Stage: Stage.NEED_WRITE_OR_EMAIL ← LLM extracts parameters (ONE job)
     [Execute job]
 ```
 
