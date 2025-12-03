@@ -747,11 +747,20 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
     # Handle Map Table confirmation
     if button_id == "confirm-map-btn" and modal_open:
         # Build mapping JSON from map_data
+        # New format:
+        # - key_mappings: rows where BOTH first and second key checkboxes are checked
+        #   Format: [{"FirstKey": "COL1", "SecondKey": "COL2"}]
+        # - column_mappings: ALL column pairs (regardless of key status)
+        #   Format: [{"FirstMappedColumn": "COL1", "SecondMappedColumn": "COL2"}]
         mappings = map_data.get("mappings", [])
-        key_mappings = [{"FirstKey": m["first_col"], "SecondKey": m["second_col"]} 
-                       for m in mappings if m.get("is_first_key") or m.get("is_second_key")]
+        
+        # All mappings go to column_mappings
         column_mappings = [{"FirstMappedColumn": m["first_col"], "SecondMappedColumn": m["second_col"]} 
-                          for m in mappings if not (m.get("is_first_key") or m.get("is_second_key"))]
+                          for m in mappings]
+        
+        # Only rows with both keys checked go to key_mappings
+        key_mappings = [{"FirstKey": m["first_col"], "SecondKey": m["second_col"]} 
+                       for m in mappings if m.get("is_first_key") and m.get("is_second_key")]
         
         mapping_json = json.dumps({
             "key_mappings": key_mappings,
@@ -1265,7 +1274,7 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
     if session_id in session_memories:
         memory = session_memories[session_id]
         memory.gathered_params[param_name] = selected_schema
-        logger.info(f"✅ Directly assigned {param_name}={selected_schema} (bypassed LLM)")
+        logger.info(f"Directly assigned {param_name}={selected_schema} (bypassed LLM)")
 
         # Trigger next question by calling router with special flag
         try:
@@ -1322,13 +1331,22 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
                 chat_data.append(agent_message)
 
         except Exception as e:
-            logger.error(f"❌ Error after schema selection: {e}")
+            logger.error(f"Error after schema selection: {e}")
             error_message = {
                 "role": "error",
                 "content": f"Error: {str(e)}",
                 "timestamp": datetime.now().strftime("%H:%M:%S")
             }
             chat_data.append(error_message)
+    else:
+        # Session not initialized - provide user feedback
+        logger.warning(f"Session '{session_id}' not found in session_memories during schema selection")
+        error_message = {
+            "role": "error",
+            "content": "Session not initialized. Please start a new conversation by typing a message first.",
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        chat_data.append(error_message)
 
     chat_display = [format_message(**msg) for msg in chat_data]
     return chat_display, chat_data, ""
@@ -1414,12 +1432,12 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     if session_id in session_memories:
         memory = session_memories[session_id]
         memory.gathered_params[param_name] = selected_connection
-        logger.info(f"✅ Directly assigned {param_name}={selected_connection} (bypassed LLM)")
+        logger.info(f"Directly assigned {param_name}={selected_connection} (bypassed LLM)")
 
         # After connection selection, need to fetch schemas for that connection
         # Clear available_schemas so validator will trigger FETCH_SCHEMAS
         memory.available_schemas = []
-        logger.info(f"🔄 Cleared available_schemas to trigger schema fetch for {selected_connection}")
+        logger.info(f"Cleared available_schemas to trigger schema fetch for {selected_connection}")
 
         # Trigger next question by calling router with special flag
         try:
@@ -1476,13 +1494,22 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
                 chat_data.append(agent_message)
 
         except Exception as e:
-            logger.error(f"❌ Error after connection selection: {e}")
+            logger.error(f"Error after connection selection: {e}")
             error_message = {
                 "role": "error",
                 "content": f"Error: {str(e)}",
                 "timestamp": datetime.now().strftime("%H:%M:%S")
             }
             chat_data.append(error_message)
+    else:
+        # Session not initialized - provide user feedback
+        logger.warning(f"Session '{session_id}' not found in session_memories during connection selection")
+        error_message = {
+            "role": "error",
+            "content": "Session not initialized. Please start a new conversation by typing a message first.",
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        chat_data.append(error_message)
 
     chat_display = [format_message(**msg) for msg in chat_data]
     return chat_display, chat_data, ""

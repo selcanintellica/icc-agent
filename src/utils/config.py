@@ -16,7 +16,7 @@ load_dotenv(override=True)
 API_CONFIG = {
     "api_base_url": os.getenv("API_BASE_URL", "https://127.0.0.1:8082/job/save"),
     "query_api_base_url": os.getenv("QUERY_API_BASE_URL", "https://127.0.0.1:8082/utility/query"),
-    "timeout": float(os.getenv("API_TIMEOUT", "30.0")),
+    "timeout": float(os.getenv("API_TIMEOUT", "60.0")),
 }
 
 # Authentication Configuration (Basic Auth + Custom Token)
