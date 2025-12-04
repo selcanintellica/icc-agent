@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import traceback
+from typing import Optional
 
 # Configure logging to see agent actions
 logging.basicConfig(
@@ -80,16 +81,67 @@ app.title = "ICC Agent Chat"
 # Session memory storage (in production, use Redis or DB)
 session_memories = {}
 
-# Initialize config loader (replaces schema_loader)
+# Initialize config loader (replaces schema_loader) - used as fallback
 config_loader = get_config_loader()
 
-# Get initial values for dropdowns (pre-populate for first connection)
+# Initialize ICC API client for dynamic dropdown population
+from src.utils.connection_api_client import ICCAPIClient
+
+# Cache for connection name -> ID mapping (populated on first API call)
+connection_id_cache = {}
+
+# Get initial values for dropdowns (from static config as fallback for faster first load)
 initial_connections = config_loader.get_available_connections()
 initial_connection = initial_connections[0] if initial_connections else None
 initial_schemas = config_loader.get_schemas_for_connection(initial_connection) if initial_connection else []
 initial_schema = initial_schemas[0] if initial_schemas else None
 initial_tables = config_loader.get_tables_for_schema(initial_connection, initial_schema) if (initial_connection and initial_schema) else []
 initial_table_selection = initial_tables[:2] if len(initial_tables) >= 2 else initial_tables
+
+
+def get_connection_id(connection_name: str) -> Optional[str]:
+    """Get connection ID from cache or fetch from API."""
+    global connection_id_cache
+    
+    # Return from cache if available
+    if connection_name in connection_id_cache:
+        return connection_id_cache[connection_name]
+    
+    try:
+        # Fetch all connections from API and populate cache
+        from src.utils.auth import authenticate
+        
+        # Run async authentication and API calls
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Await authentication
+        auth_result = loop.run_until_complete(authenticate())
+        if not auth_result:
+            logger.warning("Authentication failed")
+            loop.close()
+            return None
+        
+        userpass, token = auth_result
+        auth_headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+        
+        api_client = ICCAPIClient(auth_headers=auth_headers)
+        connections = loop.run_until_complete(api_client.fetch_connections())
+        loop.close()
+        
+        # Populate cache
+        for name, info in connections.items():
+            connection_id_cache[name] = info.get("id")
+        
+        logger.info(f"Cached {len(connection_id_cache)} connection IDs")
+        return connection_id_cache.get(connection_name)
+        
+    except Exception as e:
+        logger.error(f"Error fetching connection IDs: {e}")
+        return None
 
 
 def create_map_table_modal():
@@ -636,18 +688,54 @@ async def invoke_router_async(user_message, session_id="default-session", connec
     [Input("connection-dropdown", "value")]
 )
 def update_schema_dropdown(selected_connection):
-    """Update available schemas based on selected connection"""
+    """Update available schemas based on selected connection - fetched dynamically from API"""
     if not selected_connection:
         return [], None
     
-    schema_options = config_loader.get_schema_options(selected_connection)
-    
-    # Auto-select first schema if available
-    default_schema = schema_options[0]["value"] if schema_options else None
-    
-    logger.info(f"Updated schemas for connection {selected_connection}: {[s['value'] for s in schema_options]}")
-    
-    return schema_options, default_schema
+    try:
+        # Get connection ID from API
+        connection_id = get_connection_id(selected_connection)
+        
+        if not connection_id:
+            logger.warning(f"Connection ID not found for {selected_connection}, using static config")
+            schema_options = config_loader.get_schema_options(selected_connection)
+            default_schema = schema_options[0]["value"] if schema_options else None
+            return schema_options, default_schema
+        
+        # Fetch schemas from API
+        from src.utils.auth import authenticate
+        
+        # Run async authentication and API calls
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        auth_result = loop.run_until_complete(authenticate())
+        if not auth_result:
+            logger.warning("Authentication failed for schema fetch")
+            loop.close()
+            raise Exception("Authentication failed")
+        
+        userpass, token = auth_result
+        auth_headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+        
+        api_client = ICCAPIClient(auth_headers=auth_headers)
+        schemas = loop.run_until_complete(api_client.fetch_schemas(connection_id))
+        loop.close()
+        
+        schema_options = [{"label": schema, "value": schema} for schema in schemas]
+        default_schema = schema_options[0]["value"] if schema_options else None
+        
+        logger.info(f"✅ Fetched {len(schemas)} schemas dynamically for connection {selected_connection}")
+        return schema_options, default_schema
+        
+    except Exception as e:
+        logger.error(f"Error fetching schemas dynamically: {e}, falling back to static config")
+        schema_options = config_loader.get_schema_options(selected_connection)
+        default_schema = schema_options[0]["value"] if schema_options else None
+        return schema_options, default_schema
 
 
 # Callback to update tables dropdown when schema changes
@@ -658,18 +746,54 @@ def update_schema_dropdown(selected_connection):
      Input("schema-dropdown", "value")]
 )
 def update_tables_dropdown(selected_connection, selected_schema):
-    """Update available tables based on selected connection and schema"""
+    """Update available tables based on selected connection and schema - fetched dynamically from API"""
     if not selected_connection or not selected_schema:
         return [], []
     
-    table_options = config_loader.get_table_options(selected_connection, selected_schema)
-    
-    # Auto-select first two tables if available
-    default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
-    
-    logger.info(f"Updated tables for {selected_connection}.{selected_schema}: {[t['value'] for t in table_options]}")
-    
-    return table_options, default_tables
+    try:
+        # Get connection ID from API
+        connection_id = get_connection_id(selected_connection)
+        
+        if not connection_id:
+            logger.warning(f"Connection ID not found for {selected_connection}, using static config")
+            table_options = config_loader.get_table_options(selected_connection, selected_schema)
+            default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
+            return table_options, default_tables
+        
+        # Fetch tables from API
+        from src.utils.auth import authenticate
+        
+        # Run async authentication and API calls
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        auth_result = loop.run_until_complete(authenticate())
+        if not auth_result:
+            logger.warning("Authentication failed for table fetch")
+            loop.close()
+            raise Exception("Authentication failed")
+        
+        userpass, token = auth_result
+        auth_headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+        
+        api_client = ICCAPIClient(auth_headers=auth_headers)
+        tables = loop.run_until_complete(api_client.fetch_tables(connection_id, selected_schema))
+        loop.close()
+        
+        table_options = [{"label": table, "value": table} for table in tables]
+        default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
+        
+        logger.info(f"✅ Fetched {len(tables)} tables dynamically for {selected_connection}.{selected_schema}")
+        return table_options, default_tables
+        
+    except Exception as e:
+        logger.error(f"Error fetching tables dynamically: {e}, falling back to static config")
+        table_options = config_loader.get_table_options(selected_connection, selected_schema)
+        default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
+        return table_options, default_tables
 
 
 # Callback to save configuration
