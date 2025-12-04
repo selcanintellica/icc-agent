@@ -75,38 +75,26 @@ class JobRepository(BaseRepository):
         """
         Execute a compare SQL job.
         
-        New API structure:
-        - map_table: JSON array of column mappings [{"FirstMappedColumn": "...", "SecondMappedColumn": "..."}]
-        - keys: JSON array of key pairs [{"FirstKey": "...", "SecondKey": "..."}]
-        - columns_output: generated based on keys structure
+        API structure uses COMMA-SEPARATED STRINGS:
+        - first_table_keys: comma-separated key column names (e.g., "EMPLOYEE_ID")
+        - second_table_keys: comma-separated key column names (e.g., "EMPLOYEE_ID")
+        - first_table_columns: comma-separated ALL column names (e.g., "ID,NAME,EMAIL")
+        - second_table_columns: comma-separated ALL column names (e.g., "ID,NAME,EMAIL")
+        - columns_output: fixed structure with 3 key columns each
         """
-        import json
-        
         var = data.variables[0]
         
-        # Dynamically generate columns_output based on keys
+        # Generate columns_output with fixed structure (always 3 key columns each)
         if not var.columns_output:
-            # Parse keys JSON to extract first/second table keys for columns_output generation
-            first_keys = ""
-            second_keys = ""
-            if var.keys:
-                try:
-                    keys_list = json.loads(var.keys) if isinstance(var.keys, str) else var.keys
-                    first_keys = ",".join([k.get("FirstKey", "") for k in keys_list if k.get("FirstKey")])
-                    second_keys = ",".join([k.get("SecondKey", "") for k in keys_list if k.get("SecondKey")])
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning("Could not parse keys JSON, using empty keys for columns_output")
-            
-            var.columns_output = CompareSQLColumnGenerator.generate_columns_output(
-                first_table_keys=first_keys,
-                second_table_keys=second_keys
-            )
+            var.columns_output = CompareSQLColumnGenerator.generate_columns_output()
 
         wire = self.wire_builder.build_wire_payload(data)
         
         logger.info(f"Creating compare SQL job: {data.template}")
-        logger.info(f"Keys: {var.keys}")
-        logger.info(f"Map table: {var.map_table}")
+        logger.info(f"First table keys: {var.first_table_keys}")
+        logger.info(f"Second table keys: {var.second_table_keys}")
+        logger.info(f"First table columns: {var.first_table_columns}")
+        logger.info(f"Second table columns: {var.second_table_columns}")
         endpoint = ""
         response = await self.post_request(endpoint, wire, JobResponse)
         return response

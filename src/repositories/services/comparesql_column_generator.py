@@ -23,15 +23,18 @@ class CompareSQLColumnGenerator:
     
     @staticmethod
     def generate_columns_output(
-        first_table_keys: str,
-        second_table_keys: str
+        first_table_keys: str = "",
+        second_table_keys: str = ""
     ) -> str:
         """
         Generate columns_output JSON string for CompareSQL job.
         
+        ICC expects a fixed structure with exactly 3 key columns for each table.
+        The parameters are kept for API compatibility but not currently used.
+        
         Args:
-            first_table_keys: Comma-separated keys for first table
-            second_table_keys: Comma-separated keys for second table
+            first_table_keys: Unused (kept for API compatibility)
+            second_table_keys: Unused (kept for API compatibility)
             
         Returns:
             str: JSON string with column definitions
@@ -46,12 +49,11 @@ class CompareSQLColumnGenerator:
             {"columnName": "FIRST_TABLE_KEYS"}
         ])
         
-        # Add columns for first table keys
-        first_keys_list = [k.strip() for k in first_table_keys.split(",") if k.strip()]
-        for i, _ in enumerate(first_keys_list, 1):
+        # Always add 3 key columns for first table (ICC expects this fixed structure)
+        for i in range(1, 4):
             output_cols.append({"columnName": f"FIRST_KEY_{i}"})
         
-        logger.debug(f"Added {len(first_keys_list)} first table key columns")
+        logger.debug("Added 3 first table key columns")
         
         # Add middle section columns
         output_cols.extend([
@@ -62,12 +64,11 @@ class CompareSQLColumnGenerator:
             {"columnName": "SECOND_TABLE_KEYS"}
         ])
         
-        # Add columns for second table keys
-        second_keys_list = [k.strip() for k in second_table_keys.split(",") if k.strip()]
-        for i, _ in enumerate(second_keys_list, 1):
+        # Always add 3 key columns for second table (ICC expects this fixed structure)
+        for i in range(1, 4):
             output_cols.append({"columnName": f"SECOND_KEY_{i}"})
         
-        logger.debug(f"Added {len(second_keys_list)} second table key columns")
+        logger.debug("Added 3 second table key columns")
         
         # Add final columns
         output_cols.extend([
@@ -76,7 +77,8 @@ class CompareSQLColumnGenerator:
             {"columnName": "SECOND_TABLE_COUNT"}
         ])
         
-        columns_json = json.dumps(output_cols)
+        # Use compact JSON format without spaces (ICC expects this format)
+        columns_json = json.dumps(output_cols, separators=(',', ':'))
         logger.info(f"Generated columns_output with {len(output_cols)} columns")
         
         return columns_json
