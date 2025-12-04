@@ -208,6 +208,18 @@ class RouterOrchestrator:
                 memory.stage = Stage.ASK_JOB_TYPE
                 return memory, "How would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
             
+            # Handle restart from DONE stage
+            if memory.stage == Stage.DONE:
+                user_lower = user_utterance.lower().strip()
+                if any(word in user_lower for word in ["new", "start", "begin", "restart", "fresh"]):
+                    logger.info("🔄 User requested fresh start, resetting memory...")
+                    # Reset memory to fresh state
+                    memory.reset()
+                    memory.stage = Stage.ASK_JOB_TYPE
+                    return memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
+                else:
+                    return memory, "I'm in DONE state. Say 'new query' or 'start' to create another job."
+            
             if memory.stage == Stage.ASK_JOB_TYPE:
                 return await self._handle_job_type_selection(memory, user_utterance)
             

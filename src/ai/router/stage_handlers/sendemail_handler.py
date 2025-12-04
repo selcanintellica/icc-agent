@@ -277,19 +277,20 @@ class SendEmailHandler(BaseStageHandler):
             result = await send_email_job(request)
             logger.info(f"send_email_job result: {json.dumps(result, indent=2, default=str)}")
             
-            # Reset all email-related state
+            # Reset email-specific params but keep output_table_info for subsequent emails
             memory.gathered_params = {}
             memory.current_tool = None
             memory.pending_email_params = None
             memory.email_query_confirmed = False
             memory.last_question = None
+            # DON'T clear: connection, schema, output_table_info (needed for next email)
             
             to_email = params.get('to')
             response = (
                 f"Email job '{job_name}' created successfully!\n\n"
                 f"Results will be sent to: {to_email}\n"
                 f"Subject: {params.get('subject', 'Query Results')}\n\n"
-                f"What would you like to do next?\n- 'write' - Write to another table\n- 'email' - Send another email\n- 'done' - Finish"
+                f"What would you like to do next?\n- 'email' - Send another email\n- 'done' - Finish"
             )
             return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
         
