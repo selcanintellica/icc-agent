@@ -198,31 +198,41 @@ class RouterOrchestrator:
             handler = self.registry.get_handler(memory.stage, memory)
             
             if handler:
-                logger.info(f"Delegating to handler: {handler.__class__.__name__}")
+                logger.info(f"🎯 Delegating to handler: {handler.__class__.__name__}")
+                logger.info(f"🎯 Memory state before handler: stage={memory.stage.value}, current_tool={memory.current_tool}, gathered_params={list(memory.gathered_params.keys())}")
+                
                 result = await handler.handle(memory, user_utterance)
                 
                 if result:
+                    logger.info(f"🎯 Handler result: next_stage={result.next_stage.value if result.next_stage else 'None'}, is_error={result.is_error}")
+                    
                     # Log if this was an error response
                     if result.is_error:
-                        logger.warning(f"Handler returned error: {result.error_code or 'unknown'}")
+                        logger.warning(f"⚠️ Handler returned error: {result.error_code or 'unknown'}")
                     
                     # Check for delegation markers
                     if result.response == "__DELEGATE_TO_WRITEDATA__":
-                        logger.info("Detected delegation to WriteDataHandler")
+                        logger.info("🔄 Detected delegation to WriteDataHandler")
                         writedata_handler = self.registry._handlers.get("writedata")
                         if writedata_handler:
+                            logger.info(f"📝 Calling WriteDataHandler with input: '{user_utterance}'")
                             result = await writedata_handler.handle(memory, user_utterance)
+                            logger.info(f"📝 WriteDataHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
                             return result.memory, result.response
                         else:
+                            logger.error("❌ WriteDataHandler not found in registry!")
                             return memory, "Unable to process write request. Please try again."
                     
                     elif result.response == "__DELEGATE_TO_SENDEMAIL__":
-                        logger.info("Detected delegation to SendEmailHandler")
+                        logger.info("🔄 Detected delegation to SendEmailHandler")
                         sendemail_handler = self.registry._handlers.get("sendemail")
                         if sendemail_handler:
+                            logger.info(f"📧 Calling SendEmailHandler with input: '{user_utterance}'")
                             result = await sendemail_handler.handle(memory, user_utterance)
+                            logger.info(f"📧 SendEmailHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
                             return result.memory, result.response
                         else:
+                            logger.error("❌ SendEmailHandler not found in registry!")
                             return memory, "Unable to process email request. Please try again."
                     
                     return result.memory, result.response

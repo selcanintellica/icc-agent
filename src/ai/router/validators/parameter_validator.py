@@ -226,18 +226,21 @@ class ParameterValidator:
             }
         
         if "cc" not in params:
-            logger.info("❓ Asking for CC (optional)")
+            logger.info("❓ CC not in params, asking user...")
             return {
                 "action": "ASK",
                 "question": "Would you like to add any CC email addresses? (Say 'no' or 'none' to skip, or provide email addresses)"
             }
         
         cc_value = params.get("cc", "")
+        logger.info(f"📧 CC value received: '{cc_value}' (type: {type(cc_value).__name__})")
+        
         if isinstance(cc_value, str) and cc_value.lower().strip() in ["no", "none", "skip", "n/a"]:
             params["cc"] = ""
             logger.info("📧 CC normalized to empty string (user declined)")
         
-        logger.info(f"✅ All send_email params present: {params}")
+        logger.info(f"✅ All send_email params present and validated!")
+        logger.info(f"✅ Final params: name={params.get('name')}, to={params.get('to')}, subject={params.get('subject')[:30]}..., cc='{params.get('cc')}'")
         return None
     
     @staticmethod

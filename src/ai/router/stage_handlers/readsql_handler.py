@@ -443,17 +443,30 @@ class ReadSQLHandler(BaseStageHandler):
         """Handle NEED_WRITE_OR_EMAIL stage."""
         user_lower = user_input.lower().strip()
         
-        # Check for "done" intent - use word boundaries to avoid false positives
-        # e.g., "i do not know" should NOT match because "no" is part of "not"
-        done_patterns = ["done", "finish", "complete", "nothing"]
-        # Only match "no" if it's a standalone word or at start/end
-        if (user_lower in ["no", "nope", "nah"] or 
-            any(pattern in user_lower for pattern in done_patterns)):
-            return self._create_result(
-                memory,
-                "All done! Say 'new query' or 'start' to create another job.",
-                Stage.DONE
-            )
+        logger.info(f"📋 NEED_WRITE_OR_EMAIL: input='{user_input}'")
+        logger.info(f"📋 current_tool={memory.current_tool}")
+        logger.info(f"📋 gathered_params={memory.gathered_params}")
+        logger.info(f"📋 last_question={memory.last_question}")
+        
+        # If we're actively gathering params for write or email, DON'T treat "no" as done
+        # "no" might be answering a question like "Add CC?" -> "no"
+        actively_gathering = memory.current_tool in ["write_data", "send_email"] and memory.gathered_params
+        
+        if actively_gathering:
+            logger.info(f"🔄 Actively gathering params for {memory.current_tool}, not treating 'no' as done")
+        else:
+            # Check for "done" intent - use word boundaries to avoid false positives
+            # e.g., "i do not know" should NOT match because "no" is part of "not"
+            done_patterns = ["done", "finish", "complete", "nothing"]
+            # Only match "no" if it's a standalone word or at start/end
+            if (user_lower in ["no", "nope", "nah"] or 
+                any(pattern in user_lower for pattern in done_patterns)):
+                logger.info("✅ User said done, transitioning to DONE stage")
+                return self._create_result(
+                    memory,
+                    "All done! Say 'new query' or 'start' to create another job.",
+                    Stage.DONE
+                )
         
         if memory.execute_query_enabled and any(word in user_lower for word in ["write", "save"]):
             return self._create_result(
@@ -464,9 +477,11 @@ class ReadSQLHandler(BaseStageHandler):
         wants_write = memory.current_tool == "write_data" or any(word in user_lower for word in ["write", "save"])
         wants_email = memory.current_tool == "send_email" or any(word in user_lower for word in ["email", "send", "mail"])
         
+        logger.info(f"🔍 Intent detection: wants_write={wants_write}, wants_email={wants_email}")
+        
         if wants_write:
             memory.current_tool = "write_data"
-            logger.info("Delegating to WriteDataHandler...")
+            logger.info("📝 Delegating to WriteDataHandler...")
             return StageHandlerResult(
                 memory=memory,
                 response="__DELEGATE_TO_WRITEDATA__",
@@ -474,7 +489,7 @@ class ReadSQLHandler(BaseStageHandler):
             )
         elif wants_email:
             memory.current_tool = "send_email"
-            logger.info("Delegating to SendEmailHandler...")
+            logger.info("📧 Delegating to SendEmailHandler...")
             return StageHandlerResult(
                 memory=memory,
                 response="__DELEGATE_TO_SENDEMAIL__",
