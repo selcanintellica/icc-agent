@@ -736,7 +736,7 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
         # Initial load - start the conversation
         welcome_message = {
             "role": "agent",
-            "content": "Hello! I'm the ICC Agent with staged conversation flow.\n\nI'll guide you through:\n1. Creating SQL queries (ReadSQL or CompareSQL)\n2. Executing them\n3. Writing results or sending emails\n\nType 'readsql' or 'comparesql' to begin!",
+            "content": "Hello! I'm the ICC Agent. I can help you execute SQL queries and manage your data.\n\nWould you like to proceed?",
             "timestamp": datetime.now().strftime("%H:%M:%S")
         }
         return [format_message(**welcome_message)], [welcome_message], "", "", False, map_data, [], [], None

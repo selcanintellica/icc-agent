@@ -155,8 +155,8 @@ class JobAgent:
                     params["schemas"] = params["schemas"][0] if params["schemas"] else ""
                     logger.info(f"Normalized schemas from list to string: {params['schemas']}")
                 
-                # Update memory with non-None values
-                new_params = {k: v for k, v in params.items() if v is not None}
+                # Update memory with non-None and non-empty values
+                new_params = {k: v for k, v in params.items() if v is not None and v != ""}
                 memory.gathered_params.update(new_params)
                 logger.info(f"✅ Updated gathered_params: {memory.gathered_params}")
             

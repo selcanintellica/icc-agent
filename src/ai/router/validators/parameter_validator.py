@@ -37,7 +37,9 @@ class ParameterValidator:
                 "question": "What should I name this read_sql job?"
             }
         
-        if "execute_query" not in params:
+        # Check execute_query - treat empty string as missing
+        execute_query_value = params.get("execute_query")
+        if execute_query_value is None or execute_query_value == "":
             logger.info("❓ Asking about execute_query")
             return {
                 "action": "ASK",
@@ -77,14 +79,18 @@ class ParameterValidator:
                     "action": "ASK",
                     "question": "What table should I write the results to?"
                 }
-            if "drop_before_create" not in params:
+            # Check drop_before_create - treat empty string as missing
+            drop_value = params.get("drop_before_create")
+            if drop_value is None or drop_value == "":
                 logger.info("❓ Asking about drop_before_create")
                 return {
                     "action": "ASK",
                     "question": "Should I drop the table before creating it? (yes/no)"
                 }
         
-        if "write_count" not in params:
+        # Check write_count - treat empty string as missing
+        write_count_value = params.get("write_count")
+        if write_count_value is None or write_count_value == "":
             logger.info("❓ Asking about write_count")
             return {
                 "action": "ASK",
