@@ -224,15 +224,17 @@ class ParameterValidator:
                 "question": "What should the email subject be?"
             }
         
-        if not params.get("text"):
+        # Check text - allow empty string, only ask if not provided at all
+        if "text" not in params or params.get("text") is None:
             logger.info("❌ Missing: text")
             return {
                 "action": "ASK",
                 "question": "What should the email body say?"
             }
         
-        if "cc" not in params:
-            logger.info("❓ CC not in params, asking user...")
+        # Check CC - empty string means user was asked and declined, None means not asked yet
+        if "cc" not in params or params.get("cc") is None:
+            logger.info("❓ CC not in params or is None, asking user...")
             return {
                 "action": "ASK",
                 "question": "Would you like to add any CC email addresses? (Say 'no' or 'none' to skip, or provide email addresses)"
