@@ -510,6 +510,21 @@ class CompareSQLHandler(BaseStageHandler):
         for key, value in reporting_map.items():
             if key in user_lower:
                 memory.gathered_params["reporting"] = value
+                
+                # Fetch schemas from current connection for dropdown
+                try:
+                    from src.ai.router.utils.connection_fetcher import ConnectionFetcher
+                    result = await ConnectionFetcher.fetch_schemas(memory.connection, memory)
+                    
+                    if result["success"] and memory.available_schemas:
+                        question_text = f"Reporting type set to '{value}'.\n\nWhich schema do you want to save the comparison results to?"
+                        response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': 'schemas', 'question': question_text})}"
+                        memory.last_question = question_text
+                        return self._create_result(memory, response, Stage.ASK_COMPARE_SCHEMA)
+                except Exception as e:
+                    logger.warning(f"Could not fetch schemas for dropdown: {e}")
+                
+                # Fallback: ask without dropdown
                 response = f"Reporting type set to '{value}'.\n\nWhich schema do you want to save the comparison results to?"
                 return self._create_result(memory, response, Stage.ASK_COMPARE_SCHEMA)
         
@@ -520,7 +535,12 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_ask_compare_schema(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle ASK_COMPARE_SCHEMA stage."""
-        schema_name = user_input.strip()
+        # Check if this is a direct schema selection from dropdown (bypass LLM)
+        if user_input.startswith("__SCHEMA_SELECTED__:"):
+            schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
+            logger.info(f"✅ Schema directly selected via dropdown: {schema_name}")
+        else:
+            schema_name = user_input.strip()
         
         if not schema_name:
             return self._create_result(
