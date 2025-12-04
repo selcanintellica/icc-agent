@@ -38,29 +38,40 @@ class SendEmailHandler(BaseStageHandler):
     """
     
     MANAGED_STAGES = {
-        Stage.NEED_WRITE_OR_EMAIL,
         Stage.CONFIRM_EMAIL_QUERY,
         Stage.NEED_EMAIL_QUERY,
     }
+    
+    # Note: NEED_WRITE_OR_EMAIL routing is handled by HandlerRegistry based on memory.current_tool
     
     def __init__(self, job_agent=None):
         """Initialize SendEmail handler."""
         self.job_agent = job_agent
     
     def can_handle(self, stage: Stage) -> bool:
-        """Check if this handler can process the given stage."""
+        """
+        Check if this handler can process the given stage.
+        
+        Note: NEED_WRITE_OR_EMAIL is routed by HandlerRegistry based on memory.current_tool
+        """
         return stage in self.MANAGED_STAGES
     
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Process the SendEmail workflow based on current stage."""
         logger.info(f"SendEmailHandler: Processing stage {memory.stage.value}")
+        logger.info(f"SendEmailHandler: current_tool={memory.current_tool}")
 
         try:
             if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
                 return await self._handle_confirm_email_query(memory, user_input)
             elif memory.stage == Stage.NEED_EMAIL_QUERY:
                 return await self._handle_need_email_query(memory, user_input)
+            elif memory.stage == Stage.NEED_WRITE_OR_EMAIL:
+                # This should only happen when routed here by HandlerRegistry
+                logger.info("SendEmailHandler handling NEED_WRITE_OR_EMAIL (routed by current_tool)")
+                return await self._handle_initial_request(memory, user_input)
             else:
+                logger.warning(f"SendEmailHandler received unexpected stage: {memory.stage.value}")
                 return await self._handle_initial_request(memory, user_input)
                 
         except ICCBaseError as e:

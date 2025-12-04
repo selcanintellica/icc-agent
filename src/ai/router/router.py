@@ -77,6 +77,9 @@ class HandlerRegistry:
         """
         Get appropriate handler for current stage.
         
+        Uses memory.current_tool to disambiguate when multiple handlers
+        claim the same stage (e.g., NEED_WRITE_OR_EMAIL).
+        
         Args:
             stage: Current stage
             memory: Current memory
@@ -84,6 +87,20 @@ class HandlerRegistry:
         Returns:
             Handler that can handle the stage, or None
         """
+        # Special handling for NEED_WRITE_OR_EMAIL - use current_tool to disambiguate
+        if stage == Stage.NEED_WRITE_OR_EMAIL:
+            if memory.current_tool == "write_data":
+                logger.debug(f"Routing NEED_WRITE_OR_EMAIL to WriteDataHandler (current_tool={memory.current_tool})")
+                return self._handlers.get("writedata")
+            elif memory.current_tool == "send_email":
+                logger.debug(f"Routing NEED_WRITE_OR_EMAIL to SendEmailHandler (current_tool={memory.current_tool})")
+                return self._handlers.get("sendemail")
+            else:
+                # Default to ReadSQLHandler for initial routing decision
+                logger.debug(f"Routing NEED_WRITE_OR_EMAIL to ReadSQLHandler (current_tool={memory.current_tool})")
+                return self._handlers.get("readsql")
+        
+        # For other stages, return first handler that can handle it
         for handler in self._handlers.values():
             if handler.can_handle(stage):
                 return handler
