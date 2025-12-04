@@ -309,9 +309,10 @@ Respond naturally and helpfully to guide the user. Keep it brief and friendly.""
             
             # Handle initial stages
             if memory.stage == Stage.START:
-                # First interaction - just greet and wait for user to be ready
+                # First interaction - greet and move to ASK_JOB_TYPE
+                # The welcome message is shown from app.py, so just transition
                 memory.stage = Stage.ASK_JOB_TYPE
-                return memory, "Hello! I'm the ICC Agent. I can help you execute SQL queries and manage your data.\n\nWould you like to proceed?"
+                return memory, "How would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
             
             # Handle restart from DONE stage
             if memory.stage == Stage.DONE:
