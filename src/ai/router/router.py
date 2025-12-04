@@ -24,7 +24,6 @@ from src.errors import (
     ConfigurationError,
     ValidationError,
 )
-
 logger = logging.getLogger(__name__)
 
 
@@ -183,6 +182,54 @@ class RouterOrchestrator:
         
         return registry
     
+    def _handle_conversational_input(self, memory: Memory, user_input: str) -> str:
+        """
+        Handle conversational input like questions or help requests.
+        
+        Args:
+            memory: Current conversation memory
+            user_input: User's conversational input
+            
+        Returns:
+            Conversational response
+        """
+        logger.info(f"💬 Detected conversational input: '{user_input}'")
+        
+        # Build context for conversational response
+        stage_context = f"Current stage: {memory.stage.value}"
+        
+        # Add stage-specific context
+        if memory.stage == Stage.ASK_SQL_METHOD:
+            stage_context += "\n\nThe user needs to choose between:\n- 'create' - I'll generate SQL from natural language\n- 'provide' - User provides SQL directly"
+        elif memory.stage == Stage.ASK_JOB_TYPE:
+            stage_context += "\n\nThe user needs to choose between:\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
+        elif memory.stage == Stage.NEED_WRITE_OR_EMAIL:
+            if memory.execute_query_enabled:
+                stage_context += "\n\nData was written. User can:\n- 'email' - Send results via email\n- 'done' - Finish"
+            else:
+                stage_context += "\n\nQuery complete. User can:\n- 'write' - Save results to table\n- 'done' - Finish"
+        
+        prompt = f"""{stage_context}
+
+User question/input: "{user_input}"
+
+Respond naturally and helpfully to guide the user. Keep it brief and friendly."""
+        
+        try:
+            # Use a simple LLM call for conversational response
+            llm = ChatOllama(
+                model="qwen3:8b",
+                temperature=0.3,
+                num_predict=512,
+                timeout=15.0
+            )
+            response = llm.invoke(prompt)
+            return response.content.strip()
+        except Exception as e:
+            logger.error(f"Error in conversational handler: {e}")
+            # Fallback to a helpful default
+            return f"I'm here to help! {stage_context.split('User needs to choose')[1] if 'User needs to choose' in stage_context else 'Let me know how I can assist you.'}"
+    
     async def handle_turn(self, memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
         """
         Handle one conversational turn with comprehensive error handling.
@@ -203,10 +250,16 @@ class RouterOrchestrator:
             if user_utterance is None:
                 user_utterance = ""
             
+            # Check for conversational input (help, questions, etc.)
+            if user_utterance and is_conversational_input(user_utterance):
+                response = self._handle_conversational_input(memory, user_utterance)
+                return memory, response
+            
             # Handle initial stages
             if memory.stage == Stage.START:
+                # First interaction - just greet and wait for user to be ready
                 memory.stage = Stage.ASK_JOB_TYPE
-                return memory, "How would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
+                return memory, "Hello! I'm the ICC Agent. I can help you execute SQL queries and manage your data.\n\nWould you like to proceed?"
             
             # Handle restart from DONE stage
             if memory.stage == Stage.DONE:
