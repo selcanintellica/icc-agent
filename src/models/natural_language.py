@@ -357,29 +357,29 @@ class CompareSqlVariables(BaseModel):
         ...,
         description="Second SQL query to execute for comparison."
     )
-    first_table_keys: Optional[str] = Field(
+    first_table_keys: str = Field(
         "",
-        description="Key columns for first table (comma separated). Usually empty, keys are in 'keys' field."
+        description="Key columns for first table (comma-separated). E.g., 'EMPLOYEE_ID' or 'ID,NAME'"
     )
-    second_table_keys: Optional[str] = Field(
+    second_table_keys: str = Field(
         "",
-        description="Key columns for second table (comma separated). Usually empty, keys are in 'keys' field."
+        description="Key columns for second table (comma-separated). E.g., 'EMPLOYEE_ID' or 'ID,NAME'"
     )
-    map_table: Optional[str] = Field(
-        None,
-        description="JSON array of column mappings. E.g., [{\"FirstMappedColumn\":\"ID\",\"SecondMappedColumn\":\"ID\"}]"
+    first_table_columns: str = Field(
+        "",
+        description="All columns for first table (comma-separated). E.g., 'ID,NAME,EMAIL,SALARY'"
     )
-    keys: Optional[str] = Field(
-        None,
-        description="JSON array of key pairs. E.g., [{\"FirstKey\":\"EMPLOYEE_ID\",\"SecondKey\":\"FIRST_NAME\"}]"
+    second_table_columns: str = Field(
+        "",
+        description="All columns for second table (comma-separated). E.g., 'ID,NAME,EMAIL,SALARY'"
     )
     case_sensitive: bool = Field(
         False,
         description="Whether comparison should be case sensitive. False by default."
     )
-    save_result_in_cache: bool = Field(
+    calculate_difference: bool = Field(
         False,
-        description="Whether to save comparison results in cache. False by default."
+        description="Whether to calculate differences. False by default."
     )
     reporting: str = Field(
         "identical",
@@ -394,8 +394,8 @@ class CompareSqlVariables(BaseModel):
         description="Schema name for organizing results. Default 'cache'."
     )
     drop_before_create: bool = Field(
-        False,
-        description="Whether to drop existing table before creating. False by default."
+        True,
+        description="Whether to drop existing table before creating. True by default."
     )
     columns_output: Optional[str] = Field(
         None,
@@ -417,13 +417,13 @@ class CompareSqlLLMRequest(BaseLLMRequest):
             "second_sql_query": var.second_sql_query,
             "first_table_keys": var.first_table_keys or "",
             "second_table_keys": var.second_table_keys or "",
-            "map_table": var.map_table,
-            "keys": var.keys,
-            "case_sensitive": var.case_sensitive,
-            "save_result_in_cache": var.save_result_in_cache,
+            "first_table_columns": var.first_table_columns or "",
+            "second_table_columns": var.second_table_columns or "",
+            "case_sensitive": "false" if not var.case_sensitive else "true",
+            "calculate_difference": "false" if not var.calculate_difference else "true",
             "reporting": var.reporting,
             "table_name": var.table_name,
             "schemas": var.schemas,
-            "drop_before_create": var.drop_before_create,
+            "drop_before_create": "true" if var.drop_before_create else "false",
             "columns_output": var.columns_output,
         }

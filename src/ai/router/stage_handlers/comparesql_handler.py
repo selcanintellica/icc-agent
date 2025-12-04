@@ -424,14 +424,15 @@ class CompareSQLHandler(BaseStageHandler):
     async def _handle_waiting_map_table(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle WAITING_MAP_TABLE stage.
         
-        New format from UI:
+        UI sends:
         - key_mappings: [{"FirstKey": "COL1", "SecondKey": "COL2"}] - pairs where key checkboxes are checked
         - column_mappings: [{"FirstMappedColumn": "COL1", "SecondMappedColumn": "COL2"}] - all column pairs
         
-        Maps to API fields:
-        - keys: JSON string of key_mappings
-        - map_table: JSON string of column_mappings
-        - first_table_keys/second_table_keys: empty strings (keys stored in 'keys' field)
+        Maps to API fields (COMMA-SEPARATED STRINGS):
+        - first_table_keys: comma-separated key column names from first table
+        - second_table_keys: comma-separated key column names from second table
+        - first_table_columns: comma-separated ALL column names from first table
+        - second_table_columns: comma-separated ALL column names from second table
         """
         try:
             mapping_data = json.loads(user_input)
@@ -439,25 +440,40 @@ class CompareSQLHandler(BaseStageHandler):
             memory.key_mappings = mapping_data.get("key_mappings", [])
             memory.column_mappings = mapping_data.get("column_mappings", [])
             
-            # Store as JSON strings for API payload
-            memory.gathered_params["keys"] = json.dumps(memory.key_mappings) if memory.key_mappings else "[]"
-            memory.gathered_params["map_table"] = json.dumps(memory.column_mappings) if memory.column_mappings else "[]"
+            # Extract key columns as comma-separated strings
+            first_keys = [km.get("FirstKey", "") for km in memory.key_mappings if km.get("FirstKey")]
+            second_keys = [km.get("SecondKey", "") for km in memory.key_mappings if km.get("SecondKey")]
             
-            # Keep first_table_keys and second_table_keys empty (keys are in 'keys' field)
-            memory.gathered_params["first_table_keys"] = ""
-            memory.gathered_params["second_table_keys"] = ""
+            # Extract ALL mapped columns as comma-separated strings
+            first_columns = [cm.get("FirstMappedColumn", "") for cm in memory.column_mappings if cm.get("FirstMappedColumn")]
+            second_columns = [cm.get("SecondMappedColumn", "") for cm in memory.column_mappings if cm.get("SecondMappedColumn")]
+            
+            # Store as comma-separated strings for API payload
+            memory.gathered_params["first_table_keys"] = ",".join(first_keys)
+            memory.gathered_params["second_table_keys"] = ",".join(second_keys)
+            memory.gathered_params["first_table_columns"] = ",".join(first_columns)
+            memory.gathered_params["second_table_columns"] = ",".join(second_columns)
             
             logger.info(f"Key mappings: {memory.key_mappings}")
             logger.info(f"Column mappings: {memory.column_mappings}")
+            logger.info(f"first_table_keys: {memory.gathered_params['first_table_keys']}")
+            logger.info(f"second_table_keys: {memory.gathered_params['second_table_keys']}")
+            logger.info(f"first_table_columns: {memory.gathered_params['first_table_columns']}")
+            logger.info(f"second_table_columns: {memory.gathered_params['second_table_columns']}")
             
             key_display = []
             for km in memory.key_mappings:
                 key_display.append(f"{km.get('FirstKey', '?')} -> {km.get('SecondKey', '?')}")
             
+            # Warn if no key mappings are provided
+            key_warning = ""
+            if not memory.key_mappings:
+                key_warning = "\n\nNote: No key columns selected. Key columns are required for matching rows between tables."
+            
             response = (
                 f"Mappings received!\n\n"
                 f"Keys: {', '.join(key_display) if key_display else '(none)'}\n"
-                f"Mapped columns: {len(memory.column_mappings)} pairs\n\n"
+                f"Mapped columns: {len(memory.column_mappings)} pairs{key_warning}\n\n"
                 f"What type of reporting do you want?\n"
                 f"- 'identical' - Show only identical records\n"
                 f"- 'onlyDifference' - Show only different values\n"
@@ -585,14 +601,14 @@ class CompareSQLHandler(BaseStageHandler):
                     second_sql_query=memory.second_sql,
                     first_table_keys=params.get("first_table_keys", ""),
                     second_table_keys=params.get("second_table_keys", ""),
-                    map_table=params.get("map_table"),
-                    keys=params.get("keys"),
+                    first_table_columns=params.get("first_table_columns", ""),
+                    second_table_columns=params.get("second_table_columns", ""),
                     case_sensitive=params.get("case_sensitive", False),
-                    save_result_in_cache=params.get("save_result_in_cache", False),
+                    calculate_difference=params.get("calculate_difference", False),
                     reporting=params.get("reporting", "identical"),
                     schemas=params.get("schemas", "cache"),
                     table_name=params.get("table_name", "cache"),
-                    drop_before_create=params.get("drop_before_create", False),
+                    drop_before_create=params.get("drop_before_create", True),
                 )]
             )
             
