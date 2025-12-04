@@ -591,6 +591,7 @@ async def invoke_router_async(user_message, session_id="default-session", connec
             # Populate connections from API (falls back to static if fails)
             try:
                 from src.utils.auth import authenticate
+                from src.utils.table_api_client import set_table_api_auth
                 
                 logger.info("Attempting to fetch connections from API")
                 
@@ -601,6 +602,10 @@ async def invoke_router_async(user_message, session_id="default-session", connec
                     userpass, token = auth_result
                     auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
                     logger.info("Authentication successful for connection fetch")
+                    
+                    # Set auth headers for table API client (used by SQL agent)
+                    set_table_api_auth(auth_headers)
+                    logger.info("Configured table API client with authentication")
                 else:
                     logger.warning("Authentication failed, trying without auth")
                 
