@@ -26,7 +26,7 @@ CRITICAL RULES:
 1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
 2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS answering a yes/no question
 3. Do NOT invent or assume parameter values
-4. Ask ONE question at a time for missing params
+4. Return action="ASK" if any params missing (question will be auto-generated)
 
 Required params:
 1. name: Job name (any string the user provides)
@@ -40,7 +40,8 @@ Required params:
 
 IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
-Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
+Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}}}
+Do NOT generate "question" field - it will be auto-generated."""
     
     def get_prompt(self, connections: str = "", write_count: bool = False) -> str:
         """Get the write_data prompt with conditional hints."""
@@ -62,7 +63,7 @@ CRITICAL RULES:
 1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
 2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS they are answering a yes/no question
 3. Do NOT invent or assume parameter values
-4. Ask ONE question at a time for missing params
+4. Return action="ASK" if any params missing (question will be auto-generated)
 
 Required params:
 - name: Job name (any string the user provides)
@@ -75,7 +76,8 @@ Required params:
 
 IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
-Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
+Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}}}
+Do NOT generate "question" field - it will be auto-generated."""
     
     def get_prompt(self, execute_query: bool = False, write_count: bool = False) -> str:
         """Get the read_sql prompt with conditional hints."""
@@ -106,18 +108,19 @@ CRITICAL RULES:
 2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS answering a yes/no question
 3. For optional params like CC: if user says "no"/"none"/"skip", set to empty string ""
 4. Do NOT invent or assume parameter values
-5. Ask ONE clear question at a time for missing params
+5. Return action="ASK" if any params missing (question will be auto-generated)
 
 Parameters needed:
 - name: Job name (any string the user provides, NEVER "ok"/"okay"/"yes"/"no")
 - to: Recipient email address
 - subject: Email subject line
+- text: Email body text (can be empty, but must be provided)
 - cc: CC email addresses (optional, can be empty string)
-- text: Email body text (optional)
 
 IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
-Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
+Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}}}
+Do NOT generate "question" field - it will be auto-generated."""
     
     def get_prompt(self) -> str:
         """Get the send_email prompt."""
