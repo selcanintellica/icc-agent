@@ -158,18 +158,22 @@ class JobAgent:
                 # Update memory with non-None values
                 new_params = {k: v for k, v in params.items() if v is not None}
                 memory.gathered_params.update(new_params)
-                logger.info(f"Updated gathered_params: {memory.gathered_params}")
+                logger.info(f"✅ Updated gathered_params: {memory.gathered_params}")
             
-            logger.info(f"Job Agent action: {result.get('action')}, params: {result.get('params')}")
+            logger.info(f"🤖 Job Agent action: {result.get('action')}, tool: {result.get('tool_name')}")
+            logger.info(f"🤖 Extracted params: {result.get('params')}")
             
             # If this was conversational input with ASK action and a question, return it directly
             # Don't override with validation
             if result.get('action') == 'ASK' and result.get('question') and self._is_conversational_input(user_input):
-                logger.info("Returning conversational response directly (skipping validation override)")
+                logger.info("💬 Returning conversational response directly (skipping validation override)")
                 return result
             
             # After extracting params, validate to get the correct next question
-            return self._validate_params(memory, tool_name, user_input)
+            logger.info(f"🔍 Validating params for {tool_name}...")
+            validation_result = self._validate_params(memory, tool_name, user_input)
+            logger.info(f"🔍 Validation result: action={validation_result.get('action')}, question={validation_result.get('question', 'N/A')[:50]}...")
+            return validation_result
 
         except LLMError as e:
             logger.error(f"LLM error in job agent: {e}")
