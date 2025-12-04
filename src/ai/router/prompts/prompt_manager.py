@@ -22,10 +22,14 @@ class WriteDataPrompt:
     
     TEMPLATE = """Extract params for write_data job.
 
-IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
+CRITICAL RULES:
+1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
+2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS answering a yes/no question
+3. Do NOT invent or assume parameter values
+4. Ask ONE question at a time for missing params
 
 Required params:
-1. name: Job name
+1. name: Job name (any string the user provides)
 2. table: Target table name
 3. connection: Database connection (UI shows dropdown)
 4. schemas: Schema name (system fetches after connection)
@@ -34,7 +38,7 @@ Required params:
 
 {write_count_hint}
 
-IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE question at a time.
+IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
@@ -54,10 +58,14 @@ class ReadSQLPrompt:
     
     TEMPLATE = """Extract params for read_sql job.
 
-IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
+CRITICAL RULES:
+1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
+2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS they are answering a yes/no question
+3. Do NOT invent or assume parameter values
+4. Ask ONE question at a time for missing params
 
 Required params:
-- name: Job name
+- name: Job name (any string the user provides)
 - execute_query: Save results to DB? (yes=true, no=false)
 - write_count: Track row count? (yes=true, no=false)
 
@@ -65,7 +73,7 @@ Required params:
 
 {write_count_hint}
 
-IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE question at a time.
+IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
@@ -93,16 +101,21 @@ class SendEmailPrompt:
     
     TEMPLATE = """Extract params for send_email job.
 
-CRITICAL: IGNORE confirmation words like "ok", "okay", "yes", "no", "sure" - these are NOT parameter values!
+CRITICAL RULES:
+1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
+2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS answering a yes/no question
+3. For optional params like CC: if user says "no"/"none"/"skip", set to empty string ""
+4. Do NOT invent or assume parameter values
+5. Ask ONE clear question at a time for missing params
 
 Parameters needed:
-- name: Job name to identify it later (NEVER extract "ok"/"okay"/"yes"/"no" as name)
+- name: Job name (any string the user provides, NEVER "ok"/"okay"/"yes"/"no")
 - to: Recipient email address
 - subject: Email subject line
 - cc: CC email addresses (optional, can be empty string)
 - text: Email body text (optional)
 
-IMPORTANT: Only extract actual values from user input. Do NOT use type names as values. Ask ONE clear, friendly question at a time.
+IMPORTANT: Match the user's answer to the last question asked. Do NOT skip parameters or make assumptions.
 
 Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}"""
     
