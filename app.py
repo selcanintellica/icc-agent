@@ -1217,23 +1217,26 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
     """Handle schema selection from dropdown WITHOUT using LLM"""
     ctx = callback_context
 
-    logger.info(f"🔘 Schema callback triggered")
-    logger.info(f"   n_clicks: {n_clicks}")
-    logger.info(f"   selected_schemas: {selected_schemas}")
-    logger.info(f"   button_ids: {button_ids}")
-
     # Check if any button was actually clicked
     if not ctx.triggered:
-        logger.warning("⚠️ No trigger context")
         raise dash.exceptions.PreventUpdate
 
     # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-    logger.info(f"   triggered_id: {triggered_id}")
 
     if ".n_clicks" not in triggered_id:
-        logger.warning("⚠️ Not a button click")
         raise dash.exceptions.PreventUpdate
+    
+    # Check if any button was actually clicked (n_clicks not None)
+    if all(click is None for click in n_clicks):
+        raise dash.exceptions.PreventUpdate
+    
+    # Only log when we have a real click
+    logger.info(f"🔘 Schema callback triggered")
+    logger.info(f"   n_clicks: {n_clicks}")
+    logger.info(f"   selected_schemas: {selected_schemas}")
+    logger.info(f"   button_ids: {button_ids}")
+    logger.info(f"   triggered_id: {triggered_id}")
 
     # Parse the button ID to get param_name
     try:
