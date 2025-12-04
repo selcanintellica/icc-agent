@@ -24,7 +24,59 @@ from src.errors import (
     ConfigurationError,
     ValidationError,
 )
+from langchain_ollama import ChatOllama
+
 logger = logging.getLogger(__name__)
+
+
+def is_conversational_input(user_input: str) -> bool:
+    """
+    Detect if user input is conversational (question/clarification) vs task answer.
+    
+    Args:
+        user_input: User's input
+        
+    Returns:
+        True if conversational, False if likely task answer
+    """
+    input_lower = user_input.lower().strip()
+    
+    # Ignore common commands
+    commands = [
+        "readsql", "comparesql", "create", "provide", "write", "email",
+        "done", "both", "new query", "start", "yes", "no", "skip",
+        "okay", "ok", "sure", "proceed"
+    ]
+    if input_lower in commands:
+        return False
+    
+    # Question patterns - must start with these
+    question_starters = [
+        "what ", "why ", "how ", "when ", "where ", "who ",
+        "can you", "could you", "would you", "will you",
+        "tell me", "explain", "show me"
+    ]
+    
+    for pattern in question_starters:
+        if input_lower.startswith(pattern):
+            return True
+    
+    # Help and confusion indicators (anywhere in text)
+    help_phrases = [
+        "help", "i don't understand", "i'm confused", "not sure what",
+        "i don't know", "i do not know", "don't know what",
+        "no idea", "unsure", "what does", "what is", "what are"
+    ]
+    
+    for phrase in help_phrases:
+        if phrase in input_lower:
+            return True
+    
+    # Question mark
+    if "?" in input_lower:
+        return True
+    
+    return False
 
 
 class RouterConfig:
