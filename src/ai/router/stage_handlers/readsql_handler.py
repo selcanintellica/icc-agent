@@ -217,7 +217,7 @@ class ReadSQLHandler(BaseStageHandler):
         
         if any(word in user_lower for word in ["yes", "ok", "correct", "execute", "run"]):
             logger.info("User confirmed generated SQL")
-            return self._create_result(memory, "Great! Let me set up the job...", Stage.EXECUTE_SQL)
+            return self._create_result(memory, "Perfect! I'll set up and execute the job now. Ready to proceed? (Type 'yes' to continue)", Stage.EXECUTE_SQL)
         elif any(word in user_lower for word in ["no", "change", "modify", "different"]):
             logger.info("User wants to modify - going back to natural language input")
             return self._create_result(
@@ -237,7 +237,7 @@ class ReadSQLHandler(BaseStageHandler):
         
         if any(word in user_lower for word in ["yes", "ok", "correct", "execute", "run"]):
             logger.info("User confirmed their SQL")
-            return self._create_result(memory, "Great! Let me set up the job...", Stage.EXECUTE_SQL)
+            return self._create_result(memory, "Perfect! I'll set up and execute the job now. Ready to proceed? (Type 'yes' to continue)", Stage.EXECUTE_SQL)
         elif any(word in user_lower for word in ["no", "change", "modify", "different"]):
             logger.info("User wants to modify their SQL")
             return self._create_result(
@@ -371,9 +371,9 @@ class ReadSQLHandler(BaseStageHandler):
                     cols_str += f"... ({len(memory.last_columns)} total)"
                 
                 if execute_query:
-                    response = f"Job '{job_name}' created successfully!\n\nQuery executed and data saved to {params.get('result_schema')}.{params.get('table_name')}!\nColumns: {cols_str}\nJob ID: {memory.last_job_id}"
+                    response = f"✅ Job '{job_name}' created successfully!\n\nQuery executed and data saved to {params.get('result_schema')}.{params.get('table_name')}!\nColumns: {cols_str}\nJob ID: {memory.last_job_id}\n\nReady to see options? (Type 'yes' or 'continue')"
                 else:
-                    response = f"Job '{job_name}' created successfully!\n\nColumns: {cols_str}\nJob ID: {memory.last_job_id}"
+                    response = f"✅ Job '{job_name}' created successfully!\n\nColumns: {cols_str}\nJob ID: {memory.last_job_id}\n\nReady to see what you can do next? (Type 'yes' or 'continue')"
                 
                 return self._create_result(memory, response, Stage.SHOW_RESULTS)
             else:

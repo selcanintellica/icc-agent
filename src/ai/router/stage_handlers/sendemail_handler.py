@@ -287,10 +287,10 @@ class SendEmailHandler(BaseStageHandler):
             
             to_email = params.get('to')
             response = (
-                f"Email job '{job_name}' created successfully!\n\n"
+                f"✅ Email job '{job_name}' created successfully!\n\n"
                 f"Results will be sent to: {to_email}\n"
                 f"Subject: {params.get('subject', 'Query Results')}\n\n"
-                f"What would you like to do next?\n- 'email' - Send another email\n- 'done' - Finish"
+                f"Would you like to continue? (Type 'yes')\n- 'email' - Send another email\n- 'done' - Finish"
             )
             return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
         
