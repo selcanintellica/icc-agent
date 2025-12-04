@@ -1,72 +1,84 @@
 """
-SendEmail flow handler.
+SendEmail flow handler with comprehensive error handling.
 
-Handles all stages related to emailing query results following SOLID principles.
+Handles all stages related to emailing query results.
 """
 
 import logging
 import json
 from typing import Dict, Any
+
 from src.ai.router.stage_handlers.base_handler import BaseStageHandler, StageHandlerResult
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import send_email_job
 from src.models.natural_language import SendEmailLLMRequest, SendEmailVariables
+from src.errors import (
+    ICCBaseError,
+    UnknownConnectionError,
+    DuplicateJobNameError,
+    JobCreationFailedError,
+    NetworkTimeoutError,
+    MissingDatasetError,
+    InvalidEmailError,
+    ValidationError,
+    ErrorHandler,
+    ErrorCode,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class SendEmailHandler(BaseStageHandler):
     """
-    Handler for SendEmail workflow.
+    Handler for SendEmail workflow with comprehensive error handling.
     
-    Following Single Responsibility Principle - only handles send_email-related operations.
+    Following Single Responsibility Principle - only handles send_email operations.
     """
     
-    # Define which stages this handler manages
     MANAGED_STAGES = {
-        Stage.NEED_WRITE_OR_EMAIL,  # Can be triggered from this stage
-        Stage.CONFIRM_EMAIL_QUERY,  # Confirming auto-generated query
-        Stage.NEED_EMAIL_QUERY,  # User provides custom query
+        Stage.NEED_WRITE_OR_EMAIL,
+        Stage.CONFIRM_EMAIL_QUERY,
+        Stage.NEED_EMAIL_QUERY,
     }
     
     def __init__(self, job_agent=None):
-        """
-        Initialize SendEmail handler.
-        
-        Args:
-            job_agent: Job agent for parameter gathering (optional)
-        """
+        """Initialize SendEmail handler."""
         self.job_agent = job_agent
     
     def can_handle(self, stage: Stage) -> bool:
-        """
-        Check if this handler can process the given stage.
-        
-        Note: SendEmail is typically accessed as a tool after ReadSQL,
-        so it checks memory.current_tool in addition to stage.
-        """
+        """Check if this handler can process the given stage."""
         return stage in self.MANAGED_STAGES
     
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Process the SendEmail workflow based on current stage."""
         logger.info(f"SendEmailHandler: Processing stage {memory.stage.value}")
 
-        # Route to appropriate handler based on stage
-        if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
-            return await self._handle_confirm_email_query(memory, user_input)
-        elif memory.stage == Stage.NEED_EMAIL_QUERY:
-            return await self._handle_need_email_query(memory, user_input)
-        else:
-            # Initial send_email request (from NEED_WRITE_OR_EMAIL)
-            return await self._handle_initial_request(memory, user_input)
+        try:
+            if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
+                return await self._handle_confirm_email_query(memory, user_input)
+            elif memory.stage == Stage.NEED_EMAIL_QUERY:
+                return await self._handle_need_email_query(memory, user_input)
+            else:
+                return await self._handle_initial_request(memory, user_input)
+                
+        except ICCBaseError as e:
+            logger.error(f"ICC error in SendEmail handler: {e}")
+            return self._create_error_result(memory, e)
+        except Exception as e:
+            logger.error(f"Unexpected error in SendEmail handler: {type(e).__name__}: {e}", exc_info=True)
+            return self._create_error_result(
+                memory, e,
+                context={"stage": memory.stage.value},
+                fallback_message="An error occurred while setting up the email. Please try again."
+            )
 
     async def _handle_initial_request(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle initial send_email request - gather params."""
         logger.info("SendEmailHandler: Processing initial send_email request")
         
-        # Clear params only when switching from read_sql (has execute_query or write_count params)
+        # Clear params only when switching from read_sql
         has_read_sql_params = "execute_query" in memory.gathered_params or "write_count" in memory.gathered_params
         if has_read_sql_params:
             logger.info("Switching from read_sql to send_email, clearing gathered_params")
@@ -87,7 +99,7 @@ class SendEmailHandler(BaseStageHandler):
         if action.get("action") == "TOOL" and action.get("tool_name") == "send_email":
             return await self._prepare_email_query_confirmation(memory)
         
-        return self._create_result(memory, "Please provide email parameters.")
+        return self._create_result(memory, "Please provide the email parameters. What should I name this email job?")
     
     async def _prepare_email_query_confirmation(self, memory: Memory) -> StageHandlerResult:
         """Prepare email query and ask for user confirmation."""
@@ -95,19 +107,32 @@ class SendEmailHandler(BaseStageHandler):
 
         params = memory.gathered_params
 
+        # Validate email address
+        to_email = params.get("to", "")
+        if not self._is_valid_email(to_email):
+            return self._create_result(
+                memory,
+                f"The email address '{to_email}' doesn't appear to be valid. Please provide a valid email address:",
+                is_error=True,
+                error_code=ErrorCode.VAL_INVALID_EMAIL.code
+            )
+
         # Check if we have output_table_info (data was written to a table)
         if not memory.output_table_info:
-            # No result table - block email for ReadSQL without WriteData
             logger.warning("No output_table_info - cannot send email without writing data first")
             memory.gathered_params = {}
             memory.current_tool = None
             memory.last_question = None
             return self._create_result(
                 memory,
-                "You need to write the data to a table first before sending an email.\n\nPlease use 'write' to save the ReadSQL results to a table, then you can send an email.\n\nWhat would you like to do? (write / done)"
+                "You need to write the data to a table first before sending an email.\n\n"
+                "Please use 'write' to save the ReadSQL results to a table, then you can send an email.\n\n"
+                "What would you like to do?\n- 'write' - Save data to a table\n- 'done' - Finish",
+                is_error=True,
+                error_code=ErrorCode.JOB_MISSING_DATASET.code
             )
 
-        # Generate query from output_table_info (result table, not the original SQL)
+        # Generate query from output_table_info
         schema = memory.output_table_info.get("schema")
         table = memory.output_table_info.get("table")
         auto_query = f"SELECT * FROM {schema}.{table}"
@@ -123,12 +148,11 @@ class SendEmailHandler(BaseStageHandler):
             "query": auto_query
         }
 
-        # Transition to confirmation stage
         memory.email_query_confirmed = False
 
         return self._create_result(
             memory,
-            f"I will use this SQL query to fetch data from the result table:\n```sql\n{auto_query}\n```\nIs this correct? (yes/no)",
+            f"I will use this SQL query to fetch data for the email:\n```sql\n{auto_query}\n```\nIs this correct? (yes/no)",
             Stage.CONFIRM_EMAIL_QUERY
         )
 
@@ -136,12 +160,12 @@ class SendEmailHandler(BaseStageHandler):
         """Handle user's confirmation response for the email query."""
         user_lower = user_input.lower()
 
-        if "yes" in user_lower or "ok" in user_lower or "correct" in user_lower:
+        if any(word in user_lower for word in ["yes", "ok", "correct"]):
             logger.info("User confirmed email query, executing send_email_job...")
             memory.email_query_confirmed = True
             return await self._execute_confirmed_email_job(memory)
 
-        elif "no" in user_lower or "change" in user_lower or "modify" in user_lower:
+        elif any(word in user_lower for word in ["no", "change", "modify", "different"]):
             logger.info("User wants to modify the email query")
             return self._create_result(
                 memory,
@@ -159,11 +183,20 @@ class SendEmailHandler(BaseStageHandler):
         """Handle user providing their own SQL query for email."""
         user_query = user_input.strip()
 
-        # Basic SQL validation
-        if not any(keyword in user_query.lower() for keyword in ["select", "insert", "update", "delete", "create", "drop"]):
+        if not user_query:
             return self._create_result(
                 memory,
-                "That doesn't look like a SQL query. Please provide a valid SQL statement:"
+                "Please provide your SQL query:"
+            )
+
+        # Basic SQL validation
+        sql_lower = user_query.lower()
+        valid_keywords = ["select", "insert", "update", "delete", "create", "drop", "alter", "with"]
+        
+        if not any(sql_lower.startswith(kw) or f" {kw} " in sql_lower for kw in valid_keywords):
+            return self._create_result(
+                memory,
+                "That doesn't look like a valid SQL query. Please provide a SQL statement:"
             )
 
         logger.info(f"User provided custom email query: {user_query}")
@@ -172,7 +205,6 @@ class SendEmailHandler(BaseStageHandler):
         if memory.pending_email_params:
             memory.pending_email_params["query"] = user_query
 
-        # Execute the job with user's query
         return await self._execute_confirmed_email_job(memory)
 
     async def _execute_confirmed_email_job(self, memory: Memory) -> StageHandlerResult:
@@ -184,17 +216,21 @@ class SendEmailHandler(BaseStageHandler):
             if not params:
                 return self._create_result(
                     memory,
-                    "Error: No email parameters found. Please try again.",
-                    Stage.NEED_WRITE_OR_EMAIL
+                    "Email parameters not found. Please start over and provide the email details.",
+                    Stage.NEED_WRITE_OR_EMAIL,
+                    is_error=True
                 )
+            
+            job_name = params.get("name", "Email_Results")
             
             # Get connection ID
             from src.utils.connections import get_connection_id
             connection_id = get_connection_id(memory.connection)
+            
             if not connection_id:
-                return self._create_result(
-                    memory,
-                    f"Error: Unknown connection '{memory.connection}'."
+                raise UnknownConnectionError(
+                    connection_name=memory.connection,
+                    user_message=f"The connection '{memory.connection}' was not found. Please select a valid connection."
                 )
             
             logger.info(f"Using connection: {memory.connection} (ID: {connection_id})")
@@ -203,11 +239,11 @@ class SendEmailHandler(BaseStageHandler):
                 rights={"owner": "184431757886694"},
                 props={
                     "active": "true",
-                    "name": params.get("name", "Email_Results"),
+                    "name": job_name,
                     "description": ""
                 },
                 variables=[SendEmailVariables(
-                    query=params.get("query"),  # Use confirmed query
+                    query=params.get("query"),
                     connection=connection_id,
                     to=params.get("to"),
                     subject=params.get("subject", "Query Results"),
@@ -227,15 +263,79 @@ class SendEmailHandler(BaseStageHandler):
             memory.email_query_confirmed = False
             memory.last_question = None
             
+            to_email = params.get('to')
+            response = (
+                f"Email job '{job_name}' created successfully!\n\n"
+                f"Results will be sent to: {to_email}\n"
+                f"Subject: {params.get('subject', 'Query Results')}\n\n"
+                f"What would you like to do next?\n- 'write' - Write to another table\n- 'email' - Send another email\n- 'done' - Finish"
+            )
+            return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
+        
+        except DuplicateJobNameError as e:
+            logger.warning(f"Duplicate job name: {e}")
+            memory.gathered_params["name"] = ""  # Clear name to ask again
             return self._create_result(
                 memory,
-                f"Email job created! Results will be sent to {params.get('to')}!\nAnything else? (write / email / done)",
-                Stage.NEED_WRITE_OR_EMAIL
+                e.user_message + "\n\nWhat would you like to name this email job instead?",
+                is_error=True,
+                error_code=e.code
+            )
+        
+        except UnknownConnectionError as e:
+            logger.error(f"Unknown connection: {e}")
+            return self._create_result(
+                memory,
+                e.user_message,
+                is_error=True,
+                error_code=e.code
+            )
+        
+        except NetworkTimeoutError as e:
+            logger.error(f"Network timeout: {e}")
+            return self._create_result(
+                memory,
+                e.user_message + "\n\nPlease try again.",
+                is_error=True,
+                error_code=e.code
+            )
+        
+        except ICCBaseError as e:
+            logger.error(f"ICC error in send_email: {e}")
+            return self._create_result(
+                memory,
+                e.user_message,
+                is_error=True,
+                error_code=e.code
             )
         
         except Exception as e:
             logger.error(f"Error in send_email: {str(e)}", exc_info=True)
             return self._create_result(
                 memory,
-                f"Error: {str(e)}\nPlease try again."
+                self._format_job_error("SendEmail", e, params.get("name")),
+                is_error=True
             )
+    
+    def _is_valid_email(self, email: str) -> bool:
+        """Basic email validation."""
+        if not email:
+            return False
+        
+        # Simple check for @ and .
+        if "@" not in email or "." not in email:
+            return False
+        
+        # Check format
+        parts = email.split("@")
+        if len(parts) != 2:
+            return False
+        
+        local, domain = parts
+        if not local or not domain:
+            return False
+        
+        if "." not in domain:
+            return False
+        
+        return True

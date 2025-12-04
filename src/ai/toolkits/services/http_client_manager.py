@@ -11,8 +11,12 @@ import logging
 from httpx import AsyncClient
 
 from .auth_service import AuthenticationService, get_auth_service
+from src.utils.config import API_CONFIG
 
 logger = logging.getLogger(__name__)
+
+# Default timeout from config (in seconds)
+DEFAULT_TIMEOUT = API_CONFIG.get("timeout", 60.0)
 
 
 class HTTPClientManager:
@@ -36,6 +40,7 @@ class HTTPClientManager:
         self,
         verify: bool = False,
         use_auth_cache: bool = True,
+        timeout: Optional[float] = None,
         **client_kwargs: Any
     ):
         """
@@ -44,6 +49,7 @@ class HTTPClientManager:
         Args:
             verify: Whether to verify SSL certificates
             use_auth_cache: Whether to use cached auth credentials
+            timeout: Request timeout in seconds (defaults to config value)
             **client_kwargs: Additional kwargs for AsyncClient
             
         Yields:
@@ -59,11 +65,15 @@ class HTTPClientManager:
         if "headers" in client_kwargs:
             headers.update(client_kwargs.pop("headers"))
         
-        logger.debug(f"Creating HTTP client with verify={verify}")
+        # Use provided timeout or default from config
+        request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+        
+        logger.debug(f"Creating HTTP client with verify={verify}, timeout={request_timeout}s")
         
         async with AsyncClient(
             headers=headers,
             verify=verify,
+            timeout=request_timeout,
             **client_kwargs
         ) as client:
             yield client
@@ -72,6 +82,7 @@ class HTTPClientManager:
         self,
         verify: bool = False,
         use_auth_cache: bool = True,
+        timeout: Optional[float] = None,
         **client_kwargs: Any
     ) -> AsyncClient:
         """
@@ -80,6 +91,7 @@ class HTTPClientManager:
         Args:
             verify: Whether to verify SSL certificates
             use_auth_cache: Whether to use cached auth credentials
+            timeout: Request timeout in seconds (defaults to config value)
             **client_kwargs: Additional kwargs for AsyncClient
             
         Returns:
@@ -95,9 +107,13 @@ class HTTPClientManager:
         if "headers" in client_kwargs:
             headers.update(client_kwargs.pop("headers"))
         
+        # Use provided timeout or default from config
+        request_timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
+        
         return AsyncClient(
             headers=headers,
             verify=verify,
+            timeout=request_timeout,
             **client_kwargs
         )
 

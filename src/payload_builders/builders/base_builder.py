@@ -73,8 +73,11 @@ class WirePayloadBuilder(ABC):
         # Get props name
         props_name = self._get_props_name(request)
         
+        # Get excluded fields (fields handled in template-specific builder)
+        excluded_fields = self.get_excluded_fields()
+        
         # Build base variables
-        variables = self._build_base_variables(fields)
+        variables = self._build_base_variables(fields, excluded_fields)
         
         # Add template-specific variables
         additional_vars = self.build_template_specific_variables(request, fields, **kwargs)
@@ -97,6 +100,16 @@ class WirePayloadBuilder(ABC):
         self._log_payload_info(wire)
         return wire
     
+    def get_excluded_fields(self) -> List[str]:
+        """
+        Get list of field names that should be excluded from base variable processing.
+        These fields will be handled in build_template_specific_variables instead.
+        
+        Returns:
+            List[str]: Field names to exclude
+        """
+        return []
+    
     @abstractmethod
     def build_template_specific_variables(
         self,
@@ -117,20 +130,24 @@ class WirePayloadBuilder(ABC):
         """
         pass
     
-    def _build_base_variables(self, fields: Dict[str, Any]) -> List[WireVariable]:
+    def _build_base_variables(self, fields: Dict[str, Any], excluded_fields: List[str] = None) -> List[WireVariable]:
         """
         Build base variables from fields.
         
         Args:
             fields: Field values dictionary
+            excluded_fields: List of field names to exclude from base processing
             
         Returns:
             List[WireVariable]: Base variables
         """
+        if excluded_fields is None:
+            excluded_fields = []
+        
         variables = []
         
         for field_name, value in fields.items():
-            if field_name not in self.definitions_map:
+            if field_name not in self.definitions_map or field_name in excluded_fields:
                 continue
             
             def_id = self.definitions_map[field_name]
