@@ -435,7 +435,7 @@ class ReadSQLHandler(BaseStageHandler):
         if memory.execute_query_enabled:
             response = "Data has been written to the table automatically!\n\nWhat would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
         else:
-            response = "What would you like to do next?\n- 'write' - Save results to a table\n- 'email' - Send results via email\n- 'both' - Write and email\n- 'done' - Finish"
+            response = "What would you like to do next?\n- 'write' - Save results to a table\n- 'done' - Finish"
         
         return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
     
