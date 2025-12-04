@@ -455,20 +455,22 @@ class ReadSQLHandler(BaseStageHandler):
         if actively_gathering:
             logger.info(f"🔄 Actively gathering params for {memory.current_tool}, not treating 'no' as done")
         else:
-        # Check for "done" intent - use word boundaries to avoid false positives
-        # e.g., "i do not know" should NOT match because "no" is part of "not"
-        done_patterns = ["done", "finish", "complete", "nothing"]
-        # Only match "no" if it's a standalone word or at start/end
-        if (user_lower in ["no", "nope", "nah"] or 
-            any(pattern in user_lower for pattern in done_patterns)):
-            logger.info("✅ User said done, transitioning to DONE stage")
-            # Clear current_tool so restart works correctly
-            memory.current_tool = None
-            return self._create_result(
-                memory,
-                "All done! 🎉\n\nSay 'new query' or 'start' to begin a fresh job.",
-                Stage.DONE
-            )        if memory.execute_query_enabled and any(word in user_lower for word in ["write", "save"]):
+            # Check for "done" intent - use word boundaries to avoid false positives
+            # e.g., "i do not know" should NOT match because "no" is part of "not"
+            done_patterns = ["done", "finish", "complete", "nothing"]
+            # Only match "no" if it's a standalone word or at start/end
+            if (user_lower in ["no", "nope", "nah"] or 
+                any(pattern in user_lower for pattern in done_patterns)):
+                logger.info("✅ User said done, transitioning to DONE stage")
+                # Clear current_tool so restart works correctly
+                memory.current_tool = None
+                return self._create_result(
+                    memory,
+                    "All done! 🎉\n\nSay 'new query' or 'start' to begin a fresh job.",
+                    Stage.DONE
+                )
+        
+        if memory.execute_query_enabled and any(word in user_lower for word in ["write", "save"]):
             return self._create_result(
                 memory,
                 "Data was already written to the table by the ReadSQL job.\n\nWhat would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
