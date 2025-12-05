@@ -233,7 +233,7 @@ class JobAgent:
             
             # Get first question again
             validation = self._validate_params(memory, tool_name, user_input="")
-            validation["question"] = f"✅ Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\\'s start over.')}"
+            validation["question"] = f"✅ Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\'s start over.')}"
             return validation
         
         # Go back - remove last parameter

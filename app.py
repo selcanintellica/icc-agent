@@ -206,11 +206,24 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             html.H1("ICC Agent Chat Interface", className="text-center mt-4 mb-4"),
-            html.P(
-                "Chat with the ICC Agent to create database jobs. Try queries like: "
-                "'Get customers from USA' or 'Email sales data to manager@example.com'",
-                className="text-center text-muted mb-4"
-            )
+            html.Div([
+                html.P(
+                    "Chat naturally with the agent to create database jobs, execute queries, and manage data.",
+                    className="text-center text-muted mb-2"
+                ),
+                html.Div([
+                    html.Small([
+                        html.I(className="bi bi-info-circle me-1"),
+                        "Need help? Just ask: ",
+                        html.Code("help", className="text-primary"),
+                        " • ",
+                        "Want to change a parameter? Say: ",
+                        html.Code("edit name", className="text-primary"),
+                        " or ",
+                        html.Code("back", className="text-primary")
+                    ], className="text-muted")
+                ], className="text-center mb-3")
+            ])
         ])
     ]),
     
@@ -290,7 +303,7 @@ app.layout = dbc.Container([
             dbc.InputGroup([
                 dbc.Input(
                     id="user-input",
-                    placeholder="Type your message here... (e.g., 'Get customers from USA')",
+                    placeholder="Type your message here... (e.g., 'readsql', 'help', 'edit job_name')",
                     type="text",
                     style={"fontSize": "16px"}
                 ),
@@ -322,17 +335,20 @@ app.layout = dbc.Container([
     # Map Table Modal
     create_map_table_modal(),
     
-    # Example queries
+    # Help tips section
     dbc.Row([
         dbc.Col([
-            html.Div([
-                html.H5("Example Queries:", className="mt-4 mb-2"),
-                dbc.ButtonGroup([
-                    dbc.Button("Get customers from USA", id="example-1", color="secondary", outline=True, size="sm", className="me-2 mb-2"),
-                    dbc.Button("Show active orders", id="example-2", color="secondary", outline=True, size="sm", className="me-2 mb-2"),
-                    dbc.Button("Email data to test@example.com", id="example-3", color="secondary", outline=True, size="sm", className="mb-2"),
+            dbc.Card([
+                dbc.CardBody([
+                    html.H6([html.I(className="bi bi-lightbulb me-2"), "Quick Tips"], className="mb-3"),
+                    html.Ul([
+                        html.Li([html.Strong("Get help: "), html.Code("help"), " or ", html.Code("what can you do?")]),
+                        html.Li([html.Strong("Edit parameters: "), html.Code("edit job_name"), ", ", html.Code("change folder"), ", ", html.Code("back")]),
+                        html.Li([html.Strong("Start over: "), html.Code("reset"), " or ", html.Code("start over")]),
+                        html.Li([html.Strong("Commands: "), html.Code("readsql"), ", ", html.Code("comparesql"), ", ", html.Code("write"), ", ", html.Code("email")]),
+                    ], className="mb-0", style={"fontSize": "0.9rem"})
                 ])
-            ])
+            ], className="mt-3", color="light")
         ])
     ])
     
@@ -698,14 +714,18 @@ def update_schema_dropdown(selected_connection):
         return [], None
     
     try:
+        logger.info(f"🔍 Updating schema dropdown for connection: {selected_connection}")
+        
         # Get connection ID from API
         connection_id = get_connection_id(selected_connection)
         
         if not connection_id:
-            logger.warning(f"Connection ID not found for {selected_connection}, using static config")
+            logger.warning(f"⚠️ Connection ID not found for {selected_connection}, using static config")
             schema_options = config_loader.get_schema_options(selected_connection)
             default_schema = schema_options[0]["value"] if schema_options else None
             return schema_options, default_schema
+        
+        logger.info(f"✅ Got connection_id: {connection_id}")
         
         # Fetch schemas from API
         from src.utils.auth import authenticate
@@ -737,7 +757,9 @@ def update_schema_dropdown(selected_connection):
         return schema_options, default_schema
         
     except Exception as e:
-        logger.error(f"Error fetching schemas dynamically: {e}, falling back to static config")
+        logger.error(f"❌ Error fetching schemas dynamically: {e}, falling back to static config")
+        import traceback
+        logger.error(traceback.format_exc())
         schema_options = config_loader.get_schema_options(selected_connection)
         default_schema = schema_options[0]["value"] if schema_options else None
         return schema_options, default_schema
@@ -756,14 +778,18 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return [], []
     
     try:
+        logger.info(f"🔍 Updating tables dropdown for {selected_connection}.{selected_schema}")
+        
         # Get connection ID from API
         connection_id = get_connection_id(selected_connection)
         
         if not connection_id:
-            logger.warning(f"Connection ID not found for {selected_connection}, using static config")
+            logger.warning(f"⚠️ Connection ID not found for {selected_connection}, using static config")
             table_options = config_loader.get_table_options(selected_connection, selected_schema)
             default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
             return table_options, default_tables
+        
+        logger.info(f"✅ Got connection_id: {connection_id}")
         
         # Fetch tables from API
         from src.utils.auth import authenticate
@@ -795,7 +821,9 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return table_options, default_tables
         
     except Exception as e:
-        logger.error(f"Error fetching tables dynamically: {e}, falling back to static config")
+        logger.error(f"❌ Error fetching tables dynamically: {e}, falling back to static config")
+        import traceback
+        logger.error(traceback.format_exc())
         table_options = config_loader.get_table_options(selected_connection, selected_schema)
         default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
         return table_options, default_tables
@@ -842,9 +870,6 @@ def save_configuration(connection, schema, tables):
      Output("new-second-col", "options"),
      Output("pending-map-response", "data")],
     [Input("send-button", "n_clicks"),
-     Input("example-1", "n_clicks"),
-     Input("example-2", "n_clicks"),
-     Input("example-3", "n_clicks"),
      Input("user-input", "n_submit"),
      Input("confirm-map-btn", "n_clicks"),
      Input("cancel-map-btn", "n_clicks")],
@@ -855,8 +880,7 @@ def save_configuration(connection, schema, tables):
      State("map-table-modal", "is_open"),
      State("pending-map-response", "data")]
 )
-def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit, 
-                confirm_clicks, cancel_clicks,
+def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 user_input, chat_data, config, map_data, modal_open, pending_response):
     """Handle chat interactions with comprehensive error handling"""
     ctx = callback_context
@@ -956,14 +980,6 @@ def update_chat(send_clicks, ex1_clicks, ex2_clicks, ex3_clicks, submit,
         chat_data.append(cancel_message)
         chat_display = [format_message(**msg) for msg in chat_data]
         return chat_display, chat_data, "", "", False, {"first_columns": [], "second_columns": [], "mappings": [], "auto_matched": False}, [], [], None
-    
-    # Handle example button clicks
-    if button_id == "example-1":
-        user_input = "Get customers from USA"
-    elif button_id == "example-2":
-        user_input = "Show active orders"
-    elif button_id == "example-3":
-        user_input = "Email data to test@example.com"
     
     # If no input, return current state
     if not user_input or user_input.strip() == "":
