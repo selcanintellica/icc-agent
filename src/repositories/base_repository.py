@@ -335,12 +335,9 @@ class BaseRepository:
             logger.debug(f"POST request successful at {endpoint}")
             return response
             
-        except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name error: {e.user_message}")
-            return APIResponse.error_response(
-                error=e.user_message,
-                status_code=self.CONFLICT_STATUS_CODE
-            )
+        except DuplicateJobNameError:
+            # Re-raise to let handlers deal with it and enable retry with new name
+            raise
             
         except AuthenticationError as e:
             logger.error(f"Authentication error: {e}")
