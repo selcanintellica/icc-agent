@@ -177,6 +177,19 @@ class SendEmailHandler(BaseStageHandler):
         logger.info(f"📧 CONFIRM_EMAIL_QUERY: user input = '{user_input}'")
         user_lower = user_input.lower()
 
+        # Check if we're in a "name retry" scenario (name was cleared after duplicate error)
+        name_is_empty = not memory.gathered_params.get("name") or not memory.pending_email_params.get("name") if memory.pending_email_params else not memory.gathered_params.get("name")
+        
+        if name_is_empty and user_input.strip():
+            # User is providing a new job name after duplicate error
+            new_name = user_input.strip()
+            logger.info(f"📝 Name retry scenario - using '{new_name}' as new job name")
+            memory.gathered_params["name"] = new_name
+            if memory.pending_email_params:
+                memory.pending_email_params["name"] = new_name
+            # Re-execute the job with the new name
+            return await self._execute_confirmed_email_job(memory)
+
         if any(word in user_lower for word in ["yes", "ok", "correct"]):
             logger.info("✅ User confirmed email query, executing send_email_job...")
             memory.email_query_confirmed = True
@@ -295,11 +308,13 @@ class SendEmailHandler(BaseStageHandler):
             return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
         
         except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name: {e}")
-            memory.gathered_params["name"] = ""  # Clear name to ask again
+            logger.warning(f"Duplicate job name '{job_name}': {e}")
+            # Clear only the name - keep all other params for retry
+            memory.gathered_params["name"] = ""
+            memory.last_question = None  # Trigger fresh prompt for name
             return self._create_result(
                 memory,
-                e.user_message + "\n\nWhat would you like to name this email job instead?",
+                f"A job named '{job_name}' already exists. Please provide a different name:",
                 is_error=True,
                 error_code=e.code
             )

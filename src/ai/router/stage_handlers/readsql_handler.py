@@ -385,10 +385,13 @@ class ReadSQLHandler(BaseStageHandler):
                 )
 
         except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name: {e}")
+            logger.warning(f"Duplicate job name '{job_name}': {e}")
+            # Clear only the name - keep all other params for retry
+            memory.gathered_params["name"] = ""
+            memory.last_question = None  # Trigger fresh prompt for name
             return self._create_result(
                 memory,
-                e.user_message + "\n\nWhat would you like to name this job instead?",
+                f"A job named '{job_name}' already exists. Please provide a different name:",
                 is_error=True,
                 error_code=e.code
             )
