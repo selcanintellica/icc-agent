@@ -205,25 +205,54 @@ def create_map_table_modal():
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
-            html.H1("ICC Agent Chat Interface", className="text-center mt-4 mb-4"),
-            html.Div([
-                html.P(
-                    "Chat naturally with the agent to create database jobs, execute queries, and manage data.",
-                    className="text-center text-muted mb-2"
-                ),
-                html.Div([
-                    html.Small([
-                        html.I(className="bi bi-info-circle me-1"),
-                        "Need help? Just ask: ",
-                        html.Code("help", className="text-primary"),
-                        " • ",
-                        "Want to change a parameter? Say: ",
-                        html.Code("edit name", className="text-primary"),
-                        " or ",
-                        html.Code("back", className="text-primary")
-                    ], className="text-muted")
-                ], className="text-center mb-3")
-            ])
+            html.H1("ICC Agent Chat Interface", className="text-center mt-4 mb-3"),
+            html.P(
+                "Chat naturally with the agent to create database jobs, execute queries, and manage data.",
+                className="text-center text-muted mb-3"
+            )
+        ])
+    ]),
+    
+    # Quick Tips - Prominent placement at top
+    dbc.Row([
+        dbc.Col([
+            dbc.Card([
+                dbc.CardBody([
+                    html.H5([html.I(className="bi bi-lightbulb-fill text-warning me-2"), "Quick Tips"], className="mb-3"),
+                    dbc.Row([
+                        dbc.Col([
+                            html.Div([
+                                html.Strong("📝 Commands:", className="text-primary"),
+                                html.Ul([
+                                    html.Li([html.Code("readsql"), " - Execute SQL queries"]),
+                                    html.Li([html.Code("comparesql"), " - Compare two queries"]),
+                                    html.Li([html.Code("write"), " / ", html.Code("email"), " - Save or send results"])
+                                ], className="mb-0", style={"fontSize": "0.9rem"})
+                            ])
+                        ], md=4),
+                        dbc.Col([
+                            html.Div([
+                                html.Strong("✏️ Edit Parameters:", className="text-primary"),
+                                html.Ul([
+                                    html.Li([html.Code("edit job_name"), " - Change specific parameter"]),
+                                    html.Li([html.Code("back"), " - Go to previous step"]),
+                                    html.Li([html.Code("reset"), " / ", html.Code("start over"), " - Clear all"])
+                                ], className="mb-0", style={"fontSize": "0.9rem"})
+                            ])
+                        ], md=4),
+                        dbc.Col([
+                            html.Div([
+                                html.Strong("❓ Help:", className="text-primary"),
+                                html.Ul([
+                                    html.Li([html.Code("help"), " - Show available commands"]),
+                                    html.Li([html.Code("what can you do?"), " - Get guidance"]),
+                                    html.Li("Ask naturally: 'change the name', 'fix folder'")
+                                ], className="mb-0", style={"fontSize": "0.9rem"})
+                            ])
+                        ], md=4)
+                    ])
+                ], style={"backgroundColor": "#f8f9fa"})
+            ], className="mb-4", style={"border": "2px solid #ffc107"})
         ])
     ]),
     
@@ -333,24 +362,7 @@ app.layout = dbc.Container([
     dcc.Store(id="pending-map-response", data=None),
     
     # Map Table Modal
-    create_map_table_modal(),
-    
-    # Help tips section
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H6([html.I(className="bi bi-lightbulb me-2"), "Quick Tips"], className="mb-3"),
-                    html.Ul([
-                        html.Li([html.Strong("Get help: "), html.Code("help"), " or ", html.Code("what can you do?")]),
-                        html.Li([html.Strong("Edit parameters: "), html.Code("edit job_name"), ", ", html.Code("change folder"), ", ", html.Code("back")]),
-                        html.Li([html.Strong("Start over: "), html.Code("reset"), " or ", html.Code("start over")]),
-                        html.Li([html.Strong("Commands: "), html.Code("readsql"), ", ", html.Code("comparesql"), ", ", html.Code("write"), ", ", html.Code("email")]),
-                    ], className="mb-0", style={"fontSize": "0.9rem"})
-                ])
-            ], className="mt-3", color="light")
-        ])
-    ])
+    create_map_table_modal()
     
 ], fluid=True, style={"maxWidth": "1200px"})
 
