@@ -119,6 +119,11 @@ class JobAgent:
         logger.info(f"Current params: {memory.gathered_params}")
 
         try:
+            # Check for edit/back commands - allow user to correct parameters
+            edit_result = self._check_edit_commands(memory, user_input, tool_name)
+            if edit_result:
+                return edit_result
+            
             # Check if schema was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__SCHEMA_SELECTED__:"):
                 schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
@@ -192,6 +197,189 @@ class JobAgent:
             if "error" not in result:
                 result["error"] = icc_error.user_message
             return result
+    
+    def _check_edit_commands(self, memory: Memory, user_input: str, tool_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if user wants to go back and edit a previous parameter.
+        
+        Supports:
+        - "back" / "go back" - remove last parameter and re-ask
+        - "edit <param>" / "change <param>" - edit specific parameter
+        - "reset" / "start over" - clear all parameters
+        
+        Args:
+            memory: Conversation memory
+            user_input: User's input
+            tool_name: Current tool name
+            
+        Returns:
+            Dict with action=ASK if edit command detected, None otherwise
+        """
+        input_lower = user_input.lower().strip()
+        
+        # Reset/start over - clear all parameters
+        if input_lower in ["reset", "start over", "restart", "clear all"]:
+            if not memory.gathered_params:
+                return {
+                    "action": "ASK",
+                    "question": "No parameters have been set yet. Let's start fresh!",
+                    "params": {},
+                    "tool_name": tool_name
+                }
+            
+            logger.info(f"🔄 User requested reset, clearing all parameters: {list(memory.gathered_params.keys())}")
+            param_names = list(memory.gathered_params.keys())
+            memory.gathered_params.clear()
+            
+            # Get first question again
+            validation = self._validate_params(memory, tool_name, user_input="")
+            validation["question"] = f"✅ Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\\'s start over.')}"
+            return validation
+        
+        # Go back - remove last parameter
+        if input_lower in ["back", "go back", "undo", "previous"]:
+            if not memory.gathered_params:
+                return {
+                    "action": "ASK",
+                    "question": "No parameters to go back to. Let's continue from here.",
+                    "params": {},
+                    "tool_name": tool_name
+                }
+            
+            # Remove the last added parameter
+            last_param = list(memory.gathered_params.keys())[-1]
+            old_value = memory.gathered_params.pop(last_param)
+            logger.info(f"⬅️ User went back, removed: {last_param}={old_value}")
+            
+            # Get the question for that parameter again
+            validation = self._validate_params(memory, tool_name, user_input="")
+            validation["question"] = f"✅ Removed: {last_param} = '{old_value}'\n\n{validation.get('question', 'What would you like for this parameter?')}"
+            return validation
+        
+        # Edit specific parameter - use LLM to understand which parameter user wants to edit
+        edit_patterns = ["edit ", "change ", "correct ", "fix ", "update "]
+        for pattern in edit_patterns:
+            if input_lower.startswith(pattern):
+                # Use LLM to identify which parameter user wants to edit
+                matched_param = self._identify_parameter_with_llm(user_input, memory.gathered_params)
+                
+                if matched_param:
+                    old_value = memory.gathered_params.pop(matched_param)
+                    logger.info(f"✏️ User editing parameter: {matched_param}={old_value} (from input: '{user_input}')")
+                    
+                    # Get the question for that parameter
+                    validation = self._validate_params(memory, tool_name, user_input="")
+                    validation["question"] = f"✅ Cleared: {matched_param} = '{old_value}'\n\n{validation.get('question', f'Please provide a new value for {matched_param}:')}"
+                    return validation
+                else:
+                    available_params = ', '.join(memory.gathered_params.keys()) if memory.gathered_params else 'none'
+                    return {
+                        "action": "ASK",
+                        "question": f"I couldn't identify which parameter you want to edit from '{user_input}'.\n\nAvailable parameters: {available_params}\n\nPlease be more specific, like:\n{chr(10).join(['- edit ' + p for p in list(memory.gathered_params.keys())[:3]]) if memory.gathered_params else '- No parameters set yet'}",
+                        "params": {},
+                        "tool_name": tool_name
+                    }
+        
+        return None
+    
+    def _identify_parameter_with_llm(self, user_input: str, params: Dict[str, Any]) -> Optional[str]:
+        """
+        Use LLM to identify which parameter the user wants to edit.
+        
+        This handles natural language understanding:
+        - "edit the job's name" → job_name
+        - "change connection" → connection
+        - "fix the folder" → folder
+        - "update execute query" → execute_query
+        - "edit name" → job_name (context-aware)
+        
+        Args:
+            user_input: User's full input (e.g., "edit job name")
+            params: Dictionary of currently gathered parameters
+            
+        Returns:
+            Matched parameter name or None if can't determine
+        """
+        if not params:
+            return None
+        
+        # Build prompt for LLM
+        param_list = '\n'.join([f"- {key}: {value}" for key, value in params.items()])
+        
+        prompt = f"""You are helping identify which parameter a user wants to edit.
+
+Current parameters:
+{param_list}
+
+User input: "{user_input}"
+
+Identify which parameter the user wants to edit. Respond with ONLY the exact parameter name from the list above, or "NONE" if you cannot determine it.
+
+Examples:
+User: "edit job name" → job_name
+User: "change the connection" → connection
+User: "fix folder" → folder
+User: "edit name" → job_name
+User: "update execute" → execute_query
+User: "change something random" → NONE
+
+Response (parameter name only):"""
+
+        try:
+            messages = [HumanMessage(content=prompt)]
+            response = self.llm.invoke(messages)
+            
+            identified_param = response.content.strip()
+            logger.info(f"🤖 LLM identified parameter: '{identified_param}' from input: '{user_input}'")
+            
+            # Validate LLM response
+            if identified_param == "NONE" or not identified_param:
+                logger.warning(f"LLM could not identify parameter from: {user_input}")
+                return None
+            
+            # Check if identified param exists in actual params (case-insensitive)
+            for param_key in params.keys():
+                if param_key.lower() == identified_param.lower():
+                    return param_key
+            
+            # LLM returned something not in params
+            logger.warning(f"LLM returned '{identified_param}' but it's not in params: {list(params.keys())}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error using LLM to identify parameter: {e}")
+            # Fallback to simple fuzzy matching
+            return self._simple_param_match(user_input, params)
+    
+    def _simple_param_match(self, user_input: str, params: Dict[str, Any]) -> Optional[str]:
+        """
+        Simple fallback matching if LLM fails.
+        
+        Args:
+            user_input: User's input
+            params: Dictionary of gathered parameters
+            
+        Returns:
+            Matched parameter name or None
+        """
+        user_lower = user_input.lower().strip()
+        
+        # Remove edit keywords
+        for keyword in ["edit ", "change ", "correct ", "fix ", "update "]:
+            user_lower = user_lower.replace(keyword, "")
+        
+        user_lower = user_lower.strip().replace(" ", "_")
+        
+        # Try exact match
+        if user_lower in params:
+            return user_lower
+        
+        # Try contains
+        for param in params.keys():
+            if user_lower in param.lower() or param.lower() in user_lower:
+                return param
+        
+        return None
     
     def _is_conversational_input(self, user_input: str) -> bool:
         """
