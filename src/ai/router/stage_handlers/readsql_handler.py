@@ -138,11 +138,15 @@ class ReadSQLHandler(BaseStageHandler):
             )
 
         try:
+            # Get connection_id from memory for ICC API
+            connection_id = memory.get_connection_id(memory.connection)
+            
             spec = call_sql_agent(
                 user_input,
                 connection=memory.connection,
                 schema=memory.schema,
-                selected_tables=memory.selected_tables
+                selected_tables=memory.selected_tables,
+                connection_id=connection_id
             )
 
             # Check if SQL agent returned an error
