@@ -75,9 +75,9 @@ class JobToolExecutor:
             logger.info(f"Write data job executed successfully: {data.id}")
             return {"message": "Success", "data": data.model_dump()}
         
-        except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name for WriteData: {e}")
-            return {"message": "Error", "error": e.user_message}
+        except DuplicateJobNameError:
+            # Re-raise to let handler deal with it and enable retry with new name
+            raise
         
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout for WriteData job: {e}")
@@ -133,14 +133,14 @@ class JobToolExecutor:
                 error_msg = response.error or "Unknown error"
                 logger.error(f"Read SQL job failed: {error_msg}")
                 
-                # Check for specific error patterns
+                # Check for duplicate name error (raise exception to let handler deal with it)
                 error_lower = error_msg.lower()
                 if "same name" in error_lower or "already exists" in error_lower:
-                    return {
-                        "message": "Error",
-                        "error": f"A job named '{job_name}' already exists. Please choose a different name.",
-                        "columns": columns
-                    }
+                    raise DuplicateJobNameError(
+                        job_name=job_name,
+                        message=error_msg,
+                        user_message=f"A job named '{job_name}' already exists. Please choose a different name."
+                    )
                 
                 return {
                     "message": "Error",
@@ -148,9 +148,9 @@ class JobToolExecutor:
                     "columns": columns
                 }
         
-        except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name for ReadSQL: {e}")
-            return {"message": "Error", "error": e.user_message, "columns": []}
+        except DuplicateJobNameError:
+            # Re-raise to let handler deal with it and enable retry with new name
+            raise
         
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout for ReadSQL job: {e}")
@@ -196,9 +196,9 @@ class JobToolExecutor:
             logger.info(f"Send email job executed successfully: {data.id}")
             return {"message": "Success", "data": data.model_dump()}
         
-        except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name for SendEmail: {e}")
-            return {"message": "Error", "error": e.user_message}
+        except DuplicateJobNameError:
+            # Re-raise to let handler deal with it and enable retry with new name
+            raise
         
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout for SendEmail job: {e}")
@@ -252,22 +252,23 @@ class JobToolExecutor:
                 error_msg = response.error or "Unknown error"
                 logger.error(f"Compare SQL job failed: {error_msg}")
                 
-                # Check for specific error patterns
+                # Check for duplicate name error (raise exception to let handler deal with it)
                 error_lower = error_msg.lower()
                 if "same name" in error_lower or "already exists" in error_lower:
-                    return {
-                        "message": "Error",
-                        "error": f"A job named '{job_name}' already exists. Please choose a different name."
-                    }
+                    raise DuplicateJobNameError(
+                        job_name=job_name,
+                        message=error_msg,
+                        user_message=f"A job named '{job_name}' already exists. Please choose a different name."
+                    )
                 
                 return {
                     "message": "Error",
                     "error": error_msg
                 }
         
-        except DuplicateJobNameError as e:
-            logger.warning(f"Duplicate job name for CompareSQL: {e}")
-            return {"message": "Error", "error": e.user_message}
+        except DuplicateJobNameError:
+            # Re-raise to let handler deal with it and enable retry with new name
+            raise
         
         except NetworkTimeoutError as e:
             logger.error(f"Network timeout for CompareSQL job: {e}")
