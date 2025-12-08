@@ -15,6 +15,7 @@ from src.errors import (
     UnknownConnectionError,
     NetworkTimeoutError,
     ICCBaseError,
+    ErrorHandler,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,9 +69,10 @@ class ExecuteSqlStrategy(StageStrategy):
             )
         except Exception as e:
             logger.error(f"Error in execute_sql stage: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "execute_sql_stage", "stage": memory.stage.value})
             return self._create_result(
                 memory,
-                "An error occurred while setting up the job. Please try again.",
+                f"Error: {icc_error.user_message}",
                 is_error=True
             )
     
@@ -258,8 +260,9 @@ class ExecuteSqlStrategy(StageStrategy):
                 )
         except Exception as e:
             logger.error(f"Error fetching schemas: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_schemas", "connection": memory.connection})
             return self._create_result(
                 memory,
-                "Unable to fetch available schemas. Please specify the schema name directly.",
+                f"Unable to fetch schemas: {icc_error.user_message}\n\nPlease try again or specify the schema name directly.",
                 is_error=True
             )

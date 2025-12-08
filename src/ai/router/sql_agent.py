@@ -119,13 +119,21 @@ class SchemaFetcher:
             
             if not schema_definitions or schema_definitions.strip() == "":
                 logger.warning("No schema definitions fetched from API")
+                # Return empty/error indicator that caller can handle
                 return "ERROR: No table definitions found. Using default behavior."
             
             return schema_definitions
             
         except Exception as e:
             logger.error(f"Error fetching schema definitions: {e}")
-            return f"ERROR: Failed to fetch schema definitions: {str(e)}"
+            # Convert to ICC error and let caller handle
+            icc_error = ErrorHandler.handle(e, {
+                "context": "schema_fetch",
+                "connection": connection,
+                "schema": schema,
+                "tables": selected_tables
+            })
+            return f"ERROR: Failed to fetch schema definitions: {icc_error.user_message}"
 
 
 class SQLParser:

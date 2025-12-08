@@ -274,6 +274,7 @@ class RouterOrchestrator:
                 return response.content.strip()
             except Exception as e:
                 logger.error(f"Error in conversational handler: {e}")
+                icc_error = ErrorHandler.handle(e, {"context": "parameter_gathering_conversation", "tool": memory.current_tool})
                 return f"I'm gathering information for the {memory.current_tool} job. The last question was: {memory.last_question}"
         
         # Build detailed context for conversational response (stage-based)
@@ -294,6 +295,7 @@ class RouterOrchestrator:
             return response.content.strip()
         except Exception as e:
             logger.error(f"Error in conversational handler: {e}")
+            icc_error = ErrorHandler.handle(e, {"context": "stage_conversation", "stage": memory.stage.value})
             # Fallback to a helpful default based on current stage
             return f"I'm here to help! Currently at stage: {memory.stage.value}. Let me know how I can assist you."
     

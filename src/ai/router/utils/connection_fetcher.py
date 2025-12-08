@@ -4,10 +4,13 @@ Connection and schema fetching utility.
 Provides reusable methods for fetching connections and schemas following DRY principle.
 """
 
+"""
+
 import logging
 from typing import Dict, Any
 from src.ai.router.stage_handlers.base_handler import StageHandlerResult
 from src.ai.router.memory import Memory
+from src.errors import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +54,10 @@ class ConnectionFetcher:
             
         except Exception as e:
             logger.error(f"❌ Error fetching connections: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_connections"})
             return {
                 "success": False,
-                "message": f"Failed to fetch connections: {str(e)}",
+                "message": icc_error.user_message,
                 "connections": {}
             }
     
@@ -101,9 +105,10 @@ class ConnectionFetcher:
             
         except Exception as e:
             logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_schemas", "connection": connection_name})
             return {
                 "success": False,
-                "message": f"Failed to fetch schemas: {str(e)}",
+                "message": icc_error.user_message,
                 "schemas": []
             }
     

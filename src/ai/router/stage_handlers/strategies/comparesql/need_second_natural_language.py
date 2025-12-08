@@ -5,6 +5,7 @@ from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHand
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.sql_agent import call_sql_agent
+from src.errors import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,9 @@ class NeedSecondNaturalLanguageStrategy(StageStrategy):
             )
         except Exception as e:
             logger.error(f"Error generating second SQL: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "generate_second_sql", "user_input": user_input[:100]})
             return self._create_result(
                 memory,
-                "I had trouble generating SQL. Please try rephrasing or provide the SQL directly.",
+                f"Error generating SQL: {icc_error.user_message}. Please try rephrasing or provide the SQL directly.",
                 is_error=True
             )

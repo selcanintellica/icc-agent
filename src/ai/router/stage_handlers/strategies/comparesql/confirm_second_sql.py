@@ -8,7 +8,7 @@ from src.models.query import QueryPayload
 from src.repositories.query_repository import QueryRepository
 from httpx import AsyncClient
 from src.utils.auth import authenticate
-from src.errors import NetworkTimeoutError
+from src.errors import NetworkTimeoutError, ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +119,9 @@ class ConfirmSecondSQLStrategy(StageStrategy):
             )
         except Exception as e:
             logger.error(f"Error fetching columns: {str(e)}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_columns_for_comparison"})
             return self._create_result(
                 memory,
-                f"Unable to fetch column information: {str(e)}\n\nPlease check your SQL queries and try again.",
+                f"Unable to fetch column information: {icc_error.user_message}\n\nPlease check your SQL queries and try again.",
                 is_error=True
             )
