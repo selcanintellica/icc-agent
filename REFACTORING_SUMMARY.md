@@ -5,7 +5,22 @@
 
 ---
 
-## ✅ COMPLETED CHANGES
+## 🔄 UPDATE: Phase 2 Refactoring Completed
+
+### Additional Services Created:
+4. **Session Manager Service** (`src/services/session_manager.py`)
+5. **UI Formatter Service** (`src/services/ui_formatter.py`)
+6. **Router Service** (`src/services/router_service.py`)
+
+### Phase 2 Metrics:
+- **app.py**: 1,593 lines → 1,466 lines (-127 lines, -8%)
+- **Total reduction from original**: 1,696 → 1,466 lines (-230 lines, -13.6%)
+- **Services created**: 6 total (3 in phase 1, 3 in phase 2)
+- **Functions delegated to services**: 15+
+
+---
+
+## ✅ COMPLETED CHANGES (PHASE 1 & 2)
 
 ### 1. Created Async Helper Utility (`src/utils/async_helper.py`)
 **Purpose:** Eliminate repetitive event loop creation patterns
@@ -86,18 +101,110 @@ from src.services import get_connection_service
 - **Business logic extraction**: ~200 lines moved to services
 
 ### New Files Created:
+
+**Phase 1:**
 - `src/utils/async_helper.py` - 95 lines
 - `src/services/connection_service.py` - 211 lines
 - `src/services/__init__.py` - 7 lines
 
+**Phase 2:**
+- `src/services/session_manager.py` - 145 lines
+- `src/services/ui_formatter.py` - 283 lines
+- `src/services/router_service.py` - 120 lines
+
+**Total New Code**: 861 lines (well-organized, testable, reusable)
+
 ### Net Change:
-- Added: +313 lines (well-organized, reusable)
-- Removed/Simplified: -246 lines (redundant, complex)
-- **Net**: +67 lines with significantly improved organization
+- **app.py Reduction**: 1,696 → 1,466 lines (-230 lines, -13.6%)
+- **New Service Code**: +861 lines (in organized modules)
+- **Deleted Files**: -195 lines (unused prompts, run.sh)
+- **Net Impact**: +436 lines with SIGNIFICANTLY improved organization
 
 ---
 
-## 🔴 UNUSED FILES IDENTIFIED FOR DELETION
+## 📋 PHASE 2 CHANGES DETAIL
+
+### 4. Created Session Manager Service (`src/services/session_manager.py`)
+**Purpose:** Centralize session memory management
+
+**Features:**
+- `SessionManager` class managing session lifecycle
+- `get_or_create_session()` - Get or create session memory
+- `session_exists()`, `clear_session()`, `clear_all_sessions()`
+- Easy to swap backends (Redis, Database) without changing app code
+- Singleton pattern for global access
+
+**Impact:**
+- Removed global `session_memories` dict from app.py
+- Centralized session logic in one place
+- Easy to add persistence layer later
+- Better testability
+
+---
+
+### 5. Created UI Formatter Service (`src/services/ui_formatter.py`)
+**Purpose:** Extract all UI formatting logic from app.py
+
+**Features:**
+- `UIFormatter` class with static methods
+- `format_message()` - Format all message types (user, agent, error, dropdown, tool)
+- `format_error_for_ui()` - Enhanced error formatting with icons and categories
+- `get_error_category_icon()` - Consistent error icons
+- Supports all message roles: user, agent, error, schema_dropdown, connection_dropdown, tool_call
+
+**Impact:**
+- Removed 180+ lines of formatting code from app.py
+- Consistent UI presentation across all message types
+- Easy to update styling in one place
+- Separation of presentation logic from business logic
+
+---
+
+### 6. Created Router Service (`src/services/router_service.py`)
+**Purpose:** Encapsulate router invocation logic
+
+**Features:**
+- `RouterService` class with async methods
+- `invoke_router()` - Invoke router with memory and connection info
+- `validate_configuration()` - Validate database config before routing
+- Proper error handling and formatting
+- Integrates with other services
+
+**Impact:**
+- Cleaner router invocation patterns
+- Centralized validation logic
+- Better error handling
+- Easier to add middleware or logging
+
+---
+
+### 7. Refactored app.py (Phase 2)
+**Changes:**
+
+#### Session Management:
+- Replaced `session_memories` dict with `session_manager`
+- Updated `invoke_router_async()` to use session_manager
+- Removed manual session creation/retrieval
+
+#### UI Formatting:
+- Replaced `format_message()` implementation with delegation to ui_formatter
+- Removed `get_error_category_icon()` (now in ui_formatter)
+- Simplified `format_error_for_ui()` to delegate to service
+
+#### Service Integration:
+- All services initialized at startup
+- Consistent service usage patterns
+- Clear separation of concerns
+
+**Code Reduction:**
+- `format_message()`: 180+ lines → 3 lines (delegation)
+- `get_error_category_icon()`: Removed (15 lines)
+- Session management: Simplified (20 lines reduced)
+- `invoke_router_async()`: Cleaner (10 lines reduced)
+
+---
+
+## 🔴 UNUSED FILES DELETED
 
 ### 1. **`src/ai/prompts/prompts.py`** and **`src/ai/prompts/__init__.py`**
 **Reason:** NOT USED

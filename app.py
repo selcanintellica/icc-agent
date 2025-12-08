@@ -54,7 +54,12 @@ from src.utils.config_loader import get_config_loader
 from src.utils.connection_api_client import populate_memory_connections
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.utils.async_helper import run_async, run_async_safe
-from src.services import get_connection_service
+from src.services import (
+    get_connection_service,
+    get_session_manager,
+    get_ui_formatter,
+    get_router_service
+)
 from src.errors import (
     ICCBaseError,
     AuthenticationError,
@@ -80,14 +85,12 @@ if os.getenv("ENABLE_PROMPT_LOGGING", "false").lower() in ["true", "1", "yes"]:
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 app.title = "ICC Agent Chat"
 
-# Session memory storage (in production, use Redis or DB)
-session_memories = {}
-
-# Initialize config loader (replaces schema_loader) - used as fallback
+# Initialize services
 config_loader = get_config_loader()
-
-# Initialize connection service (handles all connection operations)
 connection_service = get_connection_service()
+session_manager = get_session_manager()
+ui_formatter = get_ui_formatter()
+router_service = get_router_service()
 initial_config = connection_service.get_initial_config()
 
 initial_connections = initial_config["connections"]
@@ -96,16 +99,6 @@ initial_schemas = initial_config["schemas"]
 initial_schema = initial_config["initial_schema"]
 initial_tables = initial_config["tables"]
 initial_table_selection = initial_config["initial_tables"]
-
-
-def get_connection_id(connection_name: str) -> Optional[str]:
-    """Get connection ID from cache or fetch from API."""
-    return run_async_safe(
-        connection_service.get_connection_id,
-        connection_name,
-        default=None,
-        log_errors=True
-    )
 
 
 def create_map_table_modal():
@@ -376,7 +369,13 @@ def format_error_for_ui(error: Exception) -> dict:
 
 
 def format_message(role, content, timestamp=None, error_info=None,  **kwargs):
-    """Format a chat message for display"""
+    """Format a chat message for display (delegates to ui_formatter service)."""
+    return ui_formatter.format_message(role, content, timestamp, error_info, **kwargs)
+
+
+# Legacy implementation kept temporarily for reference
+def _format_message_legacy(role, content, timestamp=None, error_info=None,  **kwargs):
+    """Legacy format method - DO NOT USE, kept for reference only."""
     if timestamp is None:
         timestamp = datetime.now().strftime("%H:%M:%S")
     
@@ -575,10 +574,8 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         logger.info(f"User query: {user_message}")
         logger.info(f"Session ID: {session_id}")
         
-        # Get or create memory for this session
-        if session_id not in session_memories:
-            session_memories[session_id] = Memory()
-            logger.info(f"Created new memory for session: {session_id}")
+        # Get or create memory for this session using session_manager
+        memory = session_manager.get_or_create_session(session_id)
             
             # Populate connections from API (falls back to static if fails)
             try:
@@ -601,11 +598,11 @@ async def invoke_router_async(user_message, session_id="default-session", connec
                 else:
                     logger.warning("Authentication failed, trying without auth")
                 
-                if await populate_memory_connections(session_memories[session_id], auth_headers=auth_headers):
-                    conn_count = len(session_memories[session_id].connections)
+                if await populate_memory_connections(memory, auth_headers=auth_headers):
+                    conn_count = len(memory.connections)
                     logger.info(f"Populated {conn_count} connections from API")
                     if conn_count > 0:
-                        logger.info(f"Available connections: {list(session_memories[session_id].connections.keys())[:5]}...")
+                        logger.info(f"Available connections: {list(memory.connections.keys())[:5]}...")
                     else:
                         logger.warning("API returned 0 connections! Will use static connections.py as fallback")
                 else:
@@ -617,8 +614,6 @@ async def invoke_router_async(user_message, session_id="default-session", connec
                 logger.error(f"Connection error fetching connections: {e.user_message}")
             except Exception as e:
                 logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
-        
-        memory = session_memories[session_id]
         
         # Update connection, schema, and tables from UI if provided
         if connection:
@@ -638,15 +633,14 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         # Call the router
         updated_memory, response_text = await handle_turn(memory, user_message)
         
-        # Update session memory
-        session_memories[session_id] = updated_memory
-        
         print("\nROUTER RESPONSE:")
         print(f"New stage: {updated_memory.stage.value}")
         print(f"Response: {response_text[:200]}...")
         
         logger.info(f"Router completed")
         logger.info(f"New stage: {updated_memory.stage.value}")
+        
+        # Note: Memory is managed by session_manager, no need to reassign
         
         return {
             "response": response_text,
