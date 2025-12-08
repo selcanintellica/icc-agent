@@ -235,6 +235,7 @@ class JobAgent:
         """
         # Use the standardized navigation command checker
         nav_cmd = self._check_navigation_commands(user_input)
+        input_lower = user_input.lower().strip()
         
         # Reset/start over - clear all parameters
         if nav_cmd == "reset":
