@@ -576,44 +576,44 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         
         # Get or create memory for this session using session_manager
         memory = session_manager.get_or_create_session(session_id)
+        
+        # Populate connections from API (falls back to static if fails)
+        try:
+            from src.utils.auth import authenticate
+            from src.utils.table_api_client import set_table_api_auth
             
-            # Populate connections from API (falls back to static if fails)
-            try:
-                from src.utils.auth import authenticate
-                from src.utils.table_api_client import set_table_api_auth
+            logger.info("Attempting to fetch connections from API")
+            
+            # Authenticate using the same pattern as other API calls
+            auth_result = await authenticate()
+            auth_headers = None
+            if auth_result:
+                userpass, token = auth_result
+                auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
+                logger.info("Authentication successful for connection fetch")
                 
-                logger.info("Attempting to fetch connections from API")
-                
-                # Authenticate using the same pattern as other API calls
-                auth_result = await authenticate()
-                auth_headers = None
-                if auth_result:
-                    userpass, token = auth_result
-                    auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
-                    logger.info("Authentication successful for connection fetch")
-                    
-                    # Set auth headers for table API client (used by SQL agent)
-                    set_table_api_auth(auth_headers)
-                    logger.info("Configured table API client with authentication")
+                # Set auth headers for table API client (used by SQL agent)
+                set_table_api_auth(auth_headers)
+                logger.info("Configured table API client with authentication")
+            else:
+                logger.warning("Authentication failed, trying without auth")
+            
+            if await populate_memory_connections(memory, auth_headers=auth_headers):
+                conn_count = len(memory.connections)
+                logger.info(f"Populated {conn_count} connections from API")
+                if conn_count > 0:
+                    logger.info(f"Available connections: {list(memory.connections.keys())[:5]}...")
                 else:
-                    logger.warning("Authentication failed, trying without auth")
-                
-                if await populate_memory_connections(memory, auth_headers=auth_headers):
-                    conn_count = len(memory.connections)
-                    logger.info(f"Populated {conn_count} connections from API")
-                    if conn_count > 0:
-                        logger.info(f"Available connections: {list(memory.connections.keys())[:5]}...")
-                    else:
-                        logger.warning("API returned 0 connections! Will use static connections.py as fallback")
-                else:
-                    logger.warning("Could not fetch connections from API, will use static connections.py as fallback")
+                    logger.warning("API returned 0 connections! Will use static connections.py as fallback")
+            else:
+                logger.warning("Could not fetch connections from API, will use static connections.py as fallback")
 
-            except AuthenticationError as e:
-                logger.error(f"Authentication error: {e.user_message}")
-            except ICCConnectionError as e:
-                logger.error(f"Connection error fetching connections: {e.user_message}")
-            except Exception as e:
-                logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
+        except AuthenticationError as e:
+            logger.error(f"Authentication error: {e.user_message}")
+        except ICCConnectionError as e:
+            logger.error(f"Connection error fetching connections: {e.user_message}")
+        except Exception as e:
+            logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
         
         # Update connection, schema, and tables from UI if provided
         if connection:
