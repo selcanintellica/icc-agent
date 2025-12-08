@@ -334,6 +334,52 @@ They need to write actual SQL like: SELECT * FROM table_name WHERE condition
 
 Help them understand what SQL format is expected and reference the tables/schema available."""
         
+        # CompareSQL specific stages
+        elif memory.stage in [Stage.ASK_FIRST_SQL_METHOD, Stage.ASK_SECOND_SQL_METHOD]:
+            query_num = "FIRST" if memory.stage == Stage.ASK_FIRST_SQL_METHOD else "SECOND"
+            stage_context += f"""{db_context}
+
+The user needs to choose how to provide the {query_num} SQL query for comparison:
+- 'create' - I'll generate SQL from natural language description
+- 'provide' - User will write the SQL query themselves
+
+Help them understand the options."""
+        
+        elif memory.stage in [Stage.NEED_FIRST_NATURAL_LANGUAGE, Stage.NEED_SECOND_NATURAL_LANGUAGE]:
+            query_num = "FIRST" if memory.stage == Stage.NEED_FIRST_NATURAL_LANGUAGE else "SECOND"
+            stage_context += f"""{db_context}
+
+The user should describe what data they want for the {query_num} query in plain English.
+I will convert it to SQL using the configured tables above.
+
+Examples: "get all employees", "show customers with orders"
+
+Help them describe their data needs naturally."""
+        
+        elif memory.stage in [Stage.NEED_FIRST_USER_SQL, Stage.NEED_SECOND_USER_SQL]:
+            query_num = "FIRST" if memory.stage == Stage.NEED_FIRST_USER_SQL else "SECOND"
+            stage_context += f"""{db_context}
+
+The user should provide the {query_num} SQL query to execute and compare.
+They need to write actual SQL like: SELECT * FROM table_name WHERE condition
+
+This is for a CompareSQL job, so both queries should return comparable result sets.
+
+Help them understand what SQL format is expected and reference the tables/schema available."""
+        
+        elif memory.stage in [Stage.CONFIRM_FIRST_GENERATED_SQL, Stage.CONFIRM_FIRST_USER_SQL, 
+                               Stage.CONFIRM_SECOND_GENERATED_SQL, Stage.CONFIRM_SECOND_USER_SQL]:
+            query_num = "FIRST" if "FIRST" in memory.stage.value.upper() else "SECOND"
+            sql_shown = memory.first_sql if query_num == "FIRST" else memory.second_sql if hasattr(memory, 'second_sql') else "the SQL query"
+            stage_context += f"""{db_context}
+
+User is reviewing the {query_num} SQL query: {str(sql_shown)[:100]}...
+They need to confirm (yes/no) or ask for modifications.
+
+This is for a CompareSQL job - they're setting up queries to compare results.
+
+Help them understand they can accept or request changes."""
+        
         elif memory.stage == Stage.CONFIRM_GENERATED_SQL or memory.stage == Stage.CONFIRM_USER_SQL:
             sql_shown = memory.last_sql if hasattr(memory, 'last_sql') else "the SQL query"
             stage_context += f"""{db_context}
