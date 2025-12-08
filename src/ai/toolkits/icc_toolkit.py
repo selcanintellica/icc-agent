@@ -17,7 +17,7 @@ from src.models.natural_language import (
     WriteDataLLMRequest,
     CompareSqlLLMRequest,
 )
-from src.repositories.job_repository import JobRepository
+from src.repositories.job_repository_factory import create_job_repository
 from src.ai.toolkits.services import HTTPClientManager
 from src.errors import (
     ICCBaseError,
@@ -69,7 +69,7 @@ class JobToolExecutor:
                 data.id = str(uuid.uuid4())
             
             async with self.client_manager.get_authenticated_client() as client:
-                repo = JobRepository(client)
+                repo = create_job_repository(client)
                 await repo.write_data_job(data)
             
             logger.info(f"Write data job executed successfully: {data.id}")
@@ -117,7 +117,7 @@ class JobToolExecutor:
                 data.id = str(uuid.uuid4())
             
             async with self.client_manager.get_authenticated_client() as client:
-                repo = JobRepository(client)
+                repo = create_job_repository(client)
                 response, columns = await repo.read_sql_job(data)
             
             if response.success:
@@ -190,7 +190,7 @@ class JobToolExecutor:
                 data.id = str(uuid.uuid4())
             
             async with self.client_manager.get_authenticated_client() as client:
-                repo = JobRepository(client)
+                repo = create_job_repository(client)
                 await repo.send_email_job(data)
             
             logger.info(f"Send email job executed successfully: {data.id}")
@@ -238,7 +238,7 @@ class JobToolExecutor:
                 data.id = str(uuid.uuid4())
             
             async with self.client_manager.get_authenticated_client() as client:
-                repo = JobRepository(client)
+                repo = create_job_repository(client)
                 response = await repo.compare_sql_job(data)
             
             if response.success:
