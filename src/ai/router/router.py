@@ -243,12 +243,10 @@ class RouterOrchestrator:
             memory: Current conversation memory
             user_input: User's conversational input
             
-        Returns:
+            Returns:
             Conversational response
         """
-        logger.info(f"💬 Detected conversational input: '{user_input}'")
-        
-        # Check if we're in parameter gathering mode (priority over stage-based help)
+        logger.debug(f"Detected conversational input: '{user_input}'")        # Check if we're in parameter gathering mode (priority over stage-based help)
         # Only use parameter gathering help if we're NOT in a post-job stage
         post_job_stages = {Stage.SHOW_RESULTS, Stage.NEED_WRITE_OR_EMAIL, Stage.DONE}
         in_param_gathering = (
@@ -310,9 +308,7 @@ class RouterOrchestrator:
         Returns:
             Tuple of (updated memory, response message)
         """
-        logger.info(f"\n{'='*60}")
-        logger.info(f"ROUTER: Stage={memory.stage.value}, Input='{user_utterance[:50]}...'")
-        logger.info(f"{'='*60}")
+        logger.info(f"ROUTER: Processing stage={memory.stage.value}, input='{user_utterance[:50]}...'")
         
         try:
             # Validate input
@@ -335,7 +331,7 @@ class RouterOrchestrator:
             if memory.stage == Stage.DONE:
                 user_lower = user_utterance.lower().strip()
                 if any(word in user_lower for word in ["new", "start", "begin", "restart", "fresh"]):
-                    logger.info("🔄 User requested fresh start, resetting memory...")
+                    logger.info("User requested fresh start, resetting memory")
                     # Reset memory to fresh state
                     memory.reset()
                     memory.stage = Stage.ASK_JOB_TYPE
@@ -350,41 +346,41 @@ class RouterOrchestrator:
             handler = self.registry.get_handler(memory.stage, memory)
             
             if handler:
-                logger.info(f"🎯 Delegating to handler: {handler.__class__.__name__}")
-                logger.info(f"🎯 Memory state before handler: stage={memory.stage.value}, current_tool={memory.current_tool}, gathered_params={list(memory.gathered_params.keys())}")
+                logger.debug(f"Delegating to handler: {handler.__class__.__name__}")
+                logger.debug(f"Memory state before handler: stage={memory.stage.value}, current_tool={memory.current_tool}, gathered_params={list(memory.gathered_params.keys())}")
                 
                 result = await handler.handle(memory, user_utterance)
                 
                 if result:
-                    logger.info(f"🎯 Handler result: next_stage={result.next_stage.value if result.next_stage else 'None'}, is_error={result.is_error}")
+                    logger.debug(f"Handler result: next_stage={result.next_stage.value if result.next_stage else 'None'}, is_error={result.is_error}")
                     
                     # Log if this was an error response
                     if result.is_error:
-                        logger.warning(f"⚠️ Handler returned error: {result.error_code or 'unknown'}")
+                        logger.warning(f"Handler returned error: {result.error_code or 'unknown'}")
                     
                     # Check for delegation markers
                     if result.response == "__DELEGATE_TO_WRITEDATA__":
-                        logger.info("🔄 Detected delegation to WriteDataHandler")
+                        logger.debug("Detected delegation to WriteDataHandler")
                         writedata_handler = self.registry._handlers.get("writedata")
                         if writedata_handler:
-                            logger.info(f"📝 Calling WriteDataHandler with input: '{user_utterance}'")
+                            logger.debug(f"Calling WriteDataHandler with input: '{user_utterance}'")
                             result = await writedata_handler.handle(memory, user_utterance)
-                            logger.info(f"📝 WriteDataHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
+                            logger.debug(f"WriteDataHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
                             return result.memory, result.response
                         else:
-                            logger.error("❌ WriteDataHandler not found in registry!")
+                            logger.error("WriteDataHandler not found in registry")
                             return memory, "Unable to process write request. Please try again."
                     
                     elif result.response == "__DELEGATE_TO_SENDEMAIL__":
-                        logger.info("🔄 Detected delegation to SendEmailHandler")
+                        logger.debug("Detected delegation to SendEmailHandler")
                         sendemail_handler = self.registry._handlers.get("sendemail")
                         if sendemail_handler:
-                            logger.info(f"📧 Calling SendEmailHandler with input: '{user_utterance}'")
+                            logger.debug(f"Calling SendEmailHandler with input: '{user_utterance}'")
                             result = await sendemail_handler.handle(memory, user_utterance)
-                            logger.info(f"📧 SendEmailHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
+                            logger.debug(f"SendEmailHandler returned: next_stage={result.next_stage.value if result.next_stage else 'None'}")
                             return result.memory, result.response
                         else:
-                            logger.error("❌ SendEmailHandler not found in registry!")
+                            logger.error("SendEmailHandler not found in registry")
                             return memory, "Unable to process email request. Please try again."
                     
                     return result.memory, result.response
@@ -503,14 +499,14 @@ def get_default_agents() -> tuple:
     global _default_sql_agent, _default_job_agent
     
     if _default_sql_agent is None:
-        logger.info("🏗️ Creating singleton SQL agent...")
+        logger.debug("Creating singleton SQL agent")
         _default_sql_agent = create_sql_agent()
-        logger.info(f"✅ SQL agent created (id: {id(_default_sql_agent)})")
+        logger.debug(f"SQL agent created (id: {id(_default_sql_agent)})")
     
     if _default_job_agent is None:
-        logger.info("🏗️ Creating singleton Job agent...")
+        logger.debug("Creating singleton Job agent")
         _default_job_agent = create_job_agent()
-        logger.info(f"✅ Job agent created (id: {id(_default_job_agent)})")
+        logger.debug(f"Job agent created (id: {id(_default_job_agent)})")
     
     return _default_sql_agent, _default_job_agent
 
@@ -527,16 +523,16 @@ def get_default_router_orchestrator() -> RouterOrchestrator:
     """
     global _default_router_orchestrator
     if _default_router_orchestrator is None:
-        logger.info("🏗️ Creating singleton router orchestrator...")
+        logger.debug("Creating singleton router orchestrator")
         # Get singleton agents to ensure LLM instances are reused
         sql_agent, job_agent = get_default_agents()
         _default_router_orchestrator = create_router_orchestrator(
             sql_agent=sql_agent,
             job_agent=job_agent
         )
-        logger.info(f"✅ Created singleton router orchestrator (id: {id(_default_router_orchestrator)})")
+        logger.debug(f"Created singleton router orchestrator (id: {id(_default_router_orchestrator)})")
     else:
-        logger.debug(f"♻️ Reusing existing router orchestrator (id: {id(_default_router_orchestrator)})")
+        logger.debug(f"Reusing existing router orchestrator (id: {id(_default_router_orchestrator)})")
     return _default_router_orchestrator
 
 

@@ -26,8 +26,9 @@ import traceback
 from typing import Optional
 
 # Configure logging to see agent actions
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True,  # Force reconfiguration of logging
     handlers=[
@@ -684,7 +685,7 @@ def update_schema_dropdown(selected_connection):
         return [], None
     
     try:
-        logger.info(f"🔍 Updating schema dropdown for connection: {selected_connection}")
+        logger.debug(f"Updating schema dropdown for connection: {selected_connection}")
         
         # Fetch schemas using connection service
         schema_options, default_schema = run_async_safe(
@@ -695,17 +696,17 @@ def update_schema_dropdown(selected_connection):
         )
         
         if schema_options:
-            logger.info(f"✅ Fetched {len(schema_options)} schemas dynamically for connection {selected_connection}")
+            logger.info(f"Fetched {len(schema_options)} schemas dynamically for connection {selected_connection}")
             return schema_options, default_schema
         
         # Fallback to config loader
-        logger.info(f"⚠️ Using config loader fallback for {selected_connection}")
+        logger.info(f"Using config loader fallback for {selected_connection}")
         schema_options = config_loader.get_schema_options(selected_connection)
         default_schema = schema_options[0]["value"] if schema_options else None
         return schema_options, default_schema
         
     except Exception as e:
-        logger.error(f"❌ Error in update_schema_dropdown: {e}, falling back to static config")
+        logger.error(f"Error in update_schema_dropdown: {e}, falling back to static config")
         schema_options = config_loader.get_schema_options(selected_connection)
         default_schema = schema_options[0]["value"] if schema_options else None
         return schema_options, default_schema
@@ -724,7 +725,7 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return [], []
     
     try:
-        logger.info(f"🔍 Updating tables dropdown for {selected_connection}.{selected_schema}")
+        logger.debug(f"Updating tables dropdown for {selected_connection}.{selected_schema}")
         
         # Fetch tables using connection service
         table_options, default_tables = run_async_safe(
@@ -736,17 +737,17 @@ def update_tables_dropdown(selected_connection, selected_schema):
         )
         
         if table_options:
-            logger.info(f"✅ Fetched {len(table_options)} tables dynamically for {selected_connection}.{selected_schema}")
+            logger.info(f"Fetched {len(table_options)} tables dynamically for {selected_connection}.{selected_schema}")
             return table_options, default_tables
         
         # Fallback to config loader
-        logger.info(f"⚠️ Using config loader fallback for {selected_connection}.{selected_schema}")
+        logger.info(f"Using config loader fallback for {selected_connection}.{selected_schema}")
         table_options = config_loader.get_table_options(selected_connection, selected_schema)
         default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
         return table_options, default_tables
         
     except Exception as e:
-        logger.error(f"❌ Error in update_tables_dropdown: {e}, falling back to static config")
+        logger.error(f"Error in update_tables_dropdown: {e}, falling back to static config")
         table_options = config_loader.get_table_options(selected_connection, selected_schema)
         default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
         return table_options, default_tables
@@ -1312,16 +1313,16 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
                 break
 
         if triggered_idx is None or not selected_schemas[triggered_idx]:
-            logger.warning(f"⚠️ No schema selected for {param_name}")
+            logger.warning(f"No schema selected for {param_name}")
             raise dash.exceptions.PreventUpdate
 
         selected_schema = selected_schemas[triggered_idx]
 
     except Exception as e:
-        logger.error(f"❌ Error parsing schema selection: {e}")
+        logger.error(f"Error parsing schema selection: {e}")
         raise dash.exceptions.PreventUpdate
 
-    logger.info(f"✅ Schema selected via dropdown: {selected_schema} for param: {param_name}")
+    logger.debug(f"Schema selected via dropdown: {selected_schema} for param: {param_name}")
 
     # Add user selection message
     user_message = {
@@ -1434,7 +1435,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
 
     # Check if any button was actually clicked
     if not ctx.triggered:
-        logger.warning("⚠️ No trigger context")
+        logger.warning("No trigger context")
         raise dash.exceptions.PreventUpdate
 
     # Get the triggered button info
@@ -1442,7 +1443,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     logger.debug(f"   triggered_id: {triggered_id}")
 
     if ".n_clicks" not in triggered_id:
-        logger.warning("⚠️ Not a button click")
+        logger.warning("Not a button click")
         raise dash.exceptions.PreventUpdate
 
     # Parse the button ID to get param_name
@@ -1463,7 +1464,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             raise dash.exceptions.PreventUpdate
 
         if not selected_connections[triggered_idx]:
-            logger.warning(f"⚠️ No connection selected for {param_name}")
+            logger.warning(f"No connection selected for {param_name}")
             raise dash.exceptions.PreventUpdate
 
         selected_connection = selected_connections[triggered_idx]
@@ -1471,10 +1472,10 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     except dash.exceptions.PreventUpdate:
         raise
     except Exception as e:
-        logger.error(f"❌ Error parsing connection selection: {e}")
+        logger.error(f"Error parsing connection selection: {e}")
         raise dash.exceptions.PreventUpdate
 
-    logger.info(f"✅ Connection selected via dropdown: {selected_connection} for param: {param_name}")
+    logger.debug(f"Connection selected via dropdown: {selected_connection} for param: {param_name}")
 
     # Add user selection message
     user_message = {

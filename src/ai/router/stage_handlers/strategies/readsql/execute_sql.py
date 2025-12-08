@@ -45,7 +45,7 @@ class ExecuteSqlStrategy(StageStrategy):
         try:
             # If no parameters gathered yet and user just confirmed, ignore and start fresh
             if not memory.gathered_params and user_input.lower().strip() in ["yes", "ok", "okay", "sure", "correct"]:
-                logger.info(f"🔄 Ignoring confirmation message '{user_input}' - starting fresh parameter gathering")
+                logger.debug(f"Ignoring confirmation message '{user_input}' - starting fresh parameter gathering")
                 user_input = ""
 
             action = call_job_agent(memory, user_input, tool_name="read_sql")

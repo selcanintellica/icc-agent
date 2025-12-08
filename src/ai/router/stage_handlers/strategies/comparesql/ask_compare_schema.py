@@ -16,7 +16,7 @@ class AskCompareSchemaStrategy(StageStrategy):
         # Check if this is a direct schema selection from dropdown (bypass LLM)
         if user_input.startswith("__SCHEMA_SELECTED__:"):
             schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
-            logger.info(f"✅ Schema directly selected via dropdown: {schema_name}")
+            logger.debug(f"Schema directly selected via dropdown: {schema_name}")
         else:
             schema_name = user_input.strip()
         

@@ -29,10 +29,10 @@ class ConfigLoader:
         self.config_path = config_path or CONFIG_PATH
         self._config = None
         
-        logger.info(f"🔍 ConfigLoader initialized with path: {self.config_path.absolute()}")
+        logger.info(f"ConfigLoader initialized with path: {self.config_path.absolute()}")
         
         if not self.config_path.exists():
-            logger.error(f"❌ Config file does not exist: {self.config_path.absolute()}")
+            logger.error(f"Config file does not exist: {self.config_path.absolute()}")
             raise FileNotFoundError(f"Database config not found: {self.config_path}")
         
         self._load_config()
@@ -43,19 +43,19 @@ class ConfigLoader:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 self._config = json.load(f)
             
-            logger.info(f"✅ Config loaded successfully: {len(self._config.get('connections', []))} connections")
+            logger.info(f"Config loaded successfully: {len(self._config.get('connections', []))} connections")
         
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Invalid JSON in config file: {e}")
+            logger.error(f"Invalid JSON in config file: {e}")
             raise
         
         except Exception as e:
-            logger.error(f"❌ Error loading config: {e}")
+            logger.error(f"Error loading config: {e}")
             raise
     
     def reload_config(self):
         """Reload the configuration from file (useful for hot-reloading)."""
-        logger.info("🔄 Reloading configuration...")
+        logger.info("Reloading configuration")
         self._load_config()
     
     def get_available_connections(self) -> List[str]:

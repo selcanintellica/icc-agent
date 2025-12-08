@@ -119,8 +119,8 @@ class JobAgent:
         Returns:
             Dict with action (ASK/TOOL/FETCH_SCHEMAS/CHAT), question, params, etc.
         """
-        logger.info(f"Job Agent: Gathering params for '{tool_name}'")
-        logger.info(f"Current params: {memory.gathered_params}")
+        logger.debug(f"Job Agent: Gathering params for '{tool_name}'")
+        logger.debug(f"Current params: {memory.gathered_params}")
 
         try:
             # Check for edit/back commands - allow user to correct parameters
@@ -131,14 +131,14 @@ class JobAgent:
             # Check if schema was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__SCHEMA_SELECTED__:"):
                 schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
-                logger.info(f"✅ Schema directly selected via dropdown: {schema_name} (already assigned)")
+                logger.debug(f"Schema directly selected via dropdown: {schema_name} (already assigned)")
                 # Schema already assigned in app.py, just validate to get next question
                 return self._validate_params(memory, tool_name, user_input="")
 
             # Check if connection was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__CONNECTION_SELECTED__:"):
                 connection_name = user_input.replace("__CONNECTION_SELECTED__:", "").strip()
-                logger.info(f"✅ Connection directly selected via dropdown: {connection_name} (already assigned)")
+                logger.debug(f"Connection directly selected via dropdown: {connection_name} (already assigned)")
                 # Connection already assigned in app.py, just validate to get next question
                 return self._validate_params(memory, tool_name, user_input="")
 
@@ -152,7 +152,7 @@ class JobAgent:
             simple_commands = {"write", "email", "send", "done", "finish", "complete", "both"}
 
             if not memory.gathered_params and user_input_lower in simple_commands:
-                logger.info(f"📝 Skipping LLM extraction for command: '{user_input}'")
+                logger.debug(f"Skipping LLM extraction for command: '{user_input}'")
                 return self._validate_params(memory, tool_name, user_input="")
 
             result = self._extract_with_llm(memory, user_input, tool_name)
@@ -168,21 +168,21 @@ class JobAgent:
                 # Pydantic will handle validation of empty strings vs missing values
                 new_params = {k: v for k, v in params.items() if v is not None}
                 memory.gathered_params.update(new_params)
-                logger.info(f"✅ Updated gathered_params: {memory.gathered_params}")
+                logger.debug(f"Updated gathered_params: {memory.gathered_params}")
             
-            logger.info(f"🤖 Job Agent action: {result.get('action')}, tool: {result.get('tool_name')}")
-            logger.info(f"🤖 Extracted params: {result.get('params')}")
+            logger.debug(f"Job Agent action: {result.get('action')}, tool: {result.get('tool_name')}")
+            logger.debug(f"Extracted params: {result.get('params')}")
             
             # If this was conversational input with ASK action and a question, return it directly
             # Don't override with validation
             if result.get('action') == 'ASK' and result.get('question') and self._is_conversational_input(user_input):
-                logger.info("💬 Returning conversational response directly (skipping validation override)")
+                logger.debug("Returning conversational response directly (skipping validation override)")
                 return result
             
             # After extracting params, validate to get the correct next question
-            logger.info(f"🔍 Validating params for {tool_name}...")
+            logger.debug(f"Validating params for {tool_name}")
             validation_result = self._validate_params(memory, tool_name, user_input)
-            logger.info(f"🔍 Validation result: action={validation_result.get('action')}, question={validation_result.get('question', 'N/A')[:50]}...")
+            logger.debug(f"Validation result: action={validation_result.get('action')}, question={validation_result.get('question', 'N/A')[:50]}...")
             return validation_result
 
         except LLMError as e:
@@ -251,13 +251,13 @@ class JobAgent:
                     "tool_name": tool_name
                 }
             
-            logger.info(f"🔄 User requested reset, clearing all parameters: {list(memory.gathered_params.keys())}")
+            logger.info(f"User requested reset, clearing all parameters: {list(memory.gathered_params.keys())}")
             param_names = list(memory.gathered_params.keys())
             memory.gathered_params.clear()
             
             # Get first question again
             validation = self._validate_params(memory, tool_name, user_input="")
-            validation["question"] = f"✅ Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\'s start over.')}"
+            validation["question"] = f"Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\'s start over.')}"
             return validation
         
         # Go back - remove last parameter
@@ -273,11 +273,11 @@ class JobAgent:
             # Remove the last added parameter
             last_param = list(memory.gathered_params.keys())[-1]
             old_value = memory.gathered_params.pop(last_param)
-            logger.info(f"⬅️ User went back, removed: {last_param}={old_value}")
+            logger.debug(f"User went back, removed: {last_param}={old_value}")
             
             # Get the question for that parameter again
             validation = self._validate_params(memory, tool_name, user_input="")
-            validation["question"] = f"✅ Removed: {last_param} = '{old_value}'\n\n{validation.get('question', 'What would you like for this parameter?')}"
+            validation["question"] = f"Removed: {last_param} = '{old_value}'\n\n{validation.get('question', 'What would you like for this parameter?')}"
             return validation
         
         # Edit specific parameter - use LLM to understand which parameter user wants to edit
@@ -289,11 +289,11 @@ class JobAgent:
                 
                 if matched_param:
                     old_value = memory.gathered_params.pop(matched_param)
-                    logger.info(f"✏️ User editing parameter: {matched_param}={old_value} (from input: '{user_input}')")
+                    logger.debug(f"User editing parameter: {matched_param}={old_value} (from input: '{user_input}')")
                     
                     # Get the question for that parameter
                     validation = self._validate_params(memory, tool_name, user_input="")
-                    validation["question"] = f"✅ Cleared: {matched_param} = '{old_value}'\n\n{validation.get('question', f'Please provide a new value for {matched_param}:')}"
+                    validation["question"] = f"Cleared: {matched_param} = '{old_value}'\n\n{validation.get('question', f'Please provide a new value for {matched_param}:')}"
                     return validation
                 else:
                     available_params = ', '.join(memory.gathered_params.keys()) if memory.gathered_params else 'none'
@@ -335,7 +335,7 @@ class JobAgent:
             response = self.llm.invoke(messages)
             
             identified_param = response.content.strip()
-            logger.info(f"🤖 LLM identified parameter: '{identified_param}' from input: '{user_input}'")
+            logger.debug(f"LLM identified parameter: '{identified_param}' from input: '{user_input}'")
             
             # Validate LLM response
             if identified_param == "NONE" or not identified_param:
