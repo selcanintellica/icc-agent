@@ -248,7 +248,15 @@ class RouterOrchestrator:
         logger.info(f"💬 Detected conversational input: '{user_input}'")
         
         # Check if we're in parameter gathering mode (priority over stage-based help)
-        if memory.last_question and memory.gathered_params is not None:
+        # Only use parameter gathering help if we're NOT in a post-job stage
+        post_job_stages = {Stage.SHOW_RESULTS, Stage.NEED_WRITE_OR_EMAIL, Stage.DONE}
+        in_param_gathering = (
+            memory.last_question and 
+            memory.gathered_params is not None and 
+            memory.stage not in post_job_stages
+        )
+        
+        if in_param_gathering:
             param_context = f"""Currently gathering parameters for '{memory.current_tool}' job.
 
 Last question asked: "{memory.last_question}"
