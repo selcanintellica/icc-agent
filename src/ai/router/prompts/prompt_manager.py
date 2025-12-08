@@ -24,6 +24,8 @@ class WriteDataPrompt:
 
 CRITICAL RULES:
 1. If "Last question" is asking for parameter X and user provides an answer, extract it as parameter X
+   - Be flexible with typos and abbreviations (e.g., "drp" → "drop", "trunc" → "truncate")
+   - Match the intent even if spelling is imperfect
 2. IGNORE "ok", "okay", "yes", "no", "sure" UNLESS answering a yes/no question
 3. Do NOT invent or assume parameter values
 4. Return action="ASK" if any params missing (question will be auto-generated)
@@ -33,7 +35,7 @@ Required params:
 2. table: Target table name
 3. connection: Database connection (UI shows dropdown)
 4. schemas: Schema name (system fetches after connection)
-5. drop_or_truncate: "drop", "truncate", or "none"
+5. drop_or_truncate: "drop", "truncate", or "none" (accept typos: "drp"="drop", "trunc"="truncate", variations like "clear"="truncate", "append"="none")
 6. write_count: Track row count? (yes=true, no=false)
 
 {write_count_hint}

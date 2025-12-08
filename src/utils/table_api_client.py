@@ -287,7 +287,7 @@ class TableAPIClient:
                 return None
                 
         except Timeout as e:
-            logger.error(f"API timeout fetching {connection}.{schema}.{table}")
+            logger.error(f"API timeout fetching {connection_id}.{schema}.{table}")
             raise NetworkTimeoutError(
                 message=f"Timeout fetching table definition for {table}",
                 user_message="The table definition request timed out. Please try again.",
@@ -296,7 +296,7 @@ class TableAPIClient:
             )
             
         except RequestsConnectionError as e:
-            logger.error(f"Connection error fetching {connection}.{schema}.{table}: {e}")
+            logger.error(f"Connection error fetching {connection_id}.{schema}.{table}: {e}")
             raise APIUnavailableError(
                 message=f"Connection error fetching table definition: {e}",
                 user_message="Unable to connect to the table definition service.",
@@ -305,7 +305,7 @@ class TableAPIClient:
             )
             
         except RequestException as e:
-            logger.error(f"API error fetching {connection}.{schema}.{table}: {str(e)}")
+            logger.error(f"API error fetching {connection_id}.{schema}.{table}: {str(e)}")
             raise HTTPError(
                 message=f"HTTP error fetching table definition: {e}",
                 user_message="Failed to fetch table definition. Please try again.",

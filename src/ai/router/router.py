@@ -247,14 +247,60 @@ class RouterOrchestrator:
         """
         logger.info(f"💬 Detected conversational input: '{user_input}'")
         
-        # Build context for conversational response
+        # Build detailed context for conversational response
         stage_context = f"Current stage: {memory.stage.value}"
         
-        # Add stage-specific context
+        # Add database configuration context
+        db_context = ""
+        if memory.connection or memory.schema or memory.selected_tables:
+            db_context = f"\n\nCurrent database configuration:"
+            if memory.connection:
+                db_context += f"\n- Connection: {memory.connection}"
+            if memory.schema:
+                db_context += f"\n- Schema: {memory.schema}"
+            if memory.selected_tables:
+                db_context += f"\n- Tables: {', '.join(memory.selected_tables)}"
+        
+        # Add stage-specific context with SQL information
         if memory.stage == Stage.ASK_SQL_METHOD:
-            stage_context += "\n\nThe user needs to choose between:\n- 'create' - I'll generate SQL from natural language\n- 'provide' - User provides SQL directly"
+            stage_context += f"""{db_context}
+
+The user needs to choose how to provide SQL:
+- 'create' - I'll generate SQL from natural language description
+- 'provide' - User will write the SQL query themselves
+
+Help them understand the options and what they need to do."""
+        
+        elif memory.stage == Stage.NEED_NATURAL_LANGUAGE:
+            stage_context += f"""{db_context}
+
+The user should describe what data they want in plain English.
+I will then convert it to SQL query using the configured tables above.
+
+Examples: "get all customers from USA", "show orders from last month"
+
+Help them understand they should describe their data needs naturally."""
+        
+        elif memory.stage == Stage.NEED_USER_SQL:
+            stage_context += f"""{db_context}
+
+The user should provide a SQL query to execute against the database above.
+They need to write actual SQL like: SELECT * FROM table_name WHERE condition
+
+Help them understand what SQL format is expected and reference the tables/schema available."""
+        
+        elif memory.stage == Stage.CONFIRM_GENERATED_SQL or memory.stage == Stage.CONFIRM_USER_SQL:
+            sql_shown = memory.last_sql if hasattr(memory, 'last_sql') else "the SQL query"
+            stage_context += f"""{db_context}
+
+User is reviewing SQL: {sql_shown[:100]}...
+They need to confirm (yes/no) or ask for modifications.
+
+Help them understand they can accept or request changes."""
+        
         elif memory.stage == Stage.ASK_JOB_TYPE:
             stage_context += "\n\nThe user needs to choose between:\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
+        
         elif memory.stage == Stage.NEED_WRITE_OR_EMAIL:
             if memory.execute_query_enabled:
                 stage_context += "\n\nData was written. User can:\n- 'email' - Send results via email\n- 'done' - Finish"
@@ -265,7 +311,9 @@ class RouterOrchestrator:
 
 User question/input: "{user_input}"
 
-Respond naturally and helpfully to guide the user. Keep it brief and friendly."""
+Respond naturally and helpfully to guide the user based on the context above. 
+Be specific about what they need to do at this stage.
+Keep it conversational but informative."""
         
         try:
             # Use a simple LLM call for conversational response

@@ -171,12 +171,6 @@ class ParameterValidator:
                 "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
             }
         
-        # Normalize drop_or_truncate
-        drop_val = params.get("drop_or_truncate", "").lower().strip()
-        if drop_val in ["no", "append", "keep", "skip"]:
-            params["drop_or_truncate"] = "none"
-            logger.info("📝 Normalized drop_or_truncate to 'none'")
-        
         if "write_count" not in params:
             logger.info("❓ Asking about write_count for write_data")
             return {

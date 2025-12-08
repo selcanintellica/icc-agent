@@ -1528,10 +1528,8 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     """Handle connection selection from dropdown WITHOUT using LLM"""
     ctx = callback_context
 
-    logger.info(f"🔘 Connection callback triggered")
-    logger.info(f"   n_clicks: {n_clicks}")
-    logger.info(f"   selected_connections: {selected_connections}")
-    logger.info(f"   button_ids: {button_ids}")
+    # Connection callback (reduced logging verbosity)
+    logger.debug(f"🔘 Connection callback: clicks={n_clicks}, connections={selected_connections}")
 
     # Check if any button was actually clicked
     if not ctx.triggered:
@@ -1540,7 +1538,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
 
     # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-    logger.info(f"   triggered_id: {triggered_id}")
+    logger.debug(f"   triggered_id: {triggered_id}")
 
     if ".n_clicks" not in triggered_id:
         logger.warning("⚠️ Not a button click")
