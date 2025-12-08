@@ -198,6 +198,24 @@ class JobAgent:
                 result["error"] = icc_error.user_message
             return result
     
+    def _check_navigation_commands(self, user_input: str) -> Optional[str]:
+        """
+        Check if user input is a navigation command (back/reset).
+        Helper method consistent with BaseStageHandler.
+        
+        Args:
+            user_input: User's input
+            
+        Returns:
+            Optional[str]: 'back', 'reset', or None if not a navigation command
+        """
+        user_lower = user_input.lower().strip()
+        if user_lower in ["back", "go back", "previous", "undo"]:
+            return "back"
+        elif user_lower in ["reset", "start over", "cancel", "restart", "clear all"]:
+            return "reset"
+        return None
+    
     def _check_edit_commands(self, memory: Memory, user_input: str, tool_name: str) -> Optional[Dict[str, Any]]:
         """
         Check if user wants to go back and edit a previous parameter.
@@ -215,10 +233,11 @@ class JobAgent:
         Returns:
             Dict with action=ASK if edit command detected, None otherwise
         """
-        input_lower = user_input.lower().strip()
+        # Use the standardized navigation command checker
+        nav_cmd = self._check_navigation_commands(user_input)
         
         # Reset/start over - clear all parameters
-        if input_lower in ["reset", "start over", "restart", "clear all"]:
+        if nav_cmd == "reset":
             if not memory.gathered_params:
                 return {
                     "action": "ASK",
@@ -237,7 +256,7 @@ class JobAgent:
             return validation
         
         # Go back - remove last parameter
-        if input_lower in ["back", "go back", "undo", "previous"]:
+        if nav_cmd == "back":
             if not memory.gathered_params:
                 return {
                     "action": "ASK",

@@ -247,7 +247,44 @@ class RouterOrchestrator:
         """
         logger.info(f"💬 Detected conversational input: '{user_input}'")
         
-        # Build detailed context for conversational response
+        # Check if we're in parameter gathering mode (priority over stage-based help)
+        if memory.last_question and memory.gathered_params is not None:
+            param_context = f"""Currently gathering parameters for '{memory.current_tool}' job.
+
+Last question asked: "{memory.last_question}"
+
+Current parameters collected: {', '.join(memory.gathered_params.keys()) if memory.gathered_params else 'none yet'}
+
+Database configuration:"""
+            if memory.connection:
+                param_context += f"\n- Connection: {memory.connection}"
+            if memory.schema:
+                param_context += f"\n- Schema: {memory.schema}"
+            if memory.selected_tables:
+                param_context += f"\n- Tables: {', '.join(memory.selected_tables)}"
+            
+            param_context += f"""
+
+User is asking: "{user_input}"
+
+Provide helpful context-aware guidance about the last question asked. 
+Explain what parameter is needed, what the options mean, and how it affects the job.
+Be specific and reference the actual database configuration above."""
+            
+            try:
+                llm = ChatOllama(
+                    model="qwen3:8b",
+                    temperature=0.3,
+                    num_predict=512,
+                    timeout=15.0
+                )
+                response = llm.invoke(param_context)
+                return response.content.strip()
+            except Exception as e:
+                logger.error(f"Error in conversational handler: {e}")
+                return f"I'm gathering information for the {memory.current_tool} job. The last question was: {memory.last_question}"
+        
+        # Build detailed context for conversational response (stage-based)
         stage_context = f"Current stage: {memory.stage.value}"
         
         # Add database configuration context
@@ -452,7 +489,14 @@ Keep it conversational but informative."""
         Returns:
             Tuple of (updated memory, response)
         """
-        user_lower = user_utterance.lower()
+        user_lower = user_utterance.lower().strip()
+        
+        # Handle reset/back at job type selection - reset to fresh start
+        if user_lower in ["back", "go back", "reset", "start over", "cancel"]:
+            logger.info(f"User requested '{user_lower}' at job type selection - resetting to fresh start")
+            memory.reset()
+            memory.stage = Stage.ASK_JOB_TYPE
+            return memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
         
         if any(word in user_lower for word in ["compare", "comparesql", "diff", "difference"]):
             logger.info("User chose: COMPARE SQL")

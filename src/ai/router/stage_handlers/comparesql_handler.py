@@ -115,7 +115,19 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_ask_first_sql_method(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle ASK_FIRST_SQL_METHOD stage."""
-        user_lower = user_input.lower()
+        user_lower = user_input.lower().strip()
+        
+        # Handle back/reset commands - go back to job type selection
+        if user_lower in ["back", "go back", "reset", "start over", "cancel"]:
+            logger.info(f"User requested '{user_lower}' - going back to job type selection")
+            memory.current_tool = None
+            memory.job_type = None
+            return self._create_result(
+                memory,
+                "Okay! Let's start over.\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
+                Stage.ASK_JOB_TYPE
+            )
+        
         if any(word in user_lower for word in ["create", "generate"]):
             return self._create_result(
                 memory,
@@ -136,6 +148,14 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_need_first_natural_language(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_FIRST_NATURAL_LANGUAGE stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "For the FIRST query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You provide the SQL", Stage.ASK_FIRST_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         if not user_input or not user_input.strip():
             return self._create_result(
                 memory,
@@ -177,6 +197,14 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_need_first_user_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_FIRST_USER_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "For the FIRST query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You provide the SQL", Stage.ASK_FIRST_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         sql = user_input.strip()
         
         if not sql:
@@ -194,6 +222,16 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_confirm_first_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle CONFIRM_FIRST_GENERATED_SQL / CONFIRM_FIRST_USER_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            next_stage = Stage.NEED_FIRST_NATURAL_LANGUAGE if memory.stage == Stage.CONFIRM_FIRST_GENERATED_SQL else Stage.NEED_FIRST_USER_SQL
+            prompt = "Describe what data you want for the FIRST query." if next_stage == Stage.NEED_FIRST_NATURAL_LANGUAGE else "Please provide your FIRST SQL query:"
+            return self._create_result(memory, prompt, next_stage)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         user_lower = user_input.lower()
         
         if any(word in user_lower for word in ["yes", "ok", "correct"]):
@@ -217,7 +255,31 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_ask_second_sql_method(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle ASK_SECOND_SQL_METHOD stage."""
-        user_lower = user_input.lower()
+        user_lower = user_input.lower().strip()
+        
+        # Handle back/reset commands - go back to first SQL method
+        if user_lower in ["back", "go back"]:
+            logger.info("User requested 'back' - going back to first SQL method selection")
+            # Clear second query data
+            memory.second_sql = None
+            return self._create_result(
+                memory,
+                "Okay, let's go back to the first query.\n\nFor the FIRST query, how would you like to proceed?\n- 'create' - I'll generate SQL from your description\n- 'provide' - You provide the SQL query directly",
+                Stage.ASK_FIRST_SQL_METHOD
+            )
+        
+        if user_lower in ["reset", "start over", "cancel"]:
+            logger.info(f"User requested '{user_lower}' - going back to job type selection")
+            memory.current_tool = None
+            memory.job_type = None
+            memory.first_sql = None
+            memory.second_sql = None
+            return self._create_result(
+                memory,
+                "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
+                Stage.ASK_JOB_TYPE
+            )
+        
         if any(word in user_lower for word in ["create", "generate"]):
             return self._create_result(
                 memory,
@@ -238,6 +300,14 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_need_second_natural_language(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_SECOND_NATURAL_LANGUAGE stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "For the SECOND query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You provide the SQL", Stage.ASK_SECOND_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         if not user_input or not user_input.strip():
             return self._create_result(
                 memory,
@@ -279,6 +349,14 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_need_second_user_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_SECOND_USER_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "For the SECOND query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You provide the SQL", Stage.ASK_SECOND_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         sql = user_input.strip()
         
         if not sql:
@@ -296,6 +374,16 @@ class CompareSQLHandler(BaseStageHandler):
     
     async def _handle_confirm_second_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle CONFIRM_SECOND_GENERATED_SQL / CONFIRM_SECOND_USER_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            next_stage = Stage.NEED_SECOND_NATURAL_LANGUAGE if memory.stage == Stage.CONFIRM_SECOND_GENERATED_SQL else Stage.NEED_SECOND_USER_SQL
+            prompt = "Describe what data you want for the SECOND query." if next_stage == Stage.NEED_SECOND_NATURAL_LANGUAGE else "Please provide your SECOND SQL query:"
+            return self._create_result(memory, prompt, next_stage)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         user_lower = user_input.lower()
         
         if any(word in user_lower for word in ["yes", "ok", "correct"]):

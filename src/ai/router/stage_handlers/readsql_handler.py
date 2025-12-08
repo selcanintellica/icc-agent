@@ -105,7 +105,17 @@ class ReadSQLHandler(BaseStageHandler):
     
     async def _handle_ask_sql_method(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle ASK_SQL_METHOD stage."""
-        user_lower = user_input.lower()
+        user_lower = user_input.lower().strip()
+        
+        # Handle back/reset commands - go back to job type selection
+        if user_lower in ["back", "go back", "reset", "start over", "cancel"]:
+            logger.info(f"User requested '{user_lower}' - going back to job type selection")
+            memory.current_tool = None
+            return self._create_result(
+                memory,
+                "Okay! Let's start over.\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
+                Stage.ASK_JOB_TYPE
+            )
         
         if "create" in user_lower or "generate" in user_lower:
             logger.info("User chose: Agent will generate SQL")
@@ -130,6 +140,14 @@ class ReadSQLHandler(BaseStageHandler):
     async def _handle_need_natural_language(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle NEED_NATURAL_LANGUAGE stage."""
         logger.info("Generating SQL from natural language...")
+        
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "How would you like to proceed?\n- 'create' - I'll generate SQL for you\n- 'provide' - You'll write the SQL", Stage.ASK_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
         
         if not user_input or not user_input.strip():
             return self._create_result(
@@ -186,6 +204,14 @@ class ReadSQLHandler(BaseStageHandler):
         """Handle NEED_USER_SQL stage."""
         logger.info("User provided SQL directly")
         
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "How would you like to proceed?\n- 'create' - I'll generate SQL for you\n- 'provide' - You'll write the SQL", Stage.ASK_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         sql = user_input.strip()
         
         if not sql:
@@ -217,6 +243,14 @@ class ReadSQLHandler(BaseStageHandler):
     
     async def _handle_confirm_generated_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle CONFIRM_GENERATED_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "Describe what data you want in natural language.", Stage.NEED_NATURAL_LANGUAGE)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         user_lower = user_input.lower()
         
         if any(word in user_lower for word in ["yes", "ok", "correct", "execute", "run"]):
@@ -237,6 +271,15 @@ class ReadSQLHandler(BaseStageHandler):
     
     async def _handle_confirm_user_sql(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle CONFIRM_USER_SQL stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            memory.last_sql = None
+            return self._create_result(memory, "Please provide your SQL query:", Stage.NEED_USER_SQL)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
         user_lower = user_input.lower()
         
         if any(word in user_lower for word in ["yes", "ok", "correct", "execute", "run"]):
