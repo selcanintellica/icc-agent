@@ -9,7 +9,7 @@ This module provides table definition fetching with:
 
 import os
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import requests
 from requests.exceptions import Timeout, ConnectionError as RequestsConnectionError, RequestException
@@ -25,6 +25,85 @@ from src.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def format_table_definition_from_api(
+    table_name: str,
+    schema: str,
+    connection: str,
+    api_response: Dict[str, Any]
+) -> str:
+    """
+    Transform ICC API response into SQL agent format.
+    
+    Converts structured JSON (columnList) into descriptive text format
+    that the SQL agent expects.
+    
+    Args:
+        table_name: Name of the table
+        schema: Schema name
+        connection: Connection name
+        api_response: API response with columnList structure
+        
+    Returns:
+        Formatted table definition string
+    """
+    column_list = api_response.get("columnList", [])
+    
+    if not column_list:
+        return f"Table: {table_name}\nSchema: {schema}\nConnection: {connection}\n\nNo column information available."
+    
+    # Build the definition
+    definition_parts = [
+        f"Table: {table_name}",
+        f"Schema: {schema}",
+        f"Connection: {connection}",
+        "",
+        "Description:",
+        f"Table containing {len(column_list)} columns.",
+        "",
+        "Columns:"
+    ]
+    
+    # Add column details
+    for col in column_list:
+        col_name = col.get("columnName", "unknown")
+        col_type = col.get("columnType", "unknown")
+        col_length = col.get("columnLength", "")
+        
+        # Format type with length
+        if col_length and col_type in ["VARCHAR2", "VARCHAR", "CHAR"]:
+            type_info = f"{col_type}({col_length})"
+        elif col_length and col_type == "NUMBER":
+            type_info = f"{col_type}({col_length})"
+        else:
+            type_info = col_type
+        
+        definition_parts.append(f"- {col_name} ({type_info})")
+    
+    # Add notes about duplicates if any
+    if api_response.get("duplicateColumnExists", False):
+        dup_cols = api_response.get("duplicateColumnList", [])
+        definition_parts.extend([
+            "",
+            "Notes:",
+            f"- Warning: Duplicate columns detected: {', '.join(dup_cols) if dup_cols else 'see duplicateColumnList'}"
+        ])
+    
+    definition_parts.extend([
+        "",
+        "Foreign Keys:",
+        "Unknown (not provided by API)",
+        "",
+        "Example Queries:",
+        f"-- Get all records from {table_name}",
+        f"SELECT * FROM {schema}.{table_name};",
+        "",
+        f"-- Get specific columns",
+        f"SELECT {', '.join([c.get('columnName', '') for c in column_list[:3]])} FROM {schema}.{table_name};"
+    ])
+    
+    return "\n".join(definition_parts)
 
 
 # Retry configuration for table API calls
@@ -45,26 +124,34 @@ TABLE_API_RETRY_CONFIG = RetryConfig(
 
 class TableAPIClient:
     """
-    Client for fetching table definitions from API with retry support.
+    Client for fetching table definitions from ICC API with retry support.
     
     Supports mock mode via TABLE_API_MOCK environment variable for testing.
+    Uses ICC API endpoint: POST /utility/connection/{connection_id}/{schema}/{table}
     """
     
-    def __init__(self, base_url: Optional[str] = None, use_mock: Optional[bool] = None):
+    def __init__(
+        self, 
+        base_url: Optional[str] = None, 
+        use_mock: Optional[bool] = None,
+        auth_headers: Optional[Dict[str, str]] = None
+    ):
         """
         Initialize the API client.
         
         Args:
-            base_url: Base URL for the table definitions API.
-                     If None, reads from TABLE_API_BASE_URL environment variable.
+            base_url: Base URL for the ICC API.
+                     If None, reads from ICC_API_BASE_URL environment variable.
             use_mock: Whether to use mock data instead of API calls.
                      If None, reads from TABLE_API_MOCK environment variable.
+            auth_headers: Authentication headers (Authorization, TokenKey)
         """
         self.base_url = base_url or os.getenv(
             "TABLE_API_BASE_URL",
-            "http://localhost:8000/api/tables"
+            "https://172.16.22.13:8084/utility/table"
         )
-        self.timeout = int(os.getenv("TABLE_API_TIMEOUT", "10"))
+        self.timeout = float(os.getenv("API_TIMEOUT", "30"))
+        self.auth_headers = auth_headers or {}
         
         # Check if mock mode is enabled
         if use_mock is None:
@@ -76,57 +163,65 @@ class TableAPIClient:
         if self.use_mock:
             logger.info("TableAPIClient initialized in MOCK mode")
         else:
-            logger.info(f"TableAPIClient initialized with base URL: {self.base_url}")
+            logger.info(f"TableAPIClient initialized with ICC API: {self.base_url}")
     
     def fetch_table_definition(
         self,
-        connection: str,
+        connection_id: str,
         schema: str,
-        table: str
+        table: str,
+        connection_name: str = None
     ) -> Optional[str]:
         """
-        Fetch a single table definition from the API or mock data.
+        Fetch a single table definition from ICC API or mock data.
         
         Args:
-            connection: Connection name (e.g., 'ORACLE_10')
+            connection_id: Connection ID from API (e.g., '955448816772621')
             schema: Schema name (e.g., 'SALES')
             table: Table name (e.g., 'customers')
+            connection_name: Connection name for mock mode (e.g., 'ORACLE_10')
             
         Returns:
-            String containing the table definition, or None if not found
+            String containing the formatted table definition, or None if not found
         """
         # Use mock data if enabled
         if self.use_mock:
-            logger.info(f"Using mock data for: {connection}.{schema}.{table}")
-            definition = get_mock_table_definition(connection, schema, table)
+            # Mock mode needs connection_name, not connection_id
+            if not connection_name:
+                connection_name = "ORACLE_10"  # Default for testing
+            
+            logger.info(f"Using mock data for: {connection_name}.{schema}.{table}")
+            definition = get_mock_table_definition(connection_name, schema, table)
             
             if definition:
                 logger.info(f"Mock data found for {table} ({len(definition)} chars)")
             else:
-                logger.warning(f"No mock data found for {connection}.{schema}.{table}")
+                logger.warning(f"No mock data found for {connection_name}.{schema}.{table}")
             
             return definition
         
-        # Real API call with retry
-        url = f"{self.base_url}/{connection}/{schema}/{table}"
+        # Real ICC API call with retry
+        # Endpoint format: /utility/table/{table}/{connection_id}/{schema}
+        endpoint = f"{self.base_url}/{table}/{connection_id}/{schema}"
         
         try:
-            return self._fetch_with_retry(url, connection, schema, table)
+            return self._fetch_with_retry(endpoint, connection_id, schema, table, connection_name)
         except Exception as e:
             # Log but don't raise - return None to allow graceful degradation
-            logger.error(f"Failed to fetch table definition for {connection}.{schema}.{table}: {e}")
+            logger.error(f"Failed to fetch table definition for {connection_id}.{schema}.{table}: {e}")
             return None
     
     def _fetch_with_retry(
         self,
-        url: str,
-        connection: str,
+        endpoint: str,
+        connection_id: str,
         schema: str,
-        table: str
+        table: str,
+        connection_name: str = None
     ) -> Optional[str]:
         """Fetch table definition with retry logic."""
         def do_fetch():
-            return self._do_fetch_request(url, connection, schema, table)
+            return self._do_fetch_request(endpoint, connection_id, schema, table, connection_name)
         
         try:
             return retry_sync_operation(do_fetch, config=TABLE_API_RETRY_CONFIG)
@@ -137,38 +232,58 @@ class TableAPIClient:
     
     def _do_fetch_request(
         self,
-        url: str,
-        connection: str,
+        endpoint: str,
+        connection_id: str,
         schema: str,
-        table: str
+        table: str,
+        connection_name: str = None
     ) -> Optional[str]:
-        """Execute the actual HTTP request."""
-        logger.info(f"Fetching table definition from API: {connection}.{schema}.{table}")
+        """Execute the actual HTTP POST request to ICC API."""
+        logger.info(f"Fetching table definition from ICC API: {table}/{connection_id}/{schema}")
+        logger.debug(f"Endpoint: {endpoint}")
         
         try:
-            response = requests.get(url, timeout=self.timeout)
+            response = requests.post(
+                endpoint,
+                headers=self.auth_headers,
+                verify=False,  # ICC API uses self-signed cert
+                timeout=self.timeout
+            )
             
             if response.status_code == 404:
-                logger.warning(f"Table not found: {connection}.{schema}.{table}")
+                logger.warning(f"Table not found: {connection_id}.{schema}.{table}")
                 return None
+            
+            if response.status_code == 401 or response.status_code == 403:
+                logger.error(f"Authentication failed when fetching table definition")
+                raise APIUnavailableError(
+                    message=f"Authentication failed: {response.status_code}",
+                    user_message="Authentication failed. Please refresh and try again."
+                )
             
             if response.status_code >= 500:
                 # Server error - will be retried
                 raise APIUnavailableError(
-                    message=f"Server error {response.status_code} from table API",
-                    user_message="Table definition service is temporarily unavailable."
+                    message=f"Server error {response.status_code} from ICC API",
+                    user_message="ICC API is temporarily unavailable."
                 )
             
             response.raise_for_status()
             data = response.json()
             
-            definition = data.get("definition", "")
+            # Transform ICC API response to SQL agent format
+            formatted_definition = format_table_definition_from_api(
+                table_name=table,
+                schema=schema,
+                connection=connection_name or connection_id,
+                api_response=data
+            )
             
-            if definition:
-                logger.info(f"Successfully fetched definition for {table} ({len(definition)} chars)")
-                return definition
+            if formatted_definition:
+                logger.info(f"Successfully fetched and formatted definition for {table} ({len(formatted_definition)} chars)")
+                return formatted_definition
             else:
-                logger.warning(f"Empty definition returned for {connection}.{schema}.{table}")
+                logger.warning(f"Empty definition returned for {connection_id}.{schema}.{table}")
                 return None
                 
         except Timeout as e:
@@ -330,7 +445,7 @@ class TableAPIClient:
             return False
 
 
-# Global instance
+# Global instance (will be initialized with auth when needed)
 table_api_client = TableAPIClient()
 
 
@@ -339,26 +454,62 @@ def get_table_api_client() -> TableAPIClient:
     return table_api_client
 
 
+def set_table_api_auth(auth_headers: Dict[str, str]) -> None:
+    """
+    Set authentication headers for the global table API client.
+    
+    Args:
+        auth_headers: Dictionary with Authorization and TokenKey headers
+    """
+    global table_api_client
+    table_api_client.auth_headers = auth_headers
+    logger.info("Updated table API client auth headers")
+
+
 # Convenience functions
 def fetch_table_definitions(
     connection: str,
     schema: str,
     tables: List[str],
-    use_batch: bool = True
+    connection_id: str = None,
+    use_batch: bool = False  # ICC API doesn't support batch yet
 ) -> str:
     """
-    Fetch table definitions from API.
+    Fetch table definitions from ICC API.
     
     Args:
-        connection: Connection name
+        connection: Connection name (for mock mode)
         schema: Schema name
         tables: List of table names
-        use_batch: Whether to use batch API if available
+        connection_id: Connection ID for ICC API (required for real API)
+        use_batch: Whether to use batch API if available (not implemented yet)
         
     Returns:
         Combined string with all table definitions
     """
-    if use_batch:
-        return table_api_client.fetch_multiple_tables_batch(connection, schema, tables)
-    else:
-        return table_api_client.fetch_multiple_tables(connection, schema, tables)
+    # For now, always use individual calls since ICC API doesn't have batch endpoint yet
+    definitions = []
+    successful = 0
+    
+    logger.info(f"Fetching {len(tables)} table definitions")
+    
+    for table in tables:
+        definition = table_api_client.fetch_table_definition(
+            connection_id=connection_id or connection,  # Use connection_id if available, else connection name for mock
+            schema=schema,
+            table=table,
+            connection_name=connection
+        )
+        if definition:
+            definitions.append(definition)
+            definitions.append("\n" + "=" * 80 + "\n")  # Separator
+            successful += 1
+    
+    combined = "\n".join(definitions)
+    
+    logger.info(f"Successfully fetched {successful}/{len(tables)} table definitions")
+    
+    if successful == 0 and len(tables) > 0:
+        logger.warning("No table definitions were fetched successfully")
+    
+    return combined

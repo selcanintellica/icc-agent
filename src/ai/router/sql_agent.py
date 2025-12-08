@@ -112,15 +112,17 @@ class SchemaFetcher:
     def fetch_schemas(
         connection: str,
         schema: str,
-        selected_tables: List[str]
+        selected_tables: List[str],
+        connection_id: str = None
     ) -> str:
         """
         Fetch table definitions from API.
         
         Args:
-            connection: Database connection name
+            connection: Database connection name (for display/mock mode)
             schema: Database schema name
             selected_tables: List of table names
+            connection_id: Connection ID for ICC API (if available)
             
         Returns:
             str: Schema definitions or error message
@@ -129,10 +131,16 @@ class SchemaFetcher:
             logger.warning("Missing connection/schema/tables, cannot fetch definitions")
             return "ERROR: Connection, schema, and tables must be provided."
         
-        logger.info("Fetching table definitions from API...")
+        logger.info(f"Fetching table definitions from API for connection: {connection} (ID: {connection_id}), schema: {schema}, tables: {selected_tables}")
         
         try:
-            schema_definitions = fetch_table_definitions(connection, schema, selected_tables)
+            # Pass connection_id if available (for real API), otherwise connection name (for mock)
+            schema_definitions = fetch_table_definitions(
+                connection=connection,
+                schema=schema,
+                tables=selected_tables,
+                connection_id=connection_id
+            )
             
             if not schema_definitions or schema_definitions.strip() == "":
                 logger.warning("No schema definitions fetched from API")
@@ -284,7 +292,8 @@ class SQLAgent:
         user_input: str,
         connection: str = None,
         schema: str = None,
-        selected_tables: List[str] = None
+        selected_tables: List[str] = None,
+        connection_id: str = None
     ) -> SQLSpec:
         """
         Generate SQL query from natural language input.
@@ -294,12 +303,13 @@ class SQLAgent:
             connection: Database connection name
             schema: Database schema name
             selected_tables: List of table names to include in context
+            connection_id: Connection ID for ICC API (optional)
             
         Returns:
             SQLSpec: Generated SQL with reasoning
         """
         logger.info(f"SQL Agent: Generating SQL from: '{user_input}'")
-        logger.info(f"Connection: {connection}, Schema: {schema}")
+        logger.info(f"Connection: {connection} (ID: {connection_id}), Schema: {schema}")
         logger.info(f"Selected tables: {selected_tables}")
         
         # Validate input
@@ -313,7 +323,7 @@ class SQLAgent:
         try:
             # Fetch schema definitions
             schema_definitions = self.schema_fetcher.fetch_schemas(
-                connection, schema, selected_tables
+                connection, schema, selected_tables, connection_id
             )
             
             # Check for schema fetch errors
@@ -492,7 +502,8 @@ def call_sql_agent(
     user_input: str,
     connection: str = None,
     schema: str = None,
-    selected_tables: List[str] = None
+    selected_tables: List[str] = None,
+    connection_id: str = None
 ) -> SQLSpec:
     """
     Call the SQL generation agent (backward compatibility function).
@@ -502,6 +513,7 @@ def call_sql_agent(
         connection: Database connection name
         schema: Database schema name
         selected_tables: List of table names to include in context
+        connection_id: Connection ID for ICC API (optional)
         
     Returns:
         SQLSpec: Generated SQL with reasoning
@@ -510,5 +522,6 @@ def call_sql_agent(
         user_input,
         connection=connection,
         schema=schema,
-        selected_tables=selected_tables
+        selected_tables=selected_tables,
+        connection_id=connection_id
     )

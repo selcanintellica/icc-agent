@@ -246,6 +246,105 @@ class ICCAPIClient:
                 cause=e
             )
     
+    async def fetch_tables(self, connection_id: str, schema: str) -> List[str]:
+        """
+        Fetch available tables for a specific connection and schema.
+        
+        Args:
+            connection_id: The connection ID (e.g., "955448816772621")
+            schema: The schema name (e.g., "HR")
+            
+        Returns:
+            List of table names:
+            ["EMPLOYEES", "DEPARTMENTS", "JOBS", ...]
+            
+        Raises:
+            NetworkTimeoutError: If request times out
+            APIUnavailableError: If API is unavailable
+            HTTPError: For other HTTP errors
+        """
+        if not connection_id:
+            raise UnknownConnectionError(
+                connection_name="(empty)",
+                message="Connection ID cannot be empty",
+                user_message="Please select a valid connection."
+            )
+        
+        if not schema:
+            logger.warning("Schema name is empty, cannot fetch tables")
+            return []
+        
+        endpoint = f"{self.base_url}/utility/connection/{connection_id}/{schema}"
+        logger.info(f"Fetching tables from: {endpoint}")
+        
+        try:
+            return await self._fetch_tables_with_retry(endpoint)
+        except RetryExhaustedError as e:
+            logger.error(f"Failed to fetch tables after retries: {e.last_exception}")
+            raise APIUnavailableError(
+                message=f"Failed to fetch tables: {e.last_exception}",
+                user_message="Unable to retrieve available tables. Please try again later.",
+                service_name="Table API",
+                cause=e.last_exception
+            )
+    
+    @retry(config=RetryPresets.API_CALL)
+    async def _fetch_tables_with_retry(self, endpoint: str) -> List[str]:
+        """Fetch tables with automatic retry."""
+        try:
+            async with httpx.AsyncClient(
+                headers=self.auth_headers,
+                verify=False,
+                timeout=self.timeout
+            ) as client:
+                resp = await client.post(endpoint)
+                
+                if resp.status_code == 401 or resp.status_code == 403:
+                    raise AuthenticationError(
+                        error_code=ErrorCode.AUTH_FAILED,
+                        message=f"Authentication failed when fetching tables: {resp.status_code}",
+                        user_message="Authentication failed. Please refresh and try again."
+                    )
+                
+                if resp.status_code >= 500:
+                    raise APIUnavailableError(
+                        message=f"Server error {resp.status_code} when fetching tables",
+                        user_message="The server is temporarily unavailable."
+                    )
+                
+                resp.raise_for_status()
+                tables = resp.json()
+                
+                if not isinstance(tables, list):
+                    logger.warning(f"Expected list of tables, got {type(tables)}")
+                    return []
+                
+                logger.info(f"Fetched {len(tables)} tables")
+                return tables
+                
+        except httpx.TimeoutException as e:
+            logger.error(f"Timeout fetching tables: {e}")
+            raise NetworkTimeoutError(
+                message="Timeout fetching tables",
+                user_message="Connection to the server timed out. Please try again.",
+                cause=e
+            )
+        except httpx.ConnectError as e:
+            logger.error(f"Connection error fetching tables: {e}")
+            raise APIUnavailableError(
+                message=f"Could not connect to fetch tables: {e}",
+                user_message="Unable to connect to the server. Please check your connection.",
+                cause=e
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error fetching tables: {e.response.status_code}")
+            raise HTTPError(
+                message=f"HTTP {e.response.status_code} when fetching tables",
+                user_message="Failed to retrieve tables. Please try again.",
+                status_code=e.response.status_code,
+                cause=e
+            )
+    
     def _map_connections(self, objects: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
         """Map raw connection objects to internal format."""
         result: Dict[str, Dict[str, Any]] = {}
