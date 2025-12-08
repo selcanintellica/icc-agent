@@ -1335,9 +1335,11 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
     # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
+    # Get or create memory for this session
+    memory = session_manager.get_or_create_session(session_id)
+    
     # Directly assign the parameter in memory WITHOUT calling LLM
-    if session_id in session_memories:
-        memory = session_memories[session_id]
+    if memory:
         memory.gathered_params[param_name] = selected_schema
         logger.info(f"Directly assigned {param_name}={selected_schema} (bypassed LLM)")
 
@@ -1402,7 +1404,7 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
             chat_data.append(error_message)
     else:
         # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' not found in session_memories during schema selection")
+        logger.warning(f"Session '{session_id}' could not be created during schema selection")
         error_message = {
             "role": "error",
             "content": "Session not initialized. Please start a new conversation by typing a message first.",
@@ -1488,9 +1490,11 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
+    # Get or create memory for this session
+    memory = session_manager.get_or_create_session(session_id)
+    
     # Directly assign the parameter in memory WITHOUT calling LLM
-    if session_id in session_memories:
-        memory = session_memories[session_id]
+    if memory:
         memory.gathered_params[param_name] = selected_connection
         logger.info(f"Directly assigned {param_name}={selected_connection} (bypassed LLM)")
 
@@ -1560,7 +1564,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             chat_data.append(error_message)
     else:
         # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' not found in session_memories during connection selection")
+        logger.warning(f"Session '{session_id}' could not be created during connection selection")
         error_message = {
             "role": "error",
             "content": "Session not initialized. Please start a new conversation by typing a message first.",

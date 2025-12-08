@@ -93,8 +93,8 @@ class ReadSQLHandler(BaseStageHandler):
                     is_error=True
                 )
             
-            # Delegate to strategy
-            return await strategy.execute(memory, user_input)
+            # Delegate to strategy with automatic help detection
+            return await strategy.handle_with_help(memory, user_input)
 
         except ICCBaseError as e:
             logger.error(f"ICC error in ReadSQL handler: {e}")

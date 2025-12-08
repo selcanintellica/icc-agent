@@ -116,7 +116,7 @@ class CompareSQLHandler(BaseStageHandler):
             
             if strategy:
                 # Delegate to strategy
-                return await strategy.execute(memory, user_input)
+                return await strategy.handle_with_help(memory, user_input)
             else:
                 logger.warning(f"No strategy registered for stage {memory.stage.value}")
                 return self._create_result(memory, "Unhandled stage in CompareSQL flow")

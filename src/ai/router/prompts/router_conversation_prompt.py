@@ -103,8 +103,13 @@ Be specific and reference the actual database configuration above."""
 
 User question/input: "{user_input}"
 
-Respond naturally and helpfully to guide the user based on the context above. 
-Be specific about what they need to do at this stage.
-Keep it conversational but informative."""
+IMPORTANT INSTRUCTIONS:
+- Provide helpful guidance based on the CURRENT STAGE CONTEXT above
+- DO NOT interpret stage names literally (e.g., "need_second_user_sql" means "provide the second SQL query for comparison", NOT "create a second database user")
+- Focus on what the user needs to do RIGHT NOW at this stage
+- Be specific about the format or type of input expected
+- Keep it conversational but clear and actionable
+
+Respond naturally and helpfully to guide the user."""
         
         return prompt

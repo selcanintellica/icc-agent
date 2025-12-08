@@ -16,6 +16,7 @@ from typing import Dict, Type, Optional
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.stage_handlers.base_handler import StageHandlerResult
+from src.ai.router.utils.help_handler import HelpHandler, is_help_request
 
 logger = logging.getLogger(__name__)
 
@@ -28,10 +29,44 @@ class StageStrategy(ABC):
     a specific stage, making the codebase more modular and testable.
     """
     
+    def __init__(self):
+        """Initialize strategy with help handler."""
+        self._help_handler = HelpHandler()
+    
+    async def handle_with_help(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        """
+        Handle user input with automatic help detection.
+        
+        This is the main entry point that checks for help requests
+        before delegating to the strategy's execute method.
+        
+        Args:
+            memory: Current conversation memory
+            user_input: User's input message
+            
+        Returns:
+            StageHandlerResult: Result with updated memory and response
+        """
+        # Check if user is requesting help
+        if is_help_request(user_input):
+            logger.debug(f"Help request detected in stage {memory.stage.value}")
+            try:
+                help_response = await self._help_handler.get_help_response(memory, user_input)
+                return self._create_result(memory, help_response)
+            except Exception as e:
+                logger.error(f"Error handling help request: {e}")
+                # Fall through to normal execution if help fails
+        
+        # Normal execution
+        return await self.execute(memory, user_input)
+    
     @abstractmethod
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """
         Execute the stage-specific logic.
+        
+        Subclasses implement this method with their stage-specific logic.
+        This method is called after help detection.
         
         Args:
             memory: Current conversation memory

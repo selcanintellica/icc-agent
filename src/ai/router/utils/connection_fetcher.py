@@ -4,8 +4,6 @@ Connection and schema fetching utility.
 Provides reusable methods for fetching connections and schemas following DRY principle.
 """
 
-"""
-
 import logging
 from typing import Dict, Any
 from src.ai.router.stage_handlers.base_handler import StageHandlerResult

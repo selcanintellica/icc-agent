@@ -17,7 +17,7 @@ from .stage_handlers.writedata_handler import WriteDataHandler
 from .stage_handlers.sendemail_handler import SendEmailHandler
 from .sql_agent import create_sql_agent, SQLAgent
 from .job_agent import create_job_agent, JobAgent
-from .prompts import RouterConversationPrompt
+from .utils.help_handler import is_help_request, HelpHandler
 from src.errors import (
     ICCBaseError,
     ErrorHandler,
@@ -25,59 +25,8 @@ from src.errors import (
     ConfigurationError,
     ValidationError,
 )
-from langchain_ollama import ChatOllama
 
 logger = logging.getLogger(__name__)
-
-
-def is_conversational_input(user_input: str) -> bool:
-    """
-    Detect if user input is conversational (question/clarification) vs task answer.
-    
-    Args:
-        user_input: User's input
-        
-    Returns:
-        True if conversational, False if likely task answer
-    """
-    input_lower = user_input.lower().strip()
-    
-    # Ignore common commands
-    commands = [
-        "readsql", "comparesql", "create", "provide", "write", "email",
-        "done", "both", "new query", "start", "yes", "no", "skip",
-        "okay", "ok", "sure", "proceed"
-    ]
-    if input_lower in commands:
-        return False
-    
-    # Question patterns - must start with these
-    question_starters = [
-        "what ", "why ", "how ", "when ", "where ", "who ",
-        "can you", "could you", "would you", "will you",
-        "tell me", "explain", "show me"
-    ]
-    
-    for pattern in question_starters:
-        if input_lower.startswith(pattern):
-            return True
-    
-    # Help and confusion indicators (anywhere in text)
-    help_phrases = [
-        "help", "i don't understand", "i'm confused", "not sure what",
-        "i don't know", "i do not know", "don't know what",
-        "no idea", "unsure", "what does", "what is", "what are"
-    ]
-    
-    for phrase in help_phrases:
-        if phrase in input_lower:
-            return True
-    
-    # Question mark
-    if "?" in input_lower:
-        return True
-    
-    return False
 
 
 class RouterConfig:
@@ -235,68 +184,6 @@ class RouterOrchestrator:
         
         return registry
     
-    def _handle_conversational_input(self, memory: Memory, user_input: str) -> str:
-        """
-        Handle conversational input like questions or help requests.
-        
-        Args:
-            memory: Current conversation memory
-            user_input: User's conversational input
-            
-            Returns:
-            Conversational response
-        """
-        logger.debug(f"Detected conversational input: '{user_input}'")        # Check if we're in parameter gathering mode (priority over stage-based help)
-        # Only use parameter gathering help if we're NOT in a post-job stage
-        post_job_stages = {Stage.SHOW_RESULTS, Stage.NEED_WRITE_OR_EMAIL, Stage.DONE}
-        in_param_gathering = (
-            memory.last_question and 
-            memory.gathered_params is not None and 
-            memory.stage not in post_job_stages
-        )
-        
-        if in_param_gathering:
-            param_context = RouterConversationPrompt.build_param_gathering_context(
-                memory=memory,
-                user_input=user_input
-            )
-            
-            try:
-                llm = ChatOllama(
-                    model="qwen3:8b",
-                    temperature=0.3,
-                    num_predict=512,
-                    timeout=15.0
-                )
-                response = llm.invoke(param_context)
-                return response.content.strip()
-            except Exception as e:
-                logger.error(f"Error in conversational handler: {e}")
-                icc_error = ErrorHandler.handle(e, {"context": "parameter_gathering_conversation", "tool": memory.current_tool})
-                return f"I'm gathering information for the {memory.current_tool} job. The last question was: {memory.last_question}"
-        
-        # Build detailed context for conversational response (stage-based)
-        prompt = RouterConversationPrompt.build_stage_context(
-            memory=memory,
-            user_input=user_input
-        )
-        
-        try:
-            # Use a simple LLM call for conversational response
-            llm = ChatOllama(
-                model="qwen3:8b",
-                temperature=0.3,
-                num_predict=512,
-                timeout=15.0
-            )
-            response = llm.invoke(prompt)
-            return response.content.strip()
-        except Exception as e:
-            logger.error(f"Error in conversational handler: {e}")
-            icc_error = ErrorHandler.handle(e, {"context": "stage_conversation", "stage": memory.stage.value})
-            # Fallback to a helpful default based on current stage
-            return f"I'm here to help! Currently at stage: {memory.stage.value}. Let me know how I can assist you."
-    
     async def handle_turn(self, memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
         """
         Handle one conversational turn with comprehensive error handling.
@@ -314,11 +201,6 @@ class RouterOrchestrator:
             # Validate input
             if user_utterance is None:
                 user_utterance = ""
-            
-            # Check for conversational input (help, questions, etc.)
-            if user_utterance and is_conversational_input(user_utterance):
-                response = self._handle_conversational_input(memory, user_utterance)
-                return memory, response
             
             # Handle initial stages
             if memory.stage == Stage.START:
