@@ -15,7 +15,11 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.ai.router.memory import Memory
-from src.ai.router.prompts import PromptManager
+from src.ai.router.prompts import (
+    PromptManager,
+    JobAgentConversationPrompt,
+    ParameterEditIdentificationPrompt,
+)
 from src.ai.router.validators import ParameterValidator, YesNoExtractor
 from src.utils.retry import retry, RetryPresets, RetryExhaustedError
 from src.errors import (
@@ -323,27 +327,8 @@ class JobAgent:
         if not params:
             return None
         
-        # Build prompt for LLM
-        param_list = '\n'.join([f"- {key}: {value}" for key, value in params.items()])
-        
-        prompt = f"""You are helping identify which parameter a user wants to edit.
-
-Current parameters:
-{param_list}
-
-User input: "{user_input}"
-
-Identify which parameter the user wants to edit. Respond with ONLY the exact parameter name from the list above, or "NONE" if you cannot determine it.
-
-Examples:
-User: "edit job name" → job_name
-User: "change the connection" → connection
-User: "fix folder" → folder
-User: "edit name" → job_name
-User: "update execute" → execute_query
-User: "change something random" → NONE
-
-Response (parameter name only):"""
+        # Build prompt using centralized template
+        prompt = ParameterEditIdentificationPrompt.build(user_input, params)
 
         try:
             messages = [HumanMessage(content=prompt)]
@@ -457,28 +442,13 @@ Response (parameter name only):"""
         """
         logger.info(f"Detected conversational input: {user_input}")
         
-        # Build context for conversational response
-        context = f"""
-You are helping the user configure a '{tool_name}' job.
-
-Current progress:
-{json.dumps(memory.gathered_params, indent=2)}
-
-Last question asked: {memory.last_question or "(none yet)"}
-
-The user said: "{user_input}"
-
-Respond naturally to their question or comment, then remind them what we're working on and what information you still need.
-
-Be conversational and helpful. After your response, restate the last question or ask the next needed parameter.
-
-Output format:
-{{
-    "action": "ASK",
-    "question": "Your conversational response here...",
-    "params": {{}}
-}}
-"""
+        # Build context using centralized template
+        context = JobAgentConversationPrompt.build(
+            tool_name=tool_name,
+            gathered_params=memory.gathered_params,
+            last_question=memory.last_question,
+            user_input=user_input
+        )
         
         try:
             result = self._invoke_llm_with_retry(context, is_conversation=True)
@@ -562,15 +532,15 @@ Missing: {', '.join(missing) if missing else 'none'}
 Output JSON only:"""
             
         else:
-            # Fallback to parameter extraction prompt
-            system_prompt = self.prompt_manager.get_prompt("parameter_extraction")
+            # Fallback: Use generic extraction (should not happen with proper tool routing)
+            logger.warning(f"Unknown tool name '{tool_name}', using fallback extraction")
+            system_prompt = f"You are extracting parameters for {tool_name} job. Extract from user input and ask for missing required parameters."
             prompt_text = f"""Tool: {tool_name}
 Current params: {json.dumps(memory.gathered_params)}
 User said: "{user_input}"
 
-IMPORTANT: Output ONLY the JSON response.
-
-Extract parameters or ask for missing ones."""
+Extract any parameters mentioned and ask for missing required ones.
+Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}, "question": "..." if ASK}}"""
         
         logger.info(f"Calling LLM with model: {self.config.model_name}")
         logger.debug(f"System prompt:\n{system_prompt}")
@@ -578,14 +548,25 @@ Extract parameters or ask for missing ones."""
         
         full_prompt = f"{system_prompt}\n\n{prompt_text}"
         return self._invoke_llm_with_retry(full_prompt)
-
-    @retry(config=RetryPresets.LLM_CALL)
+    
     def _invoke_llm_with_retry(
         self,
         prompt: str,
         is_conversation: bool = False
-    ) -> Dict[str, Any]:
-        """Invoke LLM with automatic retry on failure."""
+    ) -> str:
+        """
+        Invoke LLM with retry logic and error handling.
+        
+        Args:
+            prompt: The prompt to send
+            is_conversation: Whether this is a conversational message
+            
+        Returns:
+            LLM response content
+            
+        Raises:
+            LLMError: On LLM invocation failure
+        """
         try:
             system_content = "You are a helpful assistant helping configure database jobs. Be friendly and concise." if is_conversation else "You are a parameter extraction assistant. Output JSON only."
             messages = [

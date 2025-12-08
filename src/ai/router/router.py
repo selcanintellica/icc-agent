@@ -17,6 +17,7 @@ from .stage_handlers.writedata_handler import WriteDataHandler
 from .stage_handlers.sendemail_handler import SendEmailHandler
 from .sql_agent import create_sql_agent, SQLAgent
 from .job_agent import create_job_agent, JobAgent
+from .prompts import RouterConversationPrompt
 from src.errors import (
     ICCBaseError,
     ErrorHandler,
@@ -257,27 +258,10 @@ class RouterOrchestrator:
         )
         
         if in_param_gathering:
-            param_context = f"""Currently gathering parameters for '{memory.current_tool}' job.
-
-Last question asked: "{memory.last_question}"
-
-Current parameters collected: {', '.join(memory.gathered_params.keys()) if memory.gathered_params else 'none yet'}
-
-Database configuration:"""
-            if memory.connection:
-                param_context += f"\n- Connection: {memory.connection}"
-            if memory.schema:
-                param_context += f"\n- Schema: {memory.schema}"
-            if memory.selected_tables:
-                param_context += f"\n- Tables: {', '.join(memory.selected_tables)}"
-            
-            param_context += f"""
-
-User is asking: "{user_input}"
-
-Provide helpful context-aware guidance about the last question asked. 
-Explain what parameter is needed, what the options mean, and how it affects the job.
-Be specific and reference the actual database configuration above."""
+            param_context = RouterConversationPrompt.build_param_gathering_context(
+                memory=memory,
+                user_input=user_input
+            )
             
             try:
                 llm = ChatOllama(
@@ -293,118 +277,10 @@ Be specific and reference the actual database configuration above."""
                 return f"I'm gathering information for the {memory.current_tool} job. The last question was: {memory.last_question}"
         
         # Build detailed context for conversational response (stage-based)
-        stage_context = f"Current stage: {memory.stage.value}"
-        
-        # Add database configuration context
-        db_context = ""
-        if memory.connection or memory.schema or memory.selected_tables:
-            db_context = f"\n\nCurrent database configuration:"
-            if memory.connection:
-                db_context += f"\n- Connection: {memory.connection}"
-            if memory.schema:
-                db_context += f"\n- Schema: {memory.schema}"
-            if memory.selected_tables:
-                db_context += f"\n- Tables: {', '.join(memory.selected_tables)}"
-        
-        # Add stage-specific context with SQL information
-        if memory.stage == Stage.ASK_SQL_METHOD:
-            stage_context += f"""{db_context}
-
-The user needs to choose how to provide SQL:
-- 'create' - I'll generate SQL from natural language description
-- 'provide' - User will write the SQL query themselves
-
-Help them understand the options and what they need to do."""
-        
-        elif memory.stage == Stage.NEED_NATURAL_LANGUAGE:
-            stage_context += f"""{db_context}
-
-The user should describe what data they want in plain English.
-I will then convert it to SQL query using the configured tables above.
-
-Examples: "get all customers from USA", "show orders from last month"
-
-Help them understand they should describe their data needs naturally."""
-        
-        elif memory.stage == Stage.NEED_USER_SQL:
-            stage_context += f"""{db_context}
-
-The user should provide a SQL query to execute against the database above.
-They need to write actual SQL like: SELECT * FROM table_name WHERE condition
-
-Help them understand what SQL format is expected and reference the tables/schema available."""
-        
-        # CompareSQL specific stages
-        elif memory.stage in [Stage.ASK_FIRST_SQL_METHOD, Stage.ASK_SECOND_SQL_METHOD]:
-            query_num = "FIRST" if memory.stage == Stage.ASK_FIRST_SQL_METHOD else "SECOND"
-            stage_context += f"""{db_context}
-
-The user needs to choose how to provide the {query_num} SQL query for comparison:
-- 'create' - I'll generate SQL from natural language description
-- 'provide' - User will write the SQL query themselves
-
-Help them understand the options."""
-        
-        elif memory.stage in [Stage.NEED_FIRST_NATURAL_LANGUAGE, Stage.NEED_SECOND_NATURAL_LANGUAGE]:
-            query_num = "FIRST" if memory.stage == Stage.NEED_FIRST_NATURAL_LANGUAGE else "SECOND"
-            stage_context += f"""{db_context}
-
-The user should describe what data they want for the {query_num} query in plain English.
-I will convert it to SQL using the configured tables above.
-
-Examples: "get all employees", "show customers with orders"
-
-Help them describe their data needs naturally."""
-        
-        elif memory.stage in [Stage.NEED_FIRST_USER_SQL, Stage.NEED_SECOND_USER_SQL]:
-            query_num = "FIRST" if memory.stage == Stage.NEED_FIRST_USER_SQL else "SECOND"
-            stage_context += f"""{db_context}
-
-The user should provide the {query_num} SQL query to execute and compare.
-They need to write actual SQL like: SELECT * FROM table_name WHERE condition
-
-This is for a CompareSQL job, so both queries should return comparable result sets.
-
-Help them understand what SQL format is expected and reference the tables/schema available."""
-        
-        elif memory.stage in [Stage.CONFIRM_FIRST_GENERATED_SQL, Stage.CONFIRM_FIRST_USER_SQL, 
-                               Stage.CONFIRM_SECOND_GENERATED_SQL, Stage.CONFIRM_SECOND_USER_SQL]:
-            query_num = "FIRST" if "FIRST" in memory.stage.value.upper() else "SECOND"
-            sql_shown = memory.first_sql if query_num == "FIRST" else memory.second_sql if hasattr(memory, 'second_sql') else "the SQL query"
-            stage_context += f"""{db_context}
-
-User is reviewing the {query_num} SQL query: {str(sql_shown)[:100]}...
-They need to confirm (yes/no) or ask for modifications.
-
-This is for a CompareSQL job - they're setting up queries to compare results.
-
-Help them understand they can accept or request changes."""
-        
-        elif memory.stage == Stage.CONFIRM_GENERATED_SQL or memory.stage == Stage.CONFIRM_USER_SQL:
-            sql_shown = memory.last_sql if hasattr(memory, 'last_sql') else "the SQL query"
-            stage_context += f"""{db_context}
-
-User is reviewing SQL: {sql_shown[:100]}...
-They need to confirm (yes/no) or ask for modifications.
-
-Help them understand they can accept or request changes."""
-        
-        elif memory.stage == Stage.ASK_JOB_TYPE:
-            stage_context += "\n\nThe user needs to choose between:\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries"
-        
-        elif memory.stage == Stage.NEED_WRITE_OR_EMAIL:
-            if memory.execute_query_enabled:
-                stage_context += "\n\nData was written. User can:\n- 'email' - Send results via email\n- 'done' - Finish"
-            else:
-                stage_context += "\n\nQuery complete. User can:\n- 'write' - Save results to table\n- 'done' - Finish"
-        
-        prompt = f"""{stage_context}
-
-User question/input: "{user_input}"
-
-Respond naturally and helpfully to guide the user based on the context above. 
-Be specific about what they need to do at this stage.
-Keep it conversational but informative."""
+        prompt = RouterConversationPrompt.build_stage_context(
+            memory=memory,
+            user_input=user_input
+        )
         
         try:
             # Use a simple LLM call for conversational response
@@ -418,8 +294,8 @@ Keep it conversational but informative."""
             return response.content.strip()
         except Exception as e:
             logger.error(f"Error in conversational handler: {e}")
-            # Fallback to a helpful default
-            return f"I'm here to help! {stage_context.split('User needs to choose')[1] if 'User needs to choose' in stage_context else 'Let me know how I can assist you.'}"
+            # Fallback to a helpful default based on current stage
+            return f"I'm here to help! Currently at stage: {memory.stage.value}. Let me know how I can assist you."
     
     async def handle_turn(self, memory: Memory, user_utterance: str) -> Tuple[Memory, str]:
         """

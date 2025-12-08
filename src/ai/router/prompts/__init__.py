@@ -10,7 +10,12 @@ from src.ai.router.prompts.prompt_manager import (
     WriteDataPrompt,
     ReadSQLPrompt,
     SendEmailPrompt,
-    ParameterExtractionPrompt,
+)
+from src.ai.router.prompts.conversation_prompts import (
+    JobAgentConversationPrompt,
+    ParameterEditIdentificationPrompt,
+    RouterConversationPrompt,
+    SQLGenerationPrompt,
 )
 
 __all__ = [
@@ -19,5 +24,8 @@ __all__ = [
     "WriteDataPrompt",
     "ReadSQLPrompt",
     "SendEmailPrompt",
-    "ParameterExtractionPrompt",
+    "JobAgentConversationPrompt",
+    "ParameterEditIdentificationPrompt",
+    "RouterConversationPrompt",
+    "SQLGenerationPrompt",
 ]
