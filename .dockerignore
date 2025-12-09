@@ -54,5 +54,5 @@ requirements_app.txt
 # Tests
 tests/
 
-*.txt
+# Logs
 *.jsonl

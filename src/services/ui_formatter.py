@@ -6,11 +6,22 @@ Extracts UI formatting logic from app.py following SOLID principles:
 - Open/Closed: Easy to extend with new message types
 """
 
+from __future__ import annotations
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 from datetime import datetime
-import dash_bootstrap_components as dbc
-from dash import html, dcc
+
+# Optional Dash imports (only needed for Dash UI, not FastAPI backend)
+try:
+    import dash_bootstrap_components as dbc
+    from dash import html, dcc
+    DASH_AVAILABLE = True
+except ImportError:
+    DASH_AVAILABLE = False
+    dbc = None
+    html = None
+    dcc = None
+
 from src.errors import ICCBaseError, ErrorHandler, ErrorCategory, ErrorCode
 
 logger = logging.getLogger(__name__)
