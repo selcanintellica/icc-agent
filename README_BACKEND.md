@@ -36,10 +36,16 @@ cp .env.example .env
 ### 2. Start the Backend Server
 
 ```bash
-# Start FastAPI server
-uvicorn backend.main:app --reload --port 8000
+# Windows - Use the batch script (recommended)
+.\start_backend.bat
 
-# Or use the Python script
+# Linux/Mac - Use the shell script
+./start_backend.sh
+
+# Or start manually with uvicorn
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Or use the Python script directly
 python backend/main.py
 ```
 
@@ -527,7 +533,7 @@ docker run -p 8000:8000 --env-file .env icc-agent-backend
 
 ### Production Server
 
-Use Gunicorn with Uvicorn workers:
+**Linux/Mac** - Use Gunicorn with Uvicorn workers:
 
 ```bash
 pip install gunicorn
@@ -537,6 +543,12 @@ gunicorn backend.main:app \
   --worker-class uvicorn.workers.UvicornWorker \
   --bind 0.0.0.0:8000 \
   --timeout 120
+```
+
+**Windows** - Use Uvicorn directly (Gunicorn doesn't support Windows):
+
+```bash
+uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 ---
@@ -549,11 +561,19 @@ The Dash UI (`app.py`) remains available for testing:
 # Start Dash UI (port 8050)
 uv run app.py
 
-# Start FastAPI Backend (port 8000)
-uvicorn backend.main:app --port 8000
+# Start FastAPI Backend (port 8000) - Windows
+.\start_backend.bat
+
+# Start FastAPI Backend (port 8000) - Linux/Mac
+./start_backend.sh
 ```
 
 Both can run simultaneously for testing and development.
+
+**Note**: The startup scripts automatically:
+- Activate the virtual environment (`.venv`)
+- Set the correct PYTHONPATH
+- Start uvicorn with auto-reload enabled
 
 ---
 
