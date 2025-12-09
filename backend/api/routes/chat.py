@@ -75,7 +75,7 @@ async def send_message(
             user_input=request.message,
             memory=memory,
             connection=request.connection,
-            schema=request.schema,
+            schema=request.schema_name,  # Use schema_name instead of schema
             selected_tables=request.tables
         )
         

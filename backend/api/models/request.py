@@ -27,9 +27,10 @@ class ChatMessageRequest(BaseModel):
         None,
         description="Database connection ID (optional)"
     )
-    schema: Optional[str] = Field(
+    schema_name: Optional[str] = Field(
         None,
-        description="Database schema name (optional)"
+        description="Database schema name (optional)",
+        alias="schema"  # Accept 'schema' in JSON but use 'schema_name' internally
     )
     tables: Optional[List[str]] = Field(
         None,
@@ -37,6 +38,7 @@ class ChatMessageRequest(BaseModel):
     )
     
     class Config:
+        populate_by_name = True  # Allow using both 'schema' and 'schema_name'
         json_schema_extra = {
             "example": {
                 "session_id": "550e8400-e29b-41d4-a716-446655440000",
