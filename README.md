@@ -4,49 +4,61 @@
 
 ICC Agent is a conversational AI system that translates natural language requests into database operations. Users describe what they want in plain English, and the system executes the appropriate database jobs (ReadSQL, WriteData, SendEmail, CompareSQL).
 
-Built with a **handler-based architecture** using specialized LLM agents (7B-8B parameters), it provides reliable parameter extraction and SQL generation optimized for production workloads.
+Built with a **Strategy Pattern architecture** using specialized LLM agents (7B-8B parameters), it provides reliable parameter extraction and SQL generation optimized for production workloads.
+
+### Deployment Options
+
+- 🖥️ **Dash Web UI** (`app.py`) - Interactive testing interface on port 8050
+- 🚀 **FastAPI Backend** (`backend/main.py`) - REST API for integration on port 8000
+- 📦 **Both Available** - Run simultaneously for development and testing
 
 ### Key Features
 
 - 💬 **Natural Language Interface** - Describe database operations in plain English
-- 🎯 **Handler Architecture** - Specialized handlers for each job type (ReadSQL, WriteData, SendEmail, CompareSQL)
+- 🎯 **Strategy Pattern** - Isolated strategy classes for each conversation stage
 - 🤖 **Dual LLM Agents** - SQL generation (qwen2.5-coder:7b) + parameter extraction (qwen3:8b)
 - 🔄 **Flexible SQL Options** - Generate SQL from natural language OR provide your own
 - 📊 **Complete Workflows** - Query → Write → Email in single conversation
 - 🌐 **Web Interface** - Dash-based chat with dynamic dropdowns for connections/schemas
+- 🔌 **REST API** - FastAPI backend for integration with external frontends
 - 🔐 **API Integration** - Full integration with database and table metadata APIs
 - ⚡ **Singleton Pattern** - LLM instances stay loaded in memory for fast responses (~0.5-2s)
 - 📋 **Smart Parameter Extraction** - Dropdown optimization (FETCH vs ASK) for better UX
+- 🆘 **Help System** - Context-aware help for any conversation stage
 
 ## Architecture
 
-The system uses a **handler-based router architecture** with specialized stage handlers for each job type:
+The system uses a **Strategy Pattern architecture** with handlers delegating to specialized strategy classes:
 
 ```
-User Input → Router Orchestrator → Stage Handler → LLM Agents → Parameter Validator → Execute Job
+User Input → Router Orchestrator → Stage Handler → Strategy → LLM Agents → Execute Job
                     ↓
     ┌───────────────┼───────────────┬───────────────┬───────────────┐
     ▼               ▼               ▼               ▼               ▼
 ReadSQLHandler  WriteDataHandler SendEmailHandler CompareSQLHandler  RouterHandler
-(both agents)   (job agent)      (job agent)      (both agents)      (job agent)
+  (8 strategies)  (1 strategy)     (2 strategies)   (14 strategies)   (routing)
 ```
 
 ### Core Components
 
 - **Router Orchestrator** - Singleton orchestrator that routes stages to appropriate handlers
-- **Stage Handlers** - Specialized handlers manage stage transitions for each job type
+- **Stage Handlers** - Orchestrate conversation flow using strategy registry
+- **Stage Strategies** - Individual strategy classes for each conversation stage
+- **Help System** - Automatic context-aware help detection and response
+- **FastAPI Backend** - REST API for external integration (`backend/`)
+- **Dash UI** - Testing interface with chat and dropdowns (`app.py`)
 ## How It Works
 
-### Handler-Based Router Pattern
+### Strategy Pattern Router
 
-Each job type (ReadSQL, WriteData, SendEmail, CompareSQL) has a dedicated handler that manages its conversation stages. The router orchestrator dispatches work to the appropriate handler based on the current stage.
+Each job type has a handler that delegates to specialized strategy classes. Each conversation stage is handled by its own strategy class, enabling isolation, testability, and automatic help integration.
 
 **Example: ReadSQL Flow**
 
 ```
 User: "Get customers from USA"
   ↓
-Router → ReadSQLHandler (ASK_SQL_METHOD stage)
+Router → ReadSQLHandler → AskSqlMethodStrategy
   ↓
 Handler asks: "Generate SQL or provide your own?"
   ↓
@@ -77,20 +89,34 @@ Router → WriteDataHandler (NEED_WRITE_OR_EMAIL stage)
 
 ### Key Architecture Benefits
 
-✅ **Separation of Concerns** - Each handler manages its own stages independently  
+✅ **Strategy Pattern** - Each stage isolated in its own strategy class  
 ✅ **Singleton LLM Agents** - Single instances stay loaded, keep_alive="3600s" prevents reload  
 ✅ **Smart Parameter Extraction** - FETCH dropdowns when available, ASK only when needed  
 ✅ **Optimized for Small LLMs** - Temperature=0.1 for deterministic outputs  
 ✅ **Flexible Workflows** - ReadSQL → WriteData → SendEmail in single conversation  
+✅ **Help System** - Automatic context-aware help at every stage  
+✅ **REST API** - FastAPI backend for external integration  
 ✅ **Production Ready** - Handles errors, validates parameters, confirms actions  
 
 This architecture allows 7B-8B parameter models to:
 - Generate accurate SQL from natural language with table schema context
 - Extract parameters from conversational input while filtering confirmations
 - Execute complete multi-step workflows (query → write → email)
+- Provide context-aware help at any conversation point
 ## Project Structure
 
 ```
+backend/                         # FastAPI REST API Backend
+  main.py                        # FastAPI application entry point
+  api/
+    routes/
+      chat.py                    # Chat endpoints (/api/chat/message)
+      connections.py             # Connection metadata endpoints
+      health.py                  # Health check endpoint
+    models/
+      request.py                 # Pydantic request models
+      response.py                # Pydantic response models
+
 src/
   ai/
     router/
@@ -100,101 +126,138 @@ src/
       job_agent.py               # Parameter extraction from user input
       stage_handlers/
         base_handler.py          # BaseStageHandler abstract class
-        readsql_handler.py       # ReadSQL workflow (8 stages)
-        writedata_handler.py     # WriteData workflow (1 stage)
-        sendemail_handler.py     # SendEmail workflow (3 stages)
-        comparesql_handler.py    # CompareSQL workflow (14 stages)
-        router_handler.py        # Initial routing (2 stages)
-      validators/
-        parameter_validator.py   # Parameter completeness checker
-    toolkits/
-      icc_toolkit.py             # Job execution functions
+        stage_strategy.py        # StageStrategy base class + registry
+        readsql_handler.py       # ReadSQL orchestrator (8 strategies)
+        writedata_handler.py     # WriteData orchestrator (1 strategy)
+        sendemail_handler.py     # SendEmail orchestrator (2 strategies)
+        comparesql_handler.py    # CompareSQL orchestrator (14 strategies)
+        router_handler.py        # Initial routing
+        strategies/              # Strategy implementations
+          readsql/               # 8 ReadSQL strategies
+          writedata/             # 1 WriteData strategy
+          sendemail/             # 2 SendEmail strategies
+## Quick Start
+
+### Prerequisites
+
+- Python 3.11+
+- [Ollama](https://ollama.ai) with models:
+  - `qwen3:8b` (job agent - parameter extraction)
+  - `qwen2.5-coder:7b` (SQL agent - SQL generation)
+- API access for job execution and metadata
+
+### Installationer.py           # Session management
+    connection_service.py        # Connection configuration
+    ui_formatter.py              # UI formatting utilities
   models/                        # Pydantic request/response models
   repositories/                  # API communication layer
   payload_builders/              # Wire protocol builders
+  errors/                        # Error handling framework
   utils/
     connection_api_client.py     # Fetch connections/schemas from API
     table_api_client.py          # Fetch table schemas (with mock mode)
     auth.py                      # Token-based authentication
     config.py                    # Environment configuration
-app.py                           # Dash web interface
-db_config.json                   # Database configuration (deprecated)
+
+app.py                           # Dash web UI (testing interface)
+db_config.json                   # Database configuration
+requirements_backend.txt         # Backend-specific dependencies
+README_BACKEND.md                # Backend integration guide
 docs/                            # Comprehensive documentation
   ARCHITECTURE.md                # System architecture overview
-### Prerequisites
-
-- Python 3.10+
-- [Ollama](https://ollama.ai) with models:
-  - `qwen3:8b` (job agent - parameter extraction)
-  - `qwen2.5-coder:7b` (SQL agent - SQL generation)
-- API access for job execution and metadatavelopment
-    auth.py              # Token-based authentication
-db_config.json           # Database hierarchy (connections/schemas/tables)
-docs/                    # Detailed documentation
+  ADDING_NEW_JOB.md              # Guide for adding new job types
 ```
 
 ## Setup
 
 ### Prerequisites
 
-2. **Install dependencies:**
-   ```sh
-   pip install -r requirements_app.txt
-   ```
+- Python 3.11+
+- [Ollama](https://ollama.ai) with models:
+  - `qwen3:8b` (job agent - parameter extraction)
+  - `qwen2.5-coder:7b` (SQL agent - SQL generation)
+- API access for job execution and metadata
 
-3. **Install Ollama and pull models:**
-   ```sh
-   # Install Ollama from https://ollama.ai
-   ollama pull qwen3:8b
-   ollama pull qwen2.5-coder:7b
-   ```
+### Installation
 
-4. **Configure environment variables:**
-   
-   Create a `.env` file with:
-   ```env
-   # LLM Configuration
-   MODEL_NAME=qwen3:8b              # Job agent model
-   SQL_MODEL_NAME=qwen2.5-coder:7b  # SQL agent model
-   OLLAMA_BASE_URL=http://localhost:11434
-   
-   # API Configuration
-   BASE_URL=https://your-api-endpoint.com
-   TOKEN_ENDPOINT=https://your-auth-endpoint.com/token
-   AUTH_USERPASS=base64_encoded_username:password
-   
-   # Table API (for schema fetching)
-   TABLE_API_BASE_URL=https://your-table-api.com
-   TABLE_API_MOCK=false  # Set to true for mock mode
-   ```
-   }
-   ```
+```bash
+# Clone repository
+git clone <repository-url>
+cd ICC_try
 
-5. **Configure environment:**
-   ```sh
-   # Copy example env file
-   cp .env.example .env
-   
-   # Edit .env with your settings:
-   # - Model names (MODEL_NAME, SQL_MODEL_NAME)
-   # - API endpoints (BASE_URL, TABLE_API_BASE_URL)
-   # - Authentication (TOKEN_ENDPOINT, AUTH_USERPASS)
-   # - Mock mode (TABLE_API_MOCK=true for development without API)
-   ```
+# Install dependencies
+pip install -r requirements_app.txt      # For Dash UI
+pip install -r requirements_backend.txt  # For FastAPI backend
 
-## Usage
-
-### Running the Chat Interface
-
-## Usage
-
-### Start the Application
-
-```sh
-uv run app.py
+# Install Ollama models
+ollama pull qwen3:8b
+ollama pull qwen2.5-coder:7b
 ```
 
-Open browser to: **http://localhost:8050**
+### Configuration
+
+Create a `.env` file:
+```env
+# LLM Configuration
+MODEL_NAME=qwen3:8b
+SQL_MODEL_NAME=qwen2.5-coder:7b
+OLLAMA_BASE_URL=http://localhost:11434
+
+# API Configuration (Backend)
+API_HOST=0.0.0.0
+API_PORT=8000
+CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+
+# ICC API Configuration
+BASE_URL=https://your-icc-api.com
+TOKEN_ENDPOINT=https://your-auth.com/token
+AUTH_USERPASS=base64_encoded_username:password
+
+# Table API
+TABLE_API_BASE_URL=https://your-table-api.com
+TABLE_API_MOCK=false  # Set true for development without API
+
+# Logging
+LOG_LEVEL=INFO
+ENABLE_PROMPT_LOGGING=false
+```
+
+## Usage
+
+### Option 1: Dash Web UI (Testing)
+
+```bash
+# Start Dash interface on port 8050
+uv run app.py
+# or
+python app.py
+```
+
+Open browser: **http://localhost:8050**
+
+### Option 2: FastAPI Backend (Integration)
+
+```bash
+# Start FastAPI server on port 8000
+uvicorn backend.main:app --reload --port 8000
+# or
+python backend/main.py
+```
+
+API documentation: **http://localhost:8000/docs**
+
+### Option 3: Run Both (Development)
+
+```bash
+# Terminal 1: Start Dash UI
+python app.py
+
+# Terminal 2: Start FastAPI Backend
+uvicorn backend.main:app --reload --port 8000
+```
+
+- **Dash UI**: http://localhost:8050 (testing interface)
+- **FastAPI Docs**: http://localhost:8000/docs (API reference)
 
 ### Example Conversations
 
@@ -272,18 +335,26 @@ prompt_logs/
     all_prompts.jsonl        # Combined log file
 ```
 
-- **[SQL Agent Guide](docs/SQL_AGENT.md)** - Natural language to SQL conversion
-- **[Job Agent Guide](docs/JOB_AGENT.md)** - Parameter extraction and job creation
 ## Documentation
 
 Comprehensive documentation in the `docs/` folder:
 
 ### Main Documentation
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture overview with diagrams
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture overview with Strategy Pattern
 - **[TECHNICAL_DETAILS.md](docs/TECHNICAL_DETAILS.md)** - Deep dive into implementation details
 - **[DEVELOPER_GUIDE.md](docs/DEVELOPER_GUIDE.md)** - Development guide with code examples
 - **[ARCHITECTURE_DECISIONS.md](docs/ARCHITECTURE_DECISIONS.md)** - Why semi-static router over agentic systems
+- **[ADDING_NEW_JOB.md](docs/ADDING_NEW_JOB.md)** - Complete guide for adding new job types
+
+### Backend Integration
+
+- **[README_BACKEND.md](README_BACKEND.md)** - FastAPI backend integration guide
+  - REST API endpoints
+  - Request/response models
+  - Integration examples (Python, JavaScript/TypeScript)
+  - Deployment guide
+  - CORS configuration
 
 ### Additional Documentation
 
