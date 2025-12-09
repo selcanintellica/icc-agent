@@ -1,0 +1,64 @@
+"""Strategy for NEED_SECOND_NATURAL_LANGUAGE stage."""
+
+import logging
+from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHandlerResult
+from src.ai.router.memory import Memory
+from src.ai.router.context.stage_context import Stage
+from src.ai.router.sql_agent import call_sql_agent
+from src.errors import ErrorHandler
+
+logger = logging.getLogger(__name__)
+
+
+class NeedSecondNaturalLanguageStrategy(StageStrategy):
+    """Handle second natural language to SQL generation."""
+    
+    async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        """Execute NEED_SECOND_NATURAL_LANGUAGE stage."""
+        # Check for navigation commands
+        nav_cmd = self._check_navigation_commands(user_input)
+        if nav_cmd == "back":
+            return self._create_result(memory, "For the SECOND query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You provide the SQL", Stage.ASK_SECOND_SQL_METHOD)
+        elif nav_cmd == "reset":
+            memory.current_tool = None
+            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
+        
+        if not user_input or not user_input.strip():
+            return self._create_result(
+                memory,
+                "Please describe what data you want for the second query."
+            )
+        
+        try:
+            spec = call_sql_agent(
+                user_input,
+                connection=memory.connection,
+                schema=memory.schema,
+                selected_tables=memory.selected_tables
+            )
+            
+            if not spec.sql:
+                return self._create_result(
+                    memory,
+                    "I couldn't generate SQL from that description. Please try rephrasing it."
+                )
+            
+            memory.second_sql = spec.sql
+            
+            warning = ""
+            if spec.error:
+                warning = f"\n\nNote: {spec.error}"
+            
+            return self._create_result(
+                memory,
+                f"I prepared this SECOND SQL:\n```sql\n{spec.sql}\n```{warning}\nIs this okay? (yes/no)",
+                Stage.CONFIRM_SECOND_GENERATED_SQL
+            )
+        except Exception as e:
+            logger.error(f"Error generating second SQL: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "generate_second_sql", "user_input": user_input[:100]})
+            return self._create_result(
+                memory,
+                f"Error generating SQL: {icc_error.user_message}. Please try rephrasing or provide the SQL directly.",
+                is_error=True
+            )

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from src.ai.router.prompts import SQLGenerationPrompt
 from src.utils.table_api_client import fetch_table_definitions
 from src.utils.retry import retry, RetryPresets, RetryExhaustedError
 from src.errors import (
@@ -57,36 +58,10 @@ class SQLAgentConfig:
 
 class SQLPromptBuilder:
     """
-    Builds SQL generation prompts.
+    Builds SQL generation prompts using centralized templates.
     
     Following Single Responsibility Principle - only responsible for prompt building.
     """
-    
-    TEMPLATE = """You are a SQL query generator. Convert natural language requests into SQL queries.
-
-You have access to the following database tables with their complete definitions:
-
-{schema_definitions}
-
-IMPORTANT RULES:
-- Generate valid SQL queries using ONLY the tables and columns defined above
-- Use proper table and column names exactly as shown in the schema
-- Pay attention to data types and constraints
-- Use JOINs when querying related tables (check Foreign Keys section)
-- Be conservative - if unclear, use simple SELECT queries
-- Qualify table names with schema if provided (e.g., SALES.customers)
-- Only use tables that are listed in the schema above
-- Follow the example queries provided for each table as guidance
-
-RESPONSE FORMAT:
-Respond with JSON only: {{"sql": "YOUR_SQL_HERE", "reasoning": "brief explanation"}}
-
-Examples of good responses:
-{{"sql": "SELECT * FROM customers WHERE country = 'USA'", "reasoning": "Filtering customers by country column"}}
-{{"sql": "SELECT c.first_name, c.last_name, SUM(o.total_amount) as total FROM customers c JOIN orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.first_name, c.last_name", "reasoning": "Joining customers with orders to calculate total per customer"}}
-
-Now generate SQL for the user's request below:
-"""
     
     def build_prompt(self, schema_definitions: str) -> str:
         """
@@ -98,7 +73,7 @@ Now generate SQL for the user's request below:
         Returns:
             str: Formatted prompt
         """
-        return self.TEMPLATE.format(schema_definitions=schema_definitions)
+        return SQLGenerationPrompt.build(schema_definitions)
 
 
 class SchemaFetcher:
@@ -144,13 +119,21 @@ class SchemaFetcher:
             
             if not schema_definitions or schema_definitions.strip() == "":
                 logger.warning("No schema definitions fetched from API")
+                # Return empty/error indicator that caller can handle
                 return "ERROR: No table definitions found. Using default behavior."
             
             return schema_definitions
             
         except Exception as e:
             logger.error(f"Error fetching schema definitions: {e}")
-            return f"ERROR: Failed to fetch schema definitions: {str(e)}"
+            # Convert to ICC error and let caller handle
+            icc_error = ErrorHandler.handle(e, {
+                "context": "schema_fetch",
+                "connection": connection,
+                "schema": schema,
+                "tables": selected_tables
+            })
+            return f"ERROR: Failed to fetch schema definitions: {icc_error.user_message}"
 
 
 class SQLParser:

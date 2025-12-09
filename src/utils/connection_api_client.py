@@ -82,7 +82,12 @@ class ICCAPIClient:
             APIUnavailableError: If API is unavailable
             HTTPError: For other HTTP errors
         """
-        endpoint = f"{self.base_url}/connection/list"
+        # Use ICC_CONNECTION_LIST_URL if available, otherwise construct from base_url
+        connection_list_url = os.getenv("ICC_CONNECTION_LIST_URL")
+        if connection_list_url:
+            endpoint = connection_list_url
+        else:
+            endpoint = f"{self.base_url}/connection/list"
         logger.info(f"Fetching connections from: {endpoint}")
         
         try:
@@ -175,7 +180,12 @@ class ICCAPIClient:
                 user_message="Please select a valid connection."
             )
         
-        endpoint = f"{self.base_url}/utility/connection/{connection_id}"
+        # Use ICC_SCHEMA_LIST_URL if available, otherwise construct from base_url
+        schema_base_url = os.getenv("ICC_SCHEMA_LIST_URL")
+        if schema_base_url:
+            endpoint = f"{schema_base_url}/{connection_id}"
+        else:
+            endpoint = f"{self.base_url}/utility/connection/{connection_id}"
         logger.info(f"Fetching schemas from: {endpoint}")
         
         try:
@@ -274,7 +284,12 @@ class ICCAPIClient:
             logger.warning("Schema name is empty, cannot fetch tables")
             return []
         
-        endpoint = f"{self.base_url}/utility/connection/{connection_id}/{schema}"
+        # Use ICC_TABLE_LIST_URL if available, otherwise construct from base_url
+        table_base_url = os.getenv("ICC_TABLE_LIST_URL")
+        if table_base_url:
+            endpoint = f"{table_base_url}/{connection_id}/{schema}"
+        else:
+            endpoint = f"{self.base_url}/utility/connection/{connection_id}/{schema}"
         logger.info(f"Fetching tables from: {endpoint}")
         
         try:

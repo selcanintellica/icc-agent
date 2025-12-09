@@ -47,9 +47,9 @@ class ColumnFetchingService(BaseRepository):
         
         if response.success:
             columns = response.data.object.columns
-            logger.info(f"✅ Fetched {len(columns)} columns")
+            logger.info(f"Fetched {len(columns)} columns")
         else:
-            logger.error(f"❌ Failed to fetch columns: {response.error}")
+            logger.error(f"Failed to fetch columns: {response.error}")
         
         return response
     

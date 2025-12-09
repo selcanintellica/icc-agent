@@ -6,28 +6,45 @@ from src.models.save_job_response import APIResponse, JobResponse
 from src.utils.config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
 
-from src.payload_builders.wire_builder import get_wire_builder, WireBuilder
-from src.payload_builders.query_builder import get_query_builder, QueryBuilder
+from src.payload_builders.wire_builder import WireBuilder
+from src.payload_builders.query_builder import QueryBuilder
 from src.repositories.services import ColumnFetchingService, CompareSQLColumnGenerator
 
 logger = logging.getLogger(__name__)
 
 
 class JobRepository(BaseRepository):
-    """Repository for handling job-related API operations with dependency injection."""
+    """
+    Repository for handling job-related API operations.
+    
+    NOTE: Use JobRepositoryFactory.create() or create_job_repository() 
+    to instantiate this class with proper dependency injection.
+    
+    Following SOLID principles:
+    - Single Responsibility: Only handles job API operations
+    - Dependency Inversion: All dependencies injected via constructor
+    """
     
     def __init__(
         self,
         client,
-        wire_builder: Optional[WireBuilder] = None,
-        query_builder: Optional[QueryBuilder] = None,
-        column_service: Optional[ColumnFetchingService] = None
+        wire_builder: WireBuilder,
+        query_builder: QueryBuilder,
+        column_service: ColumnFetchingService
     ):
-        """Initialize with injected dependencies."""
+        """
+        Initialize with required injected dependencies.
+        
+        Args:
+            client: HTTP client for API calls
+            wire_builder: Builder for wire payloads
+            query_builder: Builder for query payloads
+            column_service: Service for fetching column information
+        """
         super().__init__(client)
-        self.wire_builder = wire_builder or get_wire_builder()
-        self.query_builder = query_builder or get_query_builder()
-        self.column_service = column_service or ColumnFetchingService(client)
+        self.wire_builder = wire_builder
+        self.query_builder = query_builder
+        self.column_service = column_service
 
     async def write_data_job(self, data) -> APIResponse[JobResponse]:
         wire = self.wire_builder.build_wire_payload(data)

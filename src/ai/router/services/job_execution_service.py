@@ -151,7 +151,7 @@ class ReadSQLService(JobExecutionService):
                 )
         
         except Exception as e:
-            logger.error(f"❌ ReadSQL error: {str(e)}", exc_info=True)
+            logger.error(f"ReadSQL error: {str(e)}", exc_info=True)
             return JobExecutionResult(
                 success=False,
                 data={},
@@ -241,7 +241,7 @@ class WriteDataService(JobExecutionService):
                 )
         
         except Exception as e:
-            logger.error(f"❌ WriteData error: {str(e)}", exc_info=True)
+            logger.error(f"WriteData error: {str(e)}", exc_info=True)
             return JobExecutionResult(
                 success=False,
                 data={},
@@ -311,7 +311,7 @@ class SendEmailService(JobExecutionService):
                 )
         
         except Exception as e:
-            logger.error(f"❌ SendEmail error: {str(e)}", exc_info=True)
+            logger.error(f"SendEmail error: {str(e)}", exc_info=True)
             return JobExecutionResult(
                 success=False,
                 data={},
@@ -392,7 +392,7 @@ class CompareSQLService(JobExecutionService):
                 )
         
         except Exception as e:
-            logger.error(f"❌ CompareSQL error: {str(e)}", exc_info=True)
+            logger.error(f"CompareSQL error: {str(e)}", exc_info=True)
             return JobExecutionResult(
                 success=False,
                 data={},

@@ -87,9 +87,9 @@ class SendEmailHandler(BaseStageHandler):
 
     async def _handle_initial_request(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle initial send_email request - gather params."""
-        logger.info("SendEmailHandler: Processing initial send_email request")
-        logger.info(f"📧 Current gathered_params: {memory.gathered_params}")
-        logger.info(f"📧 User input: '{user_input}'")
+        logger.debug("SendEmailHandler: Processing initial send_email request")
+        logger.debug(f"Current gathered_params: {memory.gathered_params}")
+        logger.debug(f"User input: '{user_input}'")
         
         # Clear params only when switching from read_sql
         has_read_sql_params = "execute_query" in memory.gathered_params or "write_count" in memory.gathered_params
@@ -99,13 +99,13 @@ class SendEmailHandler(BaseStageHandler):
             memory.last_question = None
         
         memory.current_tool = "send_email"
-        logger.info("📧 Calling job_agent for send_email...")
+        logger.debug("Calling job_agent for send_email")
         
         # Get action from job agent
         action = call_job_agent(memory, user_input, tool_name="send_email")
-        logger.info(f"📧 Job agent returned: action={action.get('action')}, tool_name={action.get('tool_name')}")
-        logger.info(f"📧 Question: {action.get('question')}")
-        logger.info(f"📧 Updated params: {action.get('params')}")
+        logger.debug(f"Job agent returned: action={action.get('action')}, tool_name={action.get('tool_name')}")
+        logger.debug(f"Question: {action.get('question')}")
+        logger.debug(f"Updated params: {action.get('params')}")
         
         # Handle different action types
         if action.get("action") == "ASK":
@@ -174,7 +174,7 @@ class SendEmailHandler(BaseStageHandler):
 
     async def _handle_confirm_email_query(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Handle user's confirmation response for the email query."""
-        logger.info(f"📧 CONFIRM_EMAIL_QUERY: user input = '{user_input}'")
+        logger.debug(f"CONFIRM_EMAIL_QUERY: user input = '{user_input}'")
         user_lower = user_input.lower()
 
         # Check if we're in a "name retry" scenario (name was cleared after duplicate error)
@@ -183,7 +183,7 @@ class SendEmailHandler(BaseStageHandler):
         if name_is_empty and user_input.strip():
             # User is providing a new job name after duplicate error
             new_name = user_input.strip()
-            logger.info(f"📝 Name retry scenario - using '{new_name}' as new job name")
+            logger.debug(f"Name retry scenario - using '{new_name}' as new job name")
             memory.gathered_params["name"] = new_name
             if memory.pending_email_params:
                 memory.pending_email_params["name"] = new_name
@@ -191,12 +191,12 @@ class SendEmailHandler(BaseStageHandler):
             return await self._execute_confirmed_email_job(memory)
 
         if any(word in user_lower for word in ["yes", "ok", "correct"]):
-            logger.info("✅ User confirmed email query, executing send_email_job...")
+            logger.info("User confirmed email query, executing send_email_job")
             memory.email_query_confirmed = True
             return await self._execute_confirmed_email_job(memory)
 
         elif any(word in user_lower for word in ["no", "change", "modify", "different"]):
-            logger.info("🔄 User wants to modify the email query")
+            logger.info("User wants to modify the email query")
             return self._create_result(
                 memory,
                 "Please provide the SQL query you want to use for the email:",
@@ -204,7 +204,7 @@ class SendEmailHandler(BaseStageHandler):
             )
 
         else:
-            logger.info("❓ Unclear confirmation, asking again")
+            logger.debug("Unclear confirmation, asking again")
             return self._create_result(
                 memory,
                 "Please confirm: Say 'yes' to use this query or 'no' to provide a different one."
@@ -240,14 +240,14 @@ class SendEmailHandler(BaseStageHandler):
 
     async def _execute_confirmed_email_job(self, memory: Memory) -> StageHandlerResult:
         """Execute send_email job after query has been confirmed."""
-        logger.info("📧 ========== EXECUTING SEND_EMAIL_JOB ==========")
-        logger.info(f"📧 Pending params: {memory.pending_email_params}")
-        logger.info(f"📧 Gathered params: {memory.gathered_params}")
+        logger.info("Executing SEND_EMAIL_JOB")
+        logger.debug(f"Pending params: {memory.pending_email_params}")
+        logger.debug(f"Gathered params: {memory.gathered_params}")
         
         try:
             params = memory.pending_email_params
             if not params:
-                logger.error("❌ No pending_email_params found!")
+                logger.error("No pending_email_params found")
                 return self._create_result(
                     memory,
                     "Email parameters not found. Please start over and provide the email details.",

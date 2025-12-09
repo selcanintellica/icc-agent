@@ -31,7 +31,7 @@ class ParameterValidator:
             Dict with ASK action if missing parameters, None if all valid
         """
         if not params.get("name"):
-            logger.info("❌ Missing: name")
+            logger.debug("Missing: name")
             return {
                 "action": "ASK",
                 "question": "What should I name this read_sql job?"
@@ -40,7 +40,7 @@ class ParameterValidator:
         # Check execute_query - treat empty string as missing
         execute_query_value = params.get("execute_query")
         if execute_query_value is None or execute_query_value == "":
-            logger.info("❓ Asking about execute_query")
+            logger.debug("Asking about execute_query")
             return {
                 "action": "ASK",
                 "question": "Would you like to save the query results to the database? (yes/no)"
@@ -52,7 +52,7 @@ class ParameterValidator:
                 # Use the same connection as the SQL query (from UI dropdown)
                 connection_name = memory.connection
                 if connection_name and not memory.available_schemas:
-                    logger.info(f"📋 Need to fetch schemas for connection: {connection_name}")
+                    logger.debug(f"Need to fetch schemas for connection: {connection_name}")
                     memory.available_schemas = []  # Clear cached schemas before fetching
                     return {
                         "action": "FETCH_SCHEMAS",
@@ -60,21 +60,21 @@ class ParameterValidator:
                         "question": "Fetching available schemas..."
                     }
                 elif memory.available_schemas:
-                    logger.info("❌ Missing: result_schema (have cached list)")
+                    logger.debug("Missing: result_schema (have cached list)")
                     schema_list = memory.get_schema_list_for_llm()
                     return {
                         "action": "ASK",
                         "question": f"Which schema should I write the results to?\n\nAvailable schemas:\n{schema_list}"
                     }
                 else:
-                    logger.info("❌ Missing: result_schema (no cached list)")
+                    logger.debug("Missing: result_schema (no cached list)")
                     return {
                         "action": "ASK",
                         "question": "What schema should I write the results to?"
                     }
             
             if not params.get("table_name"):
-                logger.info("❌ Missing: table_name (execute_query=true)")
+                logger.debug("Missing: table_name (execute_query=true)")
                 return {
                     "action": "ASK",
                     "question": "What table should I write the results to?"
@@ -82,7 +82,7 @@ class ParameterValidator:
             # Check drop_before_create - treat empty string as missing
             drop_value = params.get("drop_before_create")
             if drop_value is None or drop_value == "":
-                logger.info("❓ Asking about drop_before_create")
+                logger.debug("Asking about drop_before_create")
                 return {
                     "action": "ASK",
                     "question": "Should I drop the table before creating it? (yes/no)"
@@ -91,7 +91,7 @@ class ParameterValidator:
         # Check write_count - treat empty string as missing
         write_count_value = params.get("write_count")
         if write_count_value is None or write_count_value == "":
-            logger.info("❓ Asking about write_count")
+            logger.debug("Asking about write_count")
             return {
                 "action": "ASK",
                 "question": "Would you like to track the row count of the query results? (yes/no)"
@@ -102,7 +102,7 @@ class ParameterValidator:
             if result:
                 return result
         
-        logger.info(f"✅ All read_sql params present: {params}")
+        logger.debug(f"All read_sql params present: {params}")
         return None
     
     @staticmethod
@@ -118,14 +118,14 @@ class ParameterValidator:
             Dict with ASK action if missing parameters, None if all valid
         """
         if not params.get("name"):
-            logger.info("❌ Missing: name")
+            logger.debug("Missing: name")
             return {
                 "action": "ASK",
                 "question": "What should I name this write_data job?"
             }
         
         if not params.get("connection"):
-            logger.info("❌ Missing: connection for write_data")
+            logger.debug("Missing: connection for write_data")
             # Always return FETCH_CONNECTIONS to trigger dropdown UI
             # Handler will check if connections are already in memory
             return {
@@ -136,7 +136,7 @@ class ParameterValidator:
         if not params.get("schemas"):
             connection_name = params.get("connection")
             if connection_name and not memory.available_schemas:
-                logger.info(f"📋 Need to fetch schemas for connection: {connection_name}")
+                logger.debug(f"Need to fetch schemas for connection: {connection_name}")
                 memory.available_schemas = []  # Clear cached schemas before fetching
                 return {
                     "action": "FETCH_SCHEMAS",
@@ -144,41 +144,35 @@ class ParameterValidator:
                     "question": "Fetching available schemas..."
                 }
             elif memory.available_schemas:
-                logger.info("❌ Missing: schemas (have cached list)")
+                logger.debug("Missing: schemas (have cached list)")
                 schema_list = memory.get_schema_list_for_llm()
                 return {
                     "action": "ASK",
                     "question": f"Which schema should I write the data to?\n\nAvailable schemas:\n{schema_list}"
                 }
             else:
-                logger.info("❌ Missing: schemas (no cached list)")
+                logger.debug("Missing: schemas (no cached list)")
                 return {
                     "action": "ASK",
                     "question": "What schema should I write the data to?"
                 }
         
         if not params.get("table"):
-            logger.info("❌ Missing: table")
+            logger.debug("Missing: table")
             return {
                 "action": "ASK",
                 "question": "What table should I write the data to?"
             }
         
         if not params.get("drop_or_truncate"):
-            logger.info("❌ Missing: drop_or_truncate")
+            logger.debug("Missing: drop_or_truncate")
             return {
                 "action": "ASK",
                 "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
             }
         
-        # Normalize drop_or_truncate
-        drop_val = params.get("drop_or_truncate", "").lower().strip()
-        if drop_val in ["no", "append", "keep", "skip"]:
-            params["drop_or_truncate"] = "none"
-            logger.info("📝 Normalized drop_or_truncate to 'none'")
-        
         if "write_count" not in params:
-            logger.info("❓ Asking about write_count for write_data")
+            logger.debug("Asking about write_count for write_data")
             return {
                 "action": "ASK",
                 "question": "Would you like to track the row count for this write operation? (yes/no)"
@@ -189,7 +183,7 @@ class ParameterValidator:
             if result:
                 return result
         
-        logger.info(f"✅ All write_data params present: {params}")
+        logger.debug(f"All write_data params present: {params}")
         return None
     
     @staticmethod
@@ -204,21 +198,21 @@ class ParameterValidator:
             Dict with ASK action if missing parameters, None if all valid
         """
         if not params.get("name"):
-            logger.info("❌ Missing: name")
+            logger.debug("Missing: name")
             return {
                 "action": "ASK",
                 "question": "What should I name this email job?"
             }
         
         if not params.get("to"):
-            logger.info("❌ Missing: to")
+            logger.debug("Missing: to")
             return {
                 "action": "ASK",
                 "question": "Who should I send the email to?"
             }
         
         if not params.get("subject"):
-            logger.info("❌ Missing: subject")
+            logger.debug("Missing: subject")
             return {
                 "action": "ASK",
                 "question": "What should the email subject be?"
@@ -226,7 +220,7 @@ class ParameterValidator:
         
         # Check text - allow empty string, only ask if not provided at all
         if "text" not in params or params.get("text") is None:
-            logger.info("❌ Missing: text")
+            logger.debug("Missing: text")
             return {
                 "action": "ASK",
                 "question": "What should the email body say?"
@@ -234,21 +228,21 @@ class ParameterValidator:
         
         # Check CC - empty string means user was asked and declined, None means not asked yet
         if "cc" not in params or params.get("cc") is None:
-            logger.info("❓ CC not in params or is None, asking user...")
+            logger.debug("CC not in params or is None, asking user")
             return {
                 "action": "ASK",
                 "question": "Would you like to add any CC email addresses? (Say 'no' or 'none' to skip, or provide email addresses)"
             }
         
         cc_value = params.get("cc", "")
-        logger.info(f"📧 CC value received: '{cc_value}' (type: {type(cc_value).__name__})")
+        logger.debug(f"CC value received: '{cc_value}' (type: {type(cc_value).__name__})")
         
         if isinstance(cc_value, str) and cc_value.lower().strip() in ["no", "none", "skip", "n/a"]:
             params["cc"] = ""
-            logger.info("📧 CC normalized to empty string (user declined)")
+            logger.debug("CC normalized to empty string (user declined)")
         
-        logger.info(f"✅ All send_email params present and validated!")
-        logger.info(f"✅ Final params: name={params.get('name')}, to={params.get('to')}, subject={params.get('subject')[:30]}..., cc='{params.get('cc')}'")
+        logger.debug("All send_email params present and validated")
+        logger.debug(f"Final params: name={params.get('name')}, to={params.get('to')}, subject={params.get('subject')[:30]}..., cc='{params.get('cc')}'")
         return None
     
     @staticmethod
@@ -300,7 +294,7 @@ class ParameterValidator:
         if not params.get(f"{param_prefix}_connection"):
             # Always return FETCH_CONNECTIONS to trigger dropdown UI
             # Handler will check if connections are already in memory
-            logger.info(f"📋 Need connection selection for {param_prefix}")
+            logger.debug(f"Need connection selection for {param_prefix}")
             return {
                 "action": "FETCH_CONNECTIONS",
                 "question": "Fetching available connections for row count..."
@@ -309,14 +303,14 @@ class ParameterValidator:
         # Handle default connection selection
         if params.get(f"{param_prefix}_connection", "").strip() in ["", "same", "default"]:
             params[f"{param_prefix}_connection"] = memory.connection
-            logger.info(f"📝 Using default connection for write_count: {memory.connection}")
+            logger.debug(f"Using default connection for write_count: {memory.connection}")
         
         # Step 2: Check if schema is selected
         if not params.get(schema_param):
             connection_name = params.get(f"{param_prefix}_connection")
             # Need to fetch schemas for selected connection
             if connection_name and not memory.available_schemas:
-                logger.info(f"📋 Need to fetch schemas for write_count connection: {connection_name}")
+                logger.debug(f"Need to fetch schemas for write_count connection: {connection_name}")
                 memory.available_schemas = []  # Clear cached schemas before fetching
                 return {
                     "action": "FETCH_SCHEMAS",
@@ -325,7 +319,7 @@ class ParameterValidator:
                 }
             elif memory.available_schemas:
                 # Have schemas, return FETCH_SCHEMAS to trigger dropdown
-                logger.info(f"❌ Missing: {schema_param} (have cached list)")
+                logger.debug(f"Missing: {schema_param} (have cached list)")
                 return {
                     "action": "FETCH_SCHEMAS",
                     "connection": connection_name,
@@ -333,7 +327,7 @@ class ParameterValidator:
                 }
             else:
                 # Fallback: ask without list
-                logger.info(f"❌ Missing: {schema_param} (no cached list)")
+                logger.debug(f"Missing: {schema_param} (no cached list)")
                 return {
                     "action": "ASK",
                     "question": "What schema should I write the row count to?"
@@ -341,7 +335,7 @@ class ParameterValidator:
         
         # Step 3: Check if table is provided
         if not params.get(f"{param_prefix}_table"):
-            logger.info(f"❌ Missing: {param_prefix}_table (write_count=true)")
+            logger.debug(f"Missing: {param_prefix}_table (write_count=true)")
             return {
                 "action": "ASK",
                 "question": "What table should I write the row count to?"
@@ -387,21 +381,21 @@ class YesNoExtractor:
             # Match the order of questions in validate_read_sql_params
             if "execute_query" not in memory.gathered_params:
                 memory.gathered_params["execute_query"] = is_yes
-                logger.info(f"📝 Set execute_query={is_yes} from direct user input")
+                logger.debug(f"Set execute_query={is_yes} from direct user input")
                 return True
             # drop_before_create comes AFTER table_name is provided
             elif "drop_before_create" not in memory.gathered_params and memory.gathered_params.get("execute_query") and memory.gathered_params.get("table_name"):
                 memory.gathered_params["drop_before_create"] = is_yes
-                logger.info(f"📝 Set drop_before_create={is_yes} from direct user input")
+                logger.debug(f"Set drop_before_create={is_yes} from direct user input")
                 return True
             # write_count comes AFTER drop_before_create (or after execute_query if execute_query is False)
             elif "write_count" not in memory.gathered_params:
                 memory.gathered_params["write_count"] = is_yes
-                logger.info(f"📝 Set write_count={is_yes} from direct user input")
+                logger.debug(f"Set write_count={is_yes} from direct user input")
                 return True
         elif tool_name == "write_data" and "write_count" not in memory.gathered_params:
             memory.gathered_params["write_count"] = is_yes
-            logger.info(f"📝 Set write_count={is_yes} from direct user input")
+            logger.debug(f"Set write_count={is_yes} from direct user input")
             return True
         
         return False

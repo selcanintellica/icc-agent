@@ -134,6 +134,12 @@ class WriteDataHandler(BaseStageHandler):
 
         except Exception as e:
             logger.error(f"Error fetching connections: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_connections_writedata"})
+            return self._create_result(
+                memory,
+                f"Unable to fetch connections: {icc_error.user_message}. Please specify the connection name directly.",
+                is_error=True
+            )
 
         return self._create_result(
             memory,
@@ -171,9 +177,10 @@ class WriteDataHandler(BaseStageHandler):
 
         except Exception as e:
             logger.error(f"Error fetching schemas: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_schemas_writedata", "connection": connection_name})
             return self._create_result(
                 memory,
-                "Unable to fetch available schemas. Please specify the schema name directly.",
+                f"Unable to fetch schemas: {icc_error.user_message}. Please specify the schema name directly.",
                 is_error=True
             )
 

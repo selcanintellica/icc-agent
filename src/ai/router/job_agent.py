@@ -15,7 +15,11 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.ai.router.memory import Memory
-from src.ai.router.prompts import PromptManager
+from src.ai.router.prompts import (
+    PromptManager,
+    JobAgentConversationPrompt,
+    ParameterEditIdentificationPrompt,
+)
 from src.ai.router.validators import ParameterValidator, YesNoExtractor
 from src.utils.retry import retry, RetryPresets, RetryExhaustedError
 from src.errors import (
@@ -115,8 +119,8 @@ class JobAgent:
         Returns:
             Dict with action (ASK/TOOL/FETCH_SCHEMAS/CHAT), question, params, etc.
         """
-        logger.info(f"Job Agent: Gathering params for '{tool_name}'")
-        logger.info(f"Current params: {memory.gathered_params}")
+        logger.debug(f"Job Agent: Gathering params for '{tool_name}'")
+        logger.debug(f"Current params: {memory.gathered_params}")
 
         try:
             # Check for edit/back commands - allow user to correct parameters
@@ -127,14 +131,14 @@ class JobAgent:
             # Check if schema was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__SCHEMA_SELECTED__:"):
                 schema_name = user_input.replace("__SCHEMA_SELECTED__:", "").strip()
-                logger.info(f"✅ Schema directly selected via dropdown: {schema_name} (already assigned)")
+                logger.debug(f"Schema directly selected via dropdown: {schema_name} (already assigned)")
                 # Schema already assigned in app.py, just validate to get next question
                 return self._validate_params(memory, tool_name, user_input="")
 
             # Check if connection was directly selected via dropdown (bypass LLM)
             if user_input.startswith("__CONNECTION_SELECTED__:"):
                 connection_name = user_input.replace("__CONNECTION_SELECTED__:", "").strip()
-                logger.info(f"✅ Connection directly selected via dropdown: {connection_name} (already assigned)")
+                logger.debug(f"Connection directly selected via dropdown: {connection_name} (already assigned)")
                 # Connection already assigned in app.py, just validate to get next question
                 return self._validate_params(memory, tool_name, user_input="")
 
@@ -148,7 +152,7 @@ class JobAgent:
             simple_commands = {"write", "email", "send", "done", "finish", "complete", "both"}
 
             if not memory.gathered_params and user_input_lower in simple_commands:
-                logger.info(f"📝 Skipping LLM extraction for command: '{user_input}'")
+                logger.debug(f"Skipping LLM extraction for command: '{user_input}'")
                 return self._validate_params(memory, tool_name, user_input="")
 
             result = self._extract_with_llm(memory, user_input, tool_name)
@@ -164,21 +168,21 @@ class JobAgent:
                 # Pydantic will handle validation of empty strings vs missing values
                 new_params = {k: v for k, v in params.items() if v is not None}
                 memory.gathered_params.update(new_params)
-                logger.info(f"✅ Updated gathered_params: {memory.gathered_params}")
+                logger.debug(f"Updated gathered_params: {memory.gathered_params}")
             
-            logger.info(f"🤖 Job Agent action: {result.get('action')}, tool: {result.get('tool_name')}")
-            logger.info(f"🤖 Extracted params: {result.get('params')}")
+            logger.debug(f"Job Agent action: {result.get('action')}, tool: {result.get('tool_name')}")
+            logger.debug(f"Extracted params: {result.get('params')}")
             
             # If this was conversational input with ASK action and a question, return it directly
             # Don't override with validation
             if result.get('action') == 'ASK' and result.get('question') and self._is_conversational_input(user_input):
-                logger.info("💬 Returning conversational response directly (skipping validation override)")
+                logger.debug("Returning conversational response directly (skipping validation override)")
                 return result
             
             # After extracting params, validate to get the correct next question
-            logger.info(f"🔍 Validating params for {tool_name}...")
+            logger.debug(f"Validating params for {tool_name}")
             validation_result = self._validate_params(memory, tool_name, user_input)
-            logger.info(f"🔍 Validation result: action={validation_result.get('action')}, question={validation_result.get('question', 'N/A')[:50]}...")
+            logger.debug(f"Validation result: action={validation_result.get('action')}, question={validation_result.get('question', 'N/A')[:50]}...")
             return validation_result
 
         except LLMError as e:
@@ -198,6 +202,24 @@ class JobAgent:
                 result["error"] = icc_error.user_message
             return result
     
+    def _check_navigation_commands(self, user_input: str) -> Optional[str]:
+        """
+        Check if user input is a navigation command (back/reset).
+        Helper method consistent with BaseStageHandler.
+        
+        Args:
+            user_input: User's input
+            
+        Returns:
+            Optional[str]: 'back', 'reset', or None if not a navigation command
+        """
+        user_lower = user_input.lower().strip()
+        if user_lower in ["back", "go back", "previous", "undo"]:
+            return "back"
+        elif user_lower in ["reset", "start over", "cancel", "restart", "clear all"]:
+            return "reset"
+        return None
+    
     def _check_edit_commands(self, memory: Memory, user_input: str, tool_name: str) -> Optional[Dict[str, Any]]:
         """
         Check if user wants to go back and edit a previous parameter.
@@ -215,10 +237,12 @@ class JobAgent:
         Returns:
             Dict with action=ASK if edit command detected, None otherwise
         """
+        # Use the standardized navigation command checker
+        nav_cmd = self._check_navigation_commands(user_input)
         input_lower = user_input.lower().strip()
         
         # Reset/start over - clear all parameters
-        if input_lower in ["reset", "start over", "restart", "clear all"]:
+        if nav_cmd == "reset":
             if not memory.gathered_params:
                 return {
                     "action": "ASK",
@@ -227,17 +251,17 @@ class JobAgent:
                     "tool_name": tool_name
                 }
             
-            logger.info(f"🔄 User requested reset, clearing all parameters: {list(memory.gathered_params.keys())}")
+            logger.info(f"User requested reset, clearing all parameters: {list(memory.gathered_params.keys())}")
             param_names = list(memory.gathered_params.keys())
             memory.gathered_params.clear()
             
             # Get first question again
             validation = self._validate_params(memory, tool_name, user_input="")
-            validation["question"] = f"✅ Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\'s start over.')}"
+            validation["question"] = f"Cleared parameters: {', '.join(param_names)}\n\n{validation.get('question', 'Let\'s start over.')}"
             return validation
         
         # Go back - remove last parameter
-        if input_lower in ["back", "go back", "undo", "previous"]:
+        if nav_cmd == "back":
             if not memory.gathered_params:
                 return {
                     "action": "ASK",
@@ -249,11 +273,11 @@ class JobAgent:
             # Remove the last added parameter
             last_param = list(memory.gathered_params.keys())[-1]
             old_value = memory.gathered_params.pop(last_param)
-            logger.info(f"⬅️ User went back, removed: {last_param}={old_value}")
+            logger.debug(f"User went back, removed: {last_param}={old_value}")
             
             # Get the question for that parameter again
             validation = self._validate_params(memory, tool_name, user_input="")
-            validation["question"] = f"✅ Removed: {last_param} = '{old_value}'\n\n{validation.get('question', 'What would you like for this parameter?')}"
+            validation["question"] = f"Removed: {last_param} = '{old_value}'\n\n{validation.get('question', 'What would you like for this parameter?')}"
             return validation
         
         # Edit specific parameter - use LLM to understand which parameter user wants to edit
@@ -265,11 +289,11 @@ class JobAgent:
                 
                 if matched_param:
                     old_value = memory.gathered_params.pop(matched_param)
-                    logger.info(f"✏️ User editing parameter: {matched_param}={old_value} (from input: '{user_input}')")
+                    logger.debug(f"User editing parameter: {matched_param}={old_value} (from input: '{user_input}')")
                     
                     # Get the question for that parameter
                     validation = self._validate_params(memory, tool_name, user_input="")
-                    validation["question"] = f"✅ Cleared: {matched_param} = '{old_value}'\n\n{validation.get('question', f'Please provide a new value for {matched_param}:')}"
+                    validation["question"] = f"Cleared: {matched_param} = '{old_value}'\n\n{validation.get('question', f'Please provide a new value for {matched_param}:')}"
                     return validation
                 else:
                     available_params = ', '.join(memory.gathered_params.keys()) if memory.gathered_params else 'none'
@@ -303,34 +327,15 @@ class JobAgent:
         if not params:
             return None
         
-        # Build prompt for LLM
-        param_list = '\n'.join([f"- {key}: {value}" for key, value in params.items()])
-        
-        prompt = f"""You are helping identify which parameter a user wants to edit.
-
-Current parameters:
-{param_list}
-
-User input: "{user_input}"
-
-Identify which parameter the user wants to edit. Respond with ONLY the exact parameter name from the list above, or "NONE" if you cannot determine it.
-
-Examples:
-User: "edit job name" → job_name
-User: "change the connection" → connection
-User: "fix folder" → folder
-User: "edit name" → job_name
-User: "update execute" → execute_query
-User: "change something random" → NONE
-
-Response (parameter name only):"""
+        # Build prompt using centralized template
+        prompt = ParameterEditIdentificationPrompt.build(user_input, params)
 
         try:
             messages = [HumanMessage(content=prompt)]
             response = self.llm.invoke(messages)
             
             identified_param = response.content.strip()
-            logger.info(f"🤖 LLM identified parameter: '{identified_param}' from input: '{user_input}'")
+            logger.debug(f"LLM identified parameter: '{identified_param}' from input: '{user_input}'")
             
             # Validate LLM response
             if identified_param == "NONE" or not identified_param:
@@ -437,28 +442,13 @@ Response (parameter name only):"""
         """
         logger.info(f"Detected conversational input: {user_input}")
         
-        # Build context for conversational response
-        context = f"""
-You are helping the user configure a '{tool_name}' job.
-
-Current progress:
-{json.dumps(memory.gathered_params, indent=2)}
-
-Last question asked: {memory.last_question or "(none yet)"}
-
-The user said: "{user_input}"
-
-Respond naturally to their question or comment, then remind them what we're working on and what information you still need.
-
-Be conversational and helpful. After your response, restate the last question or ask the next needed parameter.
-
-Output format:
-{{
-    "action": "ASK",
-    "question": "Your conversational response here...",
-    "params": {{}}
-}}
-"""
+        # Build context using centralized template
+        context = JobAgentConversationPrompt.build(
+            tool_name=tool_name,
+            gathered_params=memory.gathered_params,
+            last_question=memory.last_question,
+            user_input=user_input
+        )
         
         try:
             result = self._invoke_llm_with_retry(context, is_conversation=True)
@@ -542,15 +532,15 @@ Missing: {', '.join(missing) if missing else 'none'}
 Output JSON only:"""
             
         else:
-            # Fallback to parameter extraction prompt
-            system_prompt = self.prompt_manager.get_prompt("parameter_extraction")
+            # Fallback: Use generic extraction (should not happen with proper tool routing)
+            logger.warning(f"Unknown tool name '{tool_name}', using fallback extraction")
+            system_prompt = f"You are extracting parameters for {tool_name} job. Extract from user input and ask for missing required parameters."
             prompt_text = f"""Tool: {tool_name}
 Current params: {json.dumps(memory.gathered_params)}
 User said: "{user_input}"
 
-IMPORTANT: Output ONLY the JSON response.
-
-Extract parameters or ask for missing ones."""
+Extract any parameters mentioned and ask for missing required ones.
+Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}, "question": "..." if ASK}}"""
         
         logger.info(f"Calling LLM with model: {self.config.model_name}")
         logger.debug(f"System prompt:\n{system_prompt}")
@@ -558,14 +548,25 @@ Extract parameters or ask for missing ones."""
         
         full_prompt = f"{system_prompt}\n\n{prompt_text}"
         return self._invoke_llm_with_retry(full_prompt)
-
-    @retry(config=RetryPresets.LLM_CALL)
+    
     def _invoke_llm_with_retry(
         self,
         prompt: str,
         is_conversation: bool = False
-    ) -> Dict[str, Any]:
-        """Invoke LLM with automatic retry on failure."""
+    ) -> str:
+        """
+        Invoke LLM with retry logic and error handling.
+        
+        Args:
+            prompt: The prompt to send
+            is_conversation: Whether this is a conversational message
+            
+        Returns:
+            LLM response content
+            
+        Raises:
+            LLMError: On LLM invocation failure
+        """
         try:
             system_content = "You are a helpful assistant helping configure database jobs. Be friendly and concise." if is_conversation else "You are a parameter extraction assistant. Output JSON only."
             messages = [

@@ -26,8 +26,9 @@ import traceback
 from typing import Optional
 
 # Configure logging to see agent actions
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True,  # Force reconfiguration of logging
     handlers=[
@@ -53,6 +54,13 @@ from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
 from src.utils.connection_api_client import populate_memory_connections
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
+from src.utils.async_helper import run_async, run_async_safe
+from src.services import (
+    get_connection_service,
+    get_session_manager,
+    get_ui_formatter,
+    get_router_service
+)
 from src.errors import (
     ICCBaseError,
     AuthenticationError,
@@ -78,70 +86,20 @@ if os.getenv("ENABLE_PROMPT_LOGGING", "false").lower() in ["true", "1", "yes"]:
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 app.title = "ICC Agent Chat"
 
-# Session memory storage (in production, use Redis or DB)
-session_memories = {}
-
-# Initialize config loader (replaces schema_loader) - used as fallback
+# Initialize services
 config_loader = get_config_loader()
+connection_service = get_connection_service()
+session_manager = get_session_manager()
+ui_formatter = get_ui_formatter()
+router_service = get_router_service()
+initial_config = connection_service.get_initial_config()
 
-# Initialize ICC API client for dynamic dropdown population
-from src.utils.connection_api_client import ICCAPIClient
-
-# Cache for connection name -> ID mapping (populated on first API call)
-connection_id_cache = {}
-
-# Get initial values for dropdowns (from static config as fallback for faster first load)
-initial_connections = config_loader.get_available_connections()
-initial_connection = initial_connections[0] if initial_connections else None
-initial_schemas = config_loader.get_schemas_for_connection(initial_connection) if initial_connection else []
-initial_schema = initial_schemas[0] if initial_schemas else None
-initial_tables = config_loader.get_tables_for_schema(initial_connection, initial_schema) if (initial_connection and initial_schema) else []
-initial_table_selection = initial_tables[:2] if len(initial_tables) >= 2 else initial_tables
-
-
-def get_connection_id(connection_name: str) -> Optional[str]:
-    """Get connection ID from cache or fetch from API."""
-    global connection_id_cache
-    
-    # Return from cache if available
-    if connection_name in connection_id_cache:
-        return connection_id_cache[connection_name]
-    
-    try:
-        # Fetch all connections from API and populate cache
-        from src.utils.auth import authenticate
-        
-        # Run async authentication and API calls
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Await authentication
-        auth_result = loop.run_until_complete(authenticate())
-        if not auth_result:
-            logger.warning("Authentication failed")
-            loop.close()
-            return None
-        
-        userpass, token = auth_result
-        auth_headers = {
-            "Authorization": f"Basic {userpass}",
-            "TokenKey": token
-        }
-        
-        api_client = ICCAPIClient(auth_headers=auth_headers)
-        connections = loop.run_until_complete(api_client.fetch_connections())
-        loop.close()
-        
-        # Populate cache
-        for name, info in connections.items():
-            connection_id_cache[name] = info.get("id")
-        
-        logger.info(f"Cached {len(connection_id_cache)} connection IDs")
-        return connection_id_cache.get(connection_name)
-        
-    except Exception as e:
-        logger.error(f"Error fetching connection IDs: {e}")
-        return None
+initial_connections = initial_config["connections"]
+initial_connection = initial_config["initial_connection"]
+initial_schemas = initial_config["schemas"]
+initial_schema = initial_config["initial_schema"]
+initial_tables = initial_config["tables"]
+initial_table_selection = initial_config["initial_tables"]
 
 
 def create_map_table_modal():
@@ -412,7 +370,13 @@ def format_error_for_ui(error: Exception) -> dict:
 
 
 def format_message(role, content, timestamp=None, error_info=None,  **kwargs):
-    """Format a chat message for display"""
+    """Format a chat message for display (delegates to ui_formatter service)."""
+    return ui_formatter.format_message(role, content, timestamp, error_info, **kwargs)
+
+
+# Legacy implementation kept temporarily for reference
+def _format_message_legacy(role, content, timestamp=None, error_info=None,  **kwargs):
+    """Legacy format method - DO NOT USE, kept for reference only."""
     if timestamp is None:
         timestamp = datetime.now().strftime("%H:%M:%S")
     
@@ -611,50 +575,46 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         logger.info(f"User query: {user_message}")
         logger.info(f"Session ID: {session_id}")
         
-        # Get or create memory for this session
-        if session_id not in session_memories:
-            session_memories[session_id] = Memory()
-            logger.info(f"Created new memory for session: {session_id}")
-            
-            # Populate connections from API (falls back to static if fails)
-            try:
-                from src.utils.auth import authenticate
-                from src.utils.table_api_client import set_table_api_auth
-                
-                logger.info("Attempting to fetch connections from API")
-                
-                # Authenticate using the same pattern as other API calls
-                auth_result = await authenticate()
-                auth_headers = None
-                if auth_result:
-                    userpass, token = auth_result
-                    auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
-                    logger.info("Authentication successful for connection fetch")
-                    
-                    # Set auth headers for table API client (used by SQL agent)
-                    set_table_api_auth(auth_headers)
-                    logger.info("Configured table API client with authentication")
-                else:
-                    logger.warning("Authentication failed, trying without auth")
-                
-                if await populate_memory_connections(session_memories[session_id], auth_headers=auth_headers):
-                    conn_count = len(session_memories[session_id].connections)
-                    logger.info(f"Populated {conn_count} connections from API")
-                    if conn_count > 0:
-                        logger.info(f"Available connections: {list(session_memories[session_id].connections.keys())[:5]}...")
-                    else:
-                        logger.warning("API returned 0 connections! Will use static connections.py as fallback")
-                else:
-                    logger.warning("Could not fetch connections from API, will use static connections.py as fallback")
-
-            except AuthenticationError as e:
-                logger.error(f"Authentication error: {e.user_message}")
-            except ICCConnectionError as e:
-                logger.error(f"Connection error fetching connections: {e.user_message}")
-            except Exception as e:
-                logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
+        # Get or create memory for this session using session_manager
+        memory = session_manager.get_or_create_session(session_id)
         
-        memory = session_memories[session_id]
+        # Populate connections from API (falls back to static if fails)
+        try:
+            from src.utils.auth import authenticate
+            from src.utils.table_api_client import set_table_api_auth
+            
+            logger.info("Attempting to fetch connections from API")
+            
+            # Authenticate using the same pattern as other API calls
+            auth_result = await authenticate()
+            auth_headers = None
+            if auth_result:
+                userpass, token = auth_result
+                auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
+                logger.info("Authentication successful for connection fetch")
+                
+                # Set auth headers for table API client (used by SQL agent)
+                set_table_api_auth(auth_headers)
+                logger.info("Configured table API client with authentication")
+            else:
+                logger.warning("Authentication failed, trying without auth")
+            
+            if await populate_memory_connections(memory, auth_headers=auth_headers):
+                conn_count = len(memory.connections)
+                logger.info(f"Populated {conn_count} connections from API")
+                if conn_count > 0:
+                    logger.info(f"Available connections: {list(memory.connections.keys())[:5]}...")
+                else:
+                    logger.warning("API returned 0 connections! Will use static connections.py as fallback")
+            else:
+                logger.warning("Could not fetch connections from API, will use static connections.py as fallback")
+
+        except AuthenticationError as e:
+            logger.error(f"Authentication error: {e.user_message}")
+        except ICCConnectionError as e:
+            logger.error(f"Connection error fetching connections: {e.user_message}")
+        except Exception as e:
+            logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
         
         # Update connection, schema, and tables from UI if provided
         if connection:
@@ -674,15 +634,14 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         # Call the router
         updated_memory, response_text = await handle_turn(memory, user_message)
         
-        # Update session memory
-        session_memories[session_id] = updated_memory
-        
         print("\nROUTER RESPONSE:")
         print(f"New stage: {updated_memory.stage.value}")
         print(f"Response: {response_text[:200]}...")
         
         logger.info(f"Router completed")
         logger.info(f"New stage: {updated_memory.stage.value}")
+        
+        # Note: Memory is managed by session_manager, no need to reassign
         
         return {
             "response": response_text,
@@ -726,52 +685,28 @@ def update_schema_dropdown(selected_connection):
         return [], None
     
     try:
-        logger.info(f"🔍 Updating schema dropdown for connection: {selected_connection}")
+        logger.debug(f"Updating schema dropdown for connection: {selected_connection}")
         
-        # Get connection ID from API
-        connection_id = get_connection_id(selected_connection)
+        # Fetch schemas using connection service
+        schema_options, default_schema = run_async_safe(
+            connection_service.fetch_schemas,
+            selected_connection,
+            default=([], None),
+            log_errors=True
+        )
         
-        if not connection_id:
-            logger.warning(f"⚠️ Connection ID not found for {selected_connection}, using static config")
-            schema_options = config_loader.get_schema_options(selected_connection)
-            default_schema = schema_options[0]["value"] if schema_options else None
+        if schema_options:
+            logger.info(f"Fetched {len(schema_options)} schemas dynamically for connection {selected_connection}")
             return schema_options, default_schema
         
-        logger.info(f"✅ Got connection_id: {connection_id}")
-        
-        # Fetch schemas from API
-        from src.utils.auth import authenticate
-        
-        # Run async authentication and API calls
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        auth_result = loop.run_until_complete(authenticate())
-        if not auth_result:
-            logger.warning("Authentication failed for schema fetch")
-            loop.close()
-            raise Exception("Authentication failed")
-        
-        userpass, token = auth_result
-        auth_headers = {
-            "Authorization": f"Basic {userpass}",
-            "TokenKey": token
-        }
-        
-        api_client = ICCAPIClient(auth_headers=auth_headers)
-        schemas = loop.run_until_complete(api_client.fetch_schemas(connection_id))
-        loop.close()
-        
-        schema_options = [{"label": schema, "value": schema} for schema in schemas]
+        # Fallback to config loader
+        logger.info(f"Using config loader fallback for {selected_connection}")
+        schema_options = config_loader.get_schema_options(selected_connection)
         default_schema = schema_options[0]["value"] if schema_options else None
-        
-        logger.info(f"✅ Fetched {len(schemas)} schemas dynamically for connection {selected_connection}")
         return schema_options, default_schema
         
     except Exception as e:
-        logger.error(f"❌ Error fetching schemas dynamically: {e}, falling back to static config")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in update_schema_dropdown: {e}, falling back to static config")
         schema_options = config_loader.get_schema_options(selected_connection)
         default_schema = schema_options[0]["value"] if schema_options else None
         return schema_options, default_schema
@@ -790,52 +725,29 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return [], []
     
     try:
-        logger.info(f"🔍 Updating tables dropdown for {selected_connection}.{selected_schema}")
+        logger.debug(f"Updating tables dropdown for {selected_connection}.{selected_schema}")
         
-        # Get connection ID from API
-        connection_id = get_connection_id(selected_connection)
+        # Fetch tables using connection service
+        table_options, default_tables = run_async_safe(
+            connection_service.fetch_tables,
+            selected_connection,
+            selected_schema,
+            default=([], []),
+            log_errors=True
+        )
         
-        if not connection_id:
-            logger.warning(f"⚠️ Connection ID not found for {selected_connection}, using static config")
-            table_options = config_loader.get_table_options(selected_connection, selected_schema)
-            default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
+        if table_options:
+            logger.info(f"Fetched {len(table_options)} tables dynamically for {selected_connection}.{selected_schema}")
             return table_options, default_tables
         
-        logger.info(f"✅ Got connection_id: {connection_id}")
-        
-        # Fetch tables from API
-        from src.utils.auth import authenticate
-        
-        # Run async authentication and API calls
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        auth_result = loop.run_until_complete(authenticate())
-        if not auth_result:
-            logger.warning("Authentication failed for table fetch")
-            loop.close()
-            raise Exception("Authentication failed")
-        
-        userpass, token = auth_result
-        auth_headers = {
-            "Authorization": f"Basic {userpass}",
-            "TokenKey": token
-        }
-        
-        api_client = ICCAPIClient(auth_headers=auth_headers)
-        tables = loop.run_until_complete(api_client.fetch_tables(connection_id, selected_schema))
-        loop.close()
-        
-        table_options = [{"label": table, "value": table} for table in tables]
+        # Fallback to config loader
+        logger.info(f"Using config loader fallback for {selected_connection}.{selected_schema}")
+        table_options = config_loader.get_table_options(selected_connection, selected_schema)
         default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
-        
-        logger.info(f"✅ Fetched {len(tables)} tables dynamically for {selected_connection}.{selected_schema}")
         return table_options, default_tables
         
     except Exception as e:
-        logger.error(f"❌ Error fetching tables dynamically: {e}, falling back to static config")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error(f"Error in update_tables_dropdown: {e}, falling back to static config")
         table_options = config_loader.get_table_options(selected_connection, selected_schema)
         default_tables = [t["value"] for t in table_options[:2]] if len(table_options) >= 2 else [t["value"] for t in table_options]
         return table_options, default_tables
@@ -938,18 +850,15 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
             schema = config.get("schema")
             selected_tables = config.get("tables", [])
             
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(
-                invoke_router_async(
-                    mapping_json,
-                    session_id="web-chat-session",
-                    connection=connection,
-                    schema=schema,
-                    selected_tables=selected_tables
-                )
+            # Use async helper to invoke router
+            response = run_async(
+                invoke_router_async,
+                mapping_json,
+                session_id="web-chat-session",
+                connection=connection,
+                schema=schema,
+                selected_tables=selected_tables
             )
-            loop.close()
             
             if "error" in response:
                 error_info = response.get("error_info")
@@ -1033,19 +942,15 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
             chat_display = [format_message(**msg) for msg in chat_data]
             return chat_display, chat_data, "", "", False, map_data, [], [], None
         
-        # Invoke router with session memory and configuration
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        response = loop.run_until_complete(
-            invoke_router_async(
-                user_input, 
-                session_id="web-chat-session",
-                connection=connection,
-                schema=schema,
-                selected_tables=selected_tables
-            )
+        # Invoke router with session memory and configuration using async helper
+        response = run_async(
+            invoke_router_async,
+            user_input, 
+            session_id="web-chat-session",
+            connection=connection,
+            schema=schema,
+            selected_tables=selected_tables
         )
-        loop.close()
         
         if "error" in response:
             # Error response with enhanced formatting
@@ -1408,16 +1313,16 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
                 break
 
         if triggered_idx is None or not selected_schemas[triggered_idx]:
-            logger.warning(f"⚠️ No schema selected for {param_name}")
+            logger.warning(f"No schema selected for {param_name}")
             raise dash.exceptions.PreventUpdate
 
         selected_schema = selected_schemas[triggered_idx]
 
     except Exception as e:
-        logger.error(f"❌ Error parsing schema selection: {e}")
+        logger.error(f"Error parsing schema selection: {e}")
         raise dash.exceptions.PreventUpdate
 
-    logger.info(f"✅ Schema selected via dropdown: {selected_schema} for param: {param_name}")
+    logger.debug(f"Schema selected via dropdown: {selected_schema} for param: {param_name}")
 
     # Add user selection message
     user_message = {
@@ -1430,26 +1335,25 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
     # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
+    # Get or create memory for this session
+    memory = session_manager.get_or_create_session(session_id)
+    
     # Directly assign the parameter in memory WITHOUT calling LLM
-    if session_id in session_memories:
-        memory = session_memories[session_id]
+    if memory:
         memory.gathered_params[param_name] = selected_schema
         logger.info(f"Directly assigned {param_name}={selected_schema} (bypassed LLM)")
 
         # Trigger next question by calling router with special flag
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(
-                invoke_router_async(
-                    f"__SCHEMA_SELECTED__:{selected_schema}",
-                    session_id=session_id,
-                    connection=config.get("connection"),
-                    schema=config.get("schema"),
-                    selected_tables=config.get("tables", [])
-                )
+            # Use async helper to invoke router
+            response = run_async(
+                invoke_router_async,
+                f"__SCHEMA_SELECTED__:{selected_schema}",
+                session_id=session_id,
+                connection=config.get("connection"),
+                schema=config.get("schema"),
+                selected_tables=config.get("tables", [])
             )
-            loop.close()
 
             response_text = response.get("response", "Schema selected successfully!")
 
@@ -1500,7 +1404,7 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
             chat_data.append(error_message)
     else:
         # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' not found in session_memories during schema selection")
+        logger.warning(f"Session '{session_id}' could not be created during schema selection")
         error_message = {
             "role": "error",
             "content": "Session not initialized. Please start a new conversation by typing a message first.",
@@ -1528,22 +1432,20 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     """Handle connection selection from dropdown WITHOUT using LLM"""
     ctx = callback_context
 
-    logger.info(f"🔘 Connection callback triggered")
-    logger.info(f"   n_clicks: {n_clicks}")
-    logger.info(f"   selected_connections: {selected_connections}")
-    logger.info(f"   button_ids: {button_ids}")
+    # Connection callback (reduced logging verbosity)
+    logger.debug(f"🔘 Connection callback: clicks={n_clicks}, connections={selected_connections}")
 
     # Check if any button was actually clicked
     if not ctx.triggered:
-        logger.warning("⚠️ No trigger context")
+        logger.warning("No trigger context")
         raise dash.exceptions.PreventUpdate
 
     # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-    logger.info(f"   triggered_id: {triggered_id}")
+    logger.debug(f"   triggered_id: {triggered_id}")
 
     if ".n_clicks" not in triggered_id:
-        logger.warning("⚠️ Not a button click")
+        logger.warning("Not a button click")
         raise dash.exceptions.PreventUpdate
 
     # Parse the button ID to get param_name
@@ -1564,7 +1466,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             raise dash.exceptions.PreventUpdate
 
         if not selected_connections[triggered_idx]:
-            logger.warning(f"⚠️ No connection selected for {param_name}")
+            logger.warning(f"No connection selected for {param_name}")
             raise dash.exceptions.PreventUpdate
 
         selected_connection = selected_connections[triggered_idx]
@@ -1572,10 +1474,10 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     except dash.exceptions.PreventUpdate:
         raise
     except Exception as e:
-        logger.error(f"❌ Error parsing connection selection: {e}")
+        logger.error(f"Error parsing connection selection: {e}")
         raise dash.exceptions.PreventUpdate
 
-    logger.info(f"✅ Connection selected via dropdown: {selected_connection} for param: {param_name}")
+    logger.debug(f"Connection selected via dropdown: {selected_connection} for param: {param_name}")
 
     # Add user selection message
     user_message = {
@@ -1588,9 +1490,11 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
+    # Get or create memory for this session
+    memory = session_manager.get_or_create_session(session_id)
+    
     # Directly assign the parameter in memory WITHOUT calling LLM
-    if session_id in session_memories:
-        memory = session_memories[session_id]
+    if memory:
         memory.gathered_params[param_name] = selected_connection
         logger.info(f"Directly assigned {param_name}={selected_connection} (bypassed LLM)")
 
@@ -1601,18 +1505,15 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
 
         # Trigger next question by calling router with special flag
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            response = loop.run_until_complete(
-                invoke_router_async(
-                    f"__CONNECTION_SELECTED__:{selected_connection}",
-                    session_id=session_id,
-                    connection=config.get("connection"),
-                    schema=config.get("schema"),
-                    selected_tables=config.get("tables", [])
-                )
+            # Use async helper to invoke router
+            response = run_async(
+                invoke_router_async,
+                f"__CONNECTION_SELECTED__:{selected_connection}",
+                session_id=session_id,
+                connection=config.get("connection"),
+                schema=config.get("schema"),
+                selected_tables=config.get("tables", [])
             )
-            loop.close()
 
             response_text = response.get("response", "Connection selected successfully!")
 
@@ -1663,7 +1564,7 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             chat_data.append(error_message)
     else:
         # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' not found in session_memories during connection selection")
+        logger.warning(f"Session '{session_id}' could not be created during connection selection")
         error_message = {
             "role": "error",
             "content": "Session not initialized. Please start a new conversation by typing a message first.",

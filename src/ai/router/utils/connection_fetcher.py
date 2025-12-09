@@ -8,6 +8,7 @@ import logging
 from typing import Dict, Any
 from src.ai.router.stage_handlers.base_handler import StageHandlerResult
 from src.ai.router.memory import Memory
+from src.errors import ErrorHandler
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class ConnectionFetcher:
         Returns:
             Dict with success status, message, and fetched connections
         """
-        logger.info("📋 Fetching all available connections...")
+        logger.info("Fetching all available connections")
         
         try:
             from src.utils.connection_api_client import ConnectionAPIClient
@@ -41,7 +42,7 @@ class ConnectionFetcher:
             connections_dict = await client.fetch_connections()
             
             memory.connections = connections_dict
-            logger.info(f"✅ Fetched {len(connections_dict)} connections")
+            logger.info(f"Fetched {len(connections_dict)} connections")
             
             return {
                 "success": True,
@@ -50,10 +51,11 @@ class ConnectionFetcher:
             }
             
         except Exception as e:
-            logger.error(f"❌ Error fetching connections: {e}", exc_info=True)
+            logger.error(f"Error fetching connections: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_connections"})
             return {
                 "success": False,
-                "message": f"Failed to fetch connections: {str(e)}",
+                "message": icc_error.user_message,
                 "connections": {}
             }
     
@@ -69,7 +71,7 @@ class ConnectionFetcher:
         Returns:
             Dict with success status, message, and fetched schemas
         """
-        logger.info(f"📋 Fetching schemas for connection: {connection_name}")
+        logger.info(f"Fetching schemas for connection: {connection_name}")
         
         try:
             from src.utils.connection_api_client import fetch_schemas_for_connection
@@ -91,7 +93,7 @@ class ConnectionFetcher:
             
             schemas = await fetch_schemas_for_connection(connection_id, auth_headers=auth_headers)
             memory.available_schemas = schemas
-            logger.info(f"✅ Fetched {len(schemas)} schemas for {connection_name}")
+            logger.info(f"Fetched {len(schemas)} schemas for {connection_name}")
             
             return {
                 "success": True,
@@ -100,10 +102,11 @@ class ConnectionFetcher:
             }
             
         except Exception as e:
-            logger.error(f"❌ Error fetching schemas: {e}", exc_info=True)
+            logger.error(f"Error fetching schemas: {e}", exc_info=True)
+            icc_error = ErrorHandler.handle(e, {"context": "fetch_schemas", "connection": connection_name})
             return {
                 "success": False,
-                "message": f"Failed to fetch schemas: {str(e)}",
+                "message": icc_error.user_message,
                 "schemas": []
             }
     
