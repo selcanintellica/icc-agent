@@ -9,7 +9,6 @@ Extracts router invocation logic from app.py following SOLID principles:
 import logging
 from typing import Dict, Any, Optional, List
 from src.ai.router import handle_turn, Memory
-from src.utils.connection_api_client import populate_memory_connections
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +46,14 @@ class RouterService:
             # Populate memory with connection info if provided
             if connection and schema and selected_tables:
                 logger.debug(f"Populating memory: {connection}.{schema}, tables: {selected_tables}")
-                await populate_memory_connections(
-                    memory,
-                    connection,
-                    schema,
-                    selected_tables
-                )
+                # Set connection info directly on memory
+                memory.connection_manager.default_connection = connection
+                memory.connection_manager.default_schema = schema
+                memory.connection_manager.selected_tables = selected_tables
             
             # Invoke router
             logger.info(f"Invoking router with input: {user_input[:50]}...")
-            memory, response_text = await handle_turn(user_input, memory)
+            memory, response_text = await handle_turn(memory, user_input)
             
             return {
                 "response": response_text,
