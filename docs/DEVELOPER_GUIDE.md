@@ -216,7 +216,22 @@ CONFIRMATION_WORDS = ["yes", "y", "ok", "okay", "sure", "correct", "right"]
 
 ## Adding a New Job Type
 
-### Step 1: Decide Agent Dependencies
+### Complete Guide Available
+
+**See comprehensive guide**: [ADDING_NEW_JOB.md](ADDING_NEW_JOB.md)
+
+The complete 9-step guide covers:
+1. Defining stages and categories
+2. Creating strategy classes (Strategy Pattern)
+3. Writing job prompts
+4. Using LLM for parameter extraction (Job Agent)
+5. Creating stage handlers with strategy registry
+6. Registering in router
+7. Building wire payloads
+8. Adding request models
+9. Updating help system
+
+### Quick Reference: Agent Dependencies
 
 **Choose which agents your handler needs:**
 
@@ -231,12 +246,67 @@ CONFIRMATION_WORDS = ["yes", "y", "ok", "okay", "sure", "correct", "right"]
 - **Auto-generate query from data?** → No SQL agent needed
   - Example: SendEmail (builds query from output_table_info)
 
-### Step 2: Create Stage Handler
+### Strategy Pattern Architecture
+
+**Current Architecture** (Strategy Pattern):
+- Each stage = one strategy class
+- Handler orchestrates strategies via registry
+- Strategies inherit from `StageStrategy` base class
+- Automatic help system integration
+
+**Example Strategy Structure**:
+```
+src/ai/router/stage_handlers/strategies/yourjob/
+  __init__.py
+  need_params.py        # NeedParamsStrategy
+  execute_job.py        # ExecuteJobStrategy
+```
+
+### Step 2: Create Strategy Classes
+
+```python
+# src/ai/router/stage_handlers/strategies/myjob/need_params.py
+from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHandlerResult
+from src.ai.router.context.stage_context import Stage
+from src.ai.router.context.memory import Memory
+
+class NeedMyJobParamsStrategy(StageStrategy):
+    """Strategy for gathering my_job parameters"""
+    
+    def __init__(self, job_agent):
+        super().__init__()
+        self.job_agent = job_agent
+    
+    async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        """Execute parameter gathering logic"""
+        # Call job agent
+        action = call_job_agent(memory, user_input, tool_name="my_job")
+        
+        if action.action_type == "ASK":
+            return self._create_result(
+                memory,
+                message=action.question,
+                new_stage=Stage.NEED_MY_JOB_PARAMS
+            )
+        
+        if action.action_type == "TOOL":
+            # Move to execution
+            return self._create_result(
+                memory,
+                message="Ready to execute!",
+                new_stage=Stage.EXECUTE_MY_JOB
+            )
+```
+
+### Step 3: Create Stage Handler with Registry
 
 ```python
 # src/ai/router/stage_handlers/my_job_handler.py
 from .base_handler import BaseStageHandler, StageHandlerResult
 from src.ai.router.context.stage_context import Stage
+from src.ai.router.stage_handlers.stage_strategy import StageStrategyRegistry
+from .strategies.myjob.need_params import NeedMyJobParamsStrategy
+from .strategies.myjob.execute_job import ExecuteMyJobStrategy
 
 class MyJobHandler(BaseStageHandler):
     # Define which stages this handler manages
@@ -249,64 +319,85 @@ class MyJobHandler(BaseStageHandler):
         # Only include agents you need
         self.sql_agent = sql_agent  # If generating SQL from natural language
         self.job_agent = job_agent  # If extracting parameters from user input
+        
+        # Create strategy registry
+        self.strategy_registry = StageStrategyRegistry()
+        
+        # Register strategies
+        self.strategy_registry.register(
+            Stage.NEED_MY_JOB_PARAMS,
+            NeedMyJobParamsStrategy(job_agent=job_agent)
+        )
+        self.strategy_registry.register(
+            Stage.EXECUTE_MY_JOB,
+            ExecuteMyJobStrategy(job_agent=job_agent)
+        )
     
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
         return stage in self.MANAGED_STAGES
     
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
-        stage = memory.stage
+        """Delegate to appropriate strategy"""
+        stage = memory.current_stage
         
-        if stage == Stage.NEED_MY_JOB_PARAMS:
-            return await self._handle_need_params(memory, user_input)
-        elif stage == Stage.EXECUTE_MY_JOB:
-            return await self._handle_execute(memory, user_input)
-    
-    async def _handle_need_params(self, memory, user_input):
-        # Call job agent to gather parameters
-        action = call_job_agent(memory, user_input, tool_name="my_job")
+        # Get strategy from registry
+        strategy = self.strategy_registry.get_strategy(stage)
         
-        # Check action type
-        if action.action_type == "ASK":
+        if strategy:
+            # Strategy handles help automatically via handle_with_help()
+            return await strategy.handle_with_help(memory, user_input)
+        else:
+            logger.error(f"No strategy found for stage: {stage}")
             return self._create_result(
                 memory,
-                message=action.question,
-                new_stage=Stage.NEED_MY_JOB_PARAMS
+                message=f"Error: No handler for stage {stage.value}",
+                new_stage=Stage.ROUTER
             )
-        
-        if action.action_type == "TOOL":
-            memory.stage = Stage.EXECUTE_MY_JOB
-            return await self._handle_execute(memory, "")
-    
-    async def _handle_execute(self, memory, user_input):
-        # Execute job
-        result = execute_my_job(memory.gathered_params)
-        
-        return self._create_result(
-            memory,
-            message=f"Job executed! ID: {result.job_id}",
-            new_stage=Stage.DONE
-        )
 ```
 
-### Step 3: Define Parameters
+### Step 4: Create Job Prompt
 
 ```python
-# src/ai/router/prompts/prompt_manager.py
+# src/ai/router/prompts/job_prompts/my_job_prompt.py
+from typing import Dict, Any
+
+class MyJobPrompt:
+    """Prompt configuration for my_job parameter extraction"""
+    
+    TOOL_NAME = "my_job"
+    
+    REQUIRED_PARAMS = ["name", "param1", "param2"]
+    
+    PARAM_DESCRIPTIONS = {
+        "name": "Job name",
+        "param1": "Description of param1",
+        "param2": "Description of param2"
+    }
+    
+    @staticmethod
+    def get_system_message(gathered_params: Dict[str, Any]) -> str:
+        """Build system message with parameter descriptions"""
+        return f"""Extract parameters for {MyJobPrompt.TOOL_NAME} job.
+        
+Required parameters:
+{MyJobPrompt._format_params()}
+
+IMPORTANT: Only extract actual values from user input.
+"""
+
+# Register in src/ai/router/prompts/prompt_manager.py
+from .job_prompts import MyJobPrompt
 
 TOOL_PARAMS = {
     "my_job": {
-        "required": ["name", "param1", "param2"],
-        "descriptions": {
-            "name": "Job name",
-            "param1": "Description of param1",
-            "param2": "Description of param2"
-        }
+        "required": MyJobPrompt.REQUIRED_PARAMS,
+        "descriptions": MyJobPrompt.PARAM_DESCRIPTIONS
     }
 }
 ```
 
-### Step 4: Create Payload Builder
+### Step 5: Create Payload Builder
 
 ```python
 # src/payload_builders/builders/my_job_builder.py
@@ -327,7 +418,7 @@ class MyJobBuilder(BaseBuilder):
         return payload
 ```
 
-### Step 5: Create Toolkit Function
+### Step 6: Create Toolkit Function
 
 ```python
 # src/ai/toolkits/icc_toolkit.py
@@ -353,7 +444,7 @@ def execute_my_job(params: dict) -> dict:
     }
 ```
 
-### Step 6: Register in Router
+### Step 7: Register in Router
 
 ```python
 # src/ai/router/router.py
@@ -365,7 +456,7 @@ class RouterOrchestrator:
         self.handler_registry.register_handler(MyJobHandler(sql_agent, job_agent))
 ```
 
-### Step 7: Add Entry Point
+### Step 8: Add Entry Point
 
 ```python
 # src/ai/router/stage_handlers/router_handler.py
@@ -380,6 +471,21 @@ async def handle_router_stage(self, memory, user_input):
             message="Let's create a my_job job!",
             new_stage=Stage.NEED_MY_JOB_PARAMS
         )
+```
+
+### Step 9: Update Help System
+
+```python
+# src/ai/router/utils/help_handler.py
+
+def _get_stage_description(self, stage: Stage) -> str:
+    """Get human-readable stage description"""
+    descriptions = {
+        # ... existing descriptions ...
+        Stage.NEED_MY_JOB_PARAMS: "gathering parameters for your my_job job",
+        Stage.EXECUTE_MY_JOB: "executing your my_job job with the provided parameters",
+    }
+    return descriptions.get(stage, stage.value)
 ```
 
 ## Modifying Prompts

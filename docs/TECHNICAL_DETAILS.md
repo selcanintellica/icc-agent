@@ -83,7 +83,20 @@ registry.register("sendemail", SendEmailHandler(job_agent=...))
 # Router calls registry.get_handler(stage) which finds handler.can_handle(stage)
 ```
 
-## Stage Handlers
+## Stage Handlers (Strategy Pattern)
+
+**Architecture Overview**:
+- **Base Class**: `StageStrategy` (abstract)
+  - Method: `execute(memory, user_input)` - implemented by each strategy
+  - Method: `handle_with_help(memory, user_input)` - checks for help, delegates to execute
+  - Integration: Automatic help system detection
+
+- **Handler Orchestration**:
+  - Handler has `StageStrategyRegistry`
+  - Registry maps `Stage` enum → strategy instance
+  - Handler delegates to strategy via `strategy.handle_with_help()`
+
+- **Strategy Location**: `src/ai/router/stage_handlers/strategies/{job_type}/`
 
 **Handler Dependencies:**
 - **ReadSQLHandler**: Uses both SQL agent (query generation) and job agent (parameters)
@@ -93,11 +106,46 @@ registry.register("sendemail", SendEmailHandler(job_agent=...))
 
 ### ReadSQL Handler (src/ai/router/stage_handlers/readsql_handler.py)
 
-**Managed Stages**: `Stage.ASK_SQL_METHOD`, `Stage.NEED_NATURAL_LANGUAGE`, `Stage.NEED_USER_SQL`, `Stage.CONFIRM_GENERATED_SQL`, `Stage.CONFIRM_USER_SQL`, `Stage.EXECUTE_SQL`, `Stage.SHOW_RESULTS`, `Stage.NEED_WRITE_OR_EMAIL`
+**Architecture**: Strategy Pattern with `StageStrategyRegistry`
+
+**Managed Stages & Strategies**:
+- `Stage.ASK_SQL_METHOD` → `AskSqlMethodStrategy`
+- `Stage.NEED_NATURAL_LANGUAGE` → `NeedNaturalLanguageStrategy`
+- `Stage.NEED_USER_SQL` → `NeedUserSqlStrategy`
+- `Stage.CONFIRM_GENERATED_SQL` → `ConfirmGeneratedSqlStrategy`
+- `Stage.CONFIRM_USER_SQL` → `ConfirmUserSqlStrategy`
+- `Stage.EXECUTE_SQL` → `ExecuteSqlStrategy`
+- `Stage.SHOW_RESULTS` → `ShowResultsStrategy`
+- `Stage.NEED_WRITE_OR_EMAIL` → `NeedWriteOrEmailStrategy`
+
+**Strategy Location**: `src/ai/router/stage_handlers/strategies/readsql/`
 
 **Typical Flow**:
 ```
 Stage.ASK_SQL_METHOD → Stage.NEED_NATURAL_LANGUAGE → Stage.CONFIRM_GENERATED_SQL → Stage.EXECUTE_SQL → Stage.SHOW_RESULTS
+```
+
+**Handler Implementation**:
+```python
+class ReadSQLHandler(BaseStageHandler):
+    def __init__(self, config, sql_agent, job_agent):
+        # Create registry
+        self.strategy_registry = StageStrategyRegistry()
+        
+        # Register strategies
+        self.strategy_registry.register(
+            Stage.NEED_NATURAL_LANGUAGE,
+            NeedNaturalLanguageStrategy(sql_agent=sql_agent)
+        )
+        # ... register all 8 strategies
+    
+    async def handle(self, memory: Memory, user_input: str):
+        # Get strategy for current stage
+        strategy = self.strategy_registry.get_strategy(memory.current_stage)
+        
+        if strategy:
+            # Automatically checks for help before executing
+            return await strategy.handle_with_help(memory, user_input)
 ```
 
 **Example Logic** (simplified pseudocode):
@@ -259,11 +307,22 @@ Stage.CONFIRM_EMAIL_QUERY → Stage.NEED_EMAIL_QUERY (optional) → execute_emai
 
 **Purpose**: Compare results of two SQL queries with column mapping
 
+**Architecture**: Strategy Pattern with 14 dedicated strategy classes
+
 **Uses Both Agents**:
 - SQL agent for generating queries from natural language
 - Job agent for gathering comparison parameters
 
-**Managed Stages**: 14 stages (from `Stage.ASK_FIRST_SQL_METHOD` to `Stage.EXECUTE_COMPARE_SQL`)
+**Strategy Location**: `src/ai/router/stage_handlers/strategies/comparesql/`
+
+**Managed Stages & Strategies**: 14 total
+- `AskFirstSQLMethodStrategy`, `NeedFirstNaturalLanguageStrategy`, `NeedFirstUserSQLStrategy`
+- `ConfirmFirstSQLStrategy` (handles both generated and manual)
+- `AskSecondSQLMethodStrategy`, `NeedSecondNaturalLanguageStrategy`, `NeedSecondUserSQLStrategy`
+- `ConfirmSecondSQLStrategy` (handles both generated and manual)
+- `AskAutoMatchStrategy`, `WaitingMapTableStrategy`
+- `AskReportingTypeStrategy`, `AskCompareSchemaStrategy`, `AskCompareTableNameStrategy`
+- `AskCompareJobNameStrategy` (handles execution)
 
 **Stage Flow**:
 ```
@@ -275,10 +334,78 @@ Stage.ASK_FIRST_SQL_METHOD → [generate or manual first SQL] → Stage.CONFIRM_
 ```
 
 **Key Features**:
-1. Supports both generated and manual SQL for each query
-2. Auto-column matching or manual mapping
-3. Flexible reporting types
-4. Stores comparison results in specified table
+1. Each stage isolated in dedicated strategy class
+2. Supports both generated and manual SQL for each query
+3. Auto-column matching or manual mapping
+4. Flexible reporting types
+5. Automatic help system integration for all 14 stages
+6. Stores comparison results in specified table
+
+## Help System
+
+### HelpHandler (src/ai/router/utils/help_handler.py)
+
+**Purpose**: Context-aware help responses for any stage
+
+**Key Components**:
+
+1. **Help Detection** (`is_help_request()`):
+   ```python
+   def is_help_request(user_input: str) -> bool:
+       """Check if user is asking for help"""
+       help_keywords = ["help", "?", "what", "how", "explain"]
+       return any(keyword in user_input.lower() for keyword in help_keywords)
+   ```
+
+2. **Stage Descriptions** (`_get_stage_description()`):
+   ```python
+   descriptions = {
+       Stage.NEED_USER_SQL: "providing your SQL query",
+       Stage.NEED_SECOND_USER_SQL: "providing your SECOND SQL query for comparison",
+       Stage.ASK_REPORTING_TYPE: "selecting the reporting type (identical, different, or all)",
+       # 25+ stage descriptions
+   }
+   ```
+
+3. **Context-Aware Responses**:
+   - Shows gathered parameters
+   - Shows current SQL (for CompareSQL, shows first SQL when asking for second)
+   - Lists available options (connections, schemas)
+   - Human-readable stage explanations (prevents literal interpretation)
+
+**Integration with Strategy Pattern**:
+```python
+class StageStrategy(ABC):
+    async def handle_with_help(self, memory: Memory, user_input: str):
+        """Check for help request, delegate to execute if not help"""
+        if is_help_request(user_input):
+            help_response = self._help_handler.get_help_response(
+                memory,
+                user_input,
+                current_stage=self.get_stage()
+            )
+            return self._create_result(memory, message=help_response)
+        
+        # Not help - execute normal strategy logic
+        return await self.execute(memory, user_input)
+```
+
+**Example Help Flow**:
+```
+User at Stage.NEED_SECOND_USER_SQL types: "help"
+
+Help System:
+1. Detects help keyword via is_help_request()
+2. Gets stage description: "providing your SECOND SQL query for comparison"
+3. Injects context:
+   - Current stage: need_second_user_sql
+   - First SQL already provided: "SELECT * FROM customers"
+   - Gathered params: {...}
+4. Builds LLM prompt with instructions:
+   - "DO NOT interpret stage names literally"
+   - "Explain what user needs to do at this stage"
+5. Returns: "You're providing the second SQL query to compare against your first query: SELECT * FROM customers..."
+```
 
 ## LLM Agents
 
@@ -404,6 +531,79 @@ async def call_sql_agent(memory: Memory, user_input: str, model: ChatOllama) -> 
     
     return sql_query
 ```
+
+## Job Prompts
+
+### Job Prompt Organization (src/ai/router/prompts/job_prompts/)
+
+**Purpose**: Organized, reusable prompt templates for each job type
+
+**Structure**:
+```
+job_prompts/
+  __init__.py
+  write_data_prompt.py     # WriteDataPrompt class
+  read_sql_prompt.py       # ReadSQLPrompt class
+  send_email_prompt.py     # SendEmailPrompt class
+```
+
+**Pattern**: Each prompt class contains:
+- `TOOL_NAME`: Job identifier
+- `REQUIRED_PARAMS`: List of required parameters
+- `PARAM_DESCRIPTIONS`: Human-readable descriptions
+- `get_system_message()`: Build system prompt
+- `get_user_message()`: Build user prompt
+
+**Example**:
+```python
+class WriteDataPrompt:
+    TOOL_NAME = "write_data"
+    
+    REQUIRED_PARAMS = [
+        "name",
+        "write_count_connection",
+        "write_count_schema",
+        "write_count_table",
+        "drop_or_truncate"
+    ]
+    
+    PARAM_DESCRIPTIONS = {
+        "name": "Job name",
+        "write_count_connection": "Database connection ID",
+        "write_count_schema": "Target schema name",
+        "write_count_table": "Target table name",
+        "drop_or_truncate": "Action before insert (DROP or TRUNCATE)"
+    }
+    
+    @staticmethod
+    def get_system_message(gathered_params):
+        return f"""Extract parameters for write_data job.
+        
+Required:
+- name: Job name
+- write_count_connection: Connection (UI shows dropdown)
+- write_count_schema: Schema (UI shows dropdown)
+- write_count_table: Table name
+- drop_or_truncate: DROP or TRUNCATE
+
+IMPORTANT: Only extract actual values from user input.
+"""
+```
+
+**Usage in PromptManager**:
+```python
+from .job_prompts import WriteDataPrompt, ReadSQLPrompt, SendEmailPrompt
+
+TOOL_PARAMS = {
+    "write_data": {
+        "required": WriteDataPrompt.REQUIRED_PARAMS,
+        "descriptions": WriteDataPrompt.PARAM_DESCRIPTIONS
+    },
+    # ...
+}
+```
+
+**Note**: CompareSQL uses stage-by-stage validation (no dedicated prompt file)
 
 ## Parameter Validation
 
