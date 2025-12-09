@@ -130,8 +130,8 @@ async def send_message(
             session_id=request.session_id,
             response=response_text,
             stage=memory.stage.value if hasattr(memory, 'stage') else None,
-            gathered_params=dict(memory.gathered_params) if hasattr(memory, 'gathered_params') else {},
-            job_context=dict(memory.job_context) if hasattr(memory, 'job_context') else {},
+            gathered_params=memory.gathered_params if hasattr(memory, 'gathered_params') else {},
+            job_context=memory.job_context.to_dict() if hasattr(memory, 'job_context') else {},
             requires_dropdown=requires_dropdown,
             dropdown_type=dropdown_type,
             dropdown_options=dropdown_options
@@ -139,31 +139,29 @@ async def send_message(
     
     except ICCBaseError as e:
         logger.error(f"ICC error in send_message: {e}", exc_info=True)
-        error_info = ErrorHandler.handle_error(e)
         
         return ChatMessageResponse(
             session_id=request.session_id,
-            response=error_info.message,
+            response=str(e),
             error=ErrorDetail(
-                code=error_info.code.value,
-                message=error_info.message,
-                details=error_info.details,
-                category=error_info.category.value
+                code=e.code.value,
+                message=str(e),
+                details=e.details,
+                category=e.category.value
             )
         )
     
     except Exception as e:
         logger.error(f"Unexpected error in send_message: {e}", exc_info=True)
-        error_info = ErrorHandler.handle_error(e)
         
         return ChatMessageResponse(
             session_id=request.session_id,
             response="An unexpected error occurred. Please try again.",
             error=ErrorDetail(
-                code=error_info.code.value,
-                message=error_info.message,
-                details=error_info.details,
-                category=error_info.category.value
+                code="INTERNAL_ERROR",
+                message=str(e),
+                details={"error_type": type(e).__name__},
+                category="internal"
             )
         )
 

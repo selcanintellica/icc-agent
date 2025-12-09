@@ -17,6 +17,35 @@ Your Frontend/System          ICC Agent Backend (FastAPI)
        │  JSON Response               │
 ```
 
+## Prerequisites
+
+### Required Services
+
+1. **Ollama** - LLM service must be running
+   ```bash
+   # Install Ollama from https://ollama.ai
+   
+   # Pull required models
+   ollama pull qwen3:8b
+   ollama pull qwen2.5-coder:7b
+   
+   # Verify Ollama is running
+   curl http://localhost:11434/api/tags
+   ```
+
+2. **Python 3.11+** (for manual installation)
+
+3. **Docker** (for Docker deployment)
+
+### Important Notes
+
+- The backend requires Ollama to be running for message processing
+- Health check endpoint will work without Ollama
+- Connection/schema/table endpoints work without Ollama
+- Sending messages requires Ollama models to be available
+
+---
+
 ## Quick Start
 
 ### Option 1: Docker (Recommended for Production)
@@ -38,7 +67,7 @@ docker-compose up -d
 
 ```bash
 # Clone or receive the ICC Agent repository
-cd ICC_try
+cd ICC_agent
 
 # Install dependencies
 pip install -r requirements_backend.txt

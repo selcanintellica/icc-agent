@@ -42,18 +42,17 @@ async def list_connections(
     try:
         logger.info("Fetching available connections")
         
-        # Get connections from service
-        config = connection_service.get_initial_config()
-        connections = config.get("connections", [])
+        # Get connection names from config
+        connection_names = connection_service._config_loader.get_available_connections()
         
-        # Format response
+        # Format response - use connection name as ID since we don't have actual IDs in config
         connection_list = [
             ConnectionInfo(
-                id=str(conn.get("id", "")),
-                name=conn.get("name", ""),
-                type=conn.get("type", "unknown")
+                id=name,  # Use name as ID for config-based connections
+                name=name,
+                type="database"  # Generic type since config doesn't specify
             )
-            for conn in connections
+            for name in connection_names
         ]
         
         return ConnectionsResponse(
@@ -63,8 +62,7 @@ async def list_connections(
     
     except ICCBaseError as e:
         logger.error(f"ICC error listing connections: {e}", exc_info=True)
-        error_info = ErrorHandler.handle_error(e)
-        raise HTTPException(status_code=500, detail=error_info.message)
+        raise HTTPException(status_code=500, detail=str(e))
     
     except Exception as e:
         logger.error(f"Error listing connections: {e}", exc_info=True)
@@ -88,33 +86,31 @@ async def list_schemas(
     try:
         logger.info(f"Fetching schemas for connection: {connection_id}")
         
-        # Get initial config
-        config = connection_service.get_initial_config()
-        connections = config.get("connections", [])
+        # Get schemas for this connection (connection_id is the connection name)
+        schema_names = connection_service._config_loader.get_schemas_for_connection(connection_id)
         
-        # Find the connection
-        connection = next(
-            (c for c in connections if str(c.get("id")) == connection_id),
-            None
-        )
-        
-        if not connection:
+        if not schema_names:
             raise HTTPException(
                 status_code=404,
-                detail=f"Connection not found: {connection_id}"
+                detail=f"Connection not found or has no schemas: {connection_id}"
             )
         
-        # Get schemas
-        schemas = connection.get("schemas", [])
-        
-        # Format response
-        schema_list = [
-            SchemaInfo(
-                name=schema.get("name", ""),
-                tables=schema.get("tables", [])
+        # Format response with tables for each schema
+        schema_list = []
+        for schema_name in schema_names:
+            tables = connection_service._config_loader.get_tables_for_schema(connection_id, schema_name)
+            # Handle both dict format (with columns) and list format
+            if isinstance(tables, dict):
+                table_names = list(tables.keys())
+            else:
+                table_names = tables
+            
+            schema_list.append(
+                SchemaInfo(
+                    name=schema_name,
+                    tables=table_names
+                )
             )
-            for schema in schemas
-        ]
         
         return SchemasResponse(
             connection_id=connection_id,
@@ -145,7 +141,7 @@ async def list_tables(
     Get list of tables in a specific schema.
     
     **Parameters:**
-    - **connection_id**: Database connection ID
+    - **connection_id**: Database connection ID (connection name)
     - **schema_name**: Schema name
     
     **Returns:**
@@ -154,43 +150,26 @@ async def list_tables(
     try:
         logger.info(f"Fetching tables for {connection_id}.{schema_name}")
         
-        # Get initial config
-        config = connection_service.get_initial_config()
-        connections = config.get("connections", [])
+        # Get tables for this schema
+        tables = connection_service._config_loader.get_tables_for_schema(connection_id, schema_name)
         
-        # Find the connection
-        connection = next(
-            (c for c in connections if str(c.get("id")) == connection_id),
-            None
-        )
+        # Handle both dict format (with columns) and list format
+        if isinstance(tables, dict):
+            table_names = list(tables.keys())
+        else:
+            table_names = tables
         
-        if not connection:
+        if not table_names:
             raise HTTPException(
                 status_code=404,
-                detail=f"Connection not found: {connection_id}"
+                detail=f"Schema not found or has no tables: {connection_id}.{schema_name}"
             )
-        
-        # Find the schema
-        schemas = connection.get("schemas", [])
-        schema = next(
-            (s for s in schemas if s.get("name") == schema_name),
-            None
-        )
-        
-        if not schema:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Schema not found: {schema_name}"
-            )
-        
-        # Get tables
-        tables = schema.get("tables", [])
         
         return TablesResponse(
             connection_id=connection_id,
             schema_name=schema_name,
-            tables=tables,
-            count=len(tables)
+            tables=table_names,
+            count=len(table_names)
         )
     
     except HTTPException:

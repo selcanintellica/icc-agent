@@ -37,12 +37,12 @@ class UIFormatter:
         """
         icons = {
             ErrorCategory.AUTHENTICATION: "🔐",
-            ErrorCategory.NETWORK: "🌐",
+            ErrorCategory.CONNECTION: "🌐",
             ErrorCategory.VALIDATION: "⚠️",
-            ErrorCategory.JOB_EXECUTION: "⚙️",
+            ErrorCategory.JOB: "⚙️",
             ErrorCategory.LLM: "🤖",
             ErrorCategory.CONFIGURATION: "⚙️",
-            ErrorCategory.SYSTEM: "💥",
+            ErrorCategory.SQL: "💾",
         }
         return icons.get(category, "❌")
     
