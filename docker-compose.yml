@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  icc-agent-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: icc-agent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - CORS_ORIGINS=*
+      
+      # LLM Configuration (customize these)
+      - MODEL_NAME=qwen3:8b
+      - SQL_MODEL_NAME=qwen2.5-coder:7b
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      - ENABLE_PROMPT_LOGGING=false
+      
+      # ICC API (if using external ICC backend)
+      # - ICC_API_BASE=https://your-icc-api.com
+      # - ICC_API_USER=your_username
+      # - ICC_API_PASSWORD=your_password
+    
+    volumes:
+      # Mount config file (optional - for easy updates)
+      - ./db_config.json:/app/db_config.json:ro
+      
+      # Mount logs directory (optional - for persistence)
+      - ./prompt_logs:/app/prompt_logs
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  default:
+    name: icc-agent-network

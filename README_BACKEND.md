@@ -19,7 +19,22 @@ Your Frontend/System          ICC Agent Backend (FastAPI)
 
 ## Quick Start
 
-### 1. Installation
+### Option 1: Docker (Recommended for Production)
+
+```bash
+# Pull the Docker image (if provided by your team)
+docker pull your-registry.com/icc-agent-backend:latest
+
+# Run the container
+docker run -d -p 8000:8000 --name icc-agent-backend \
+  -e CORS_ORIGINS="*" \
+  your-registry.com/icc-agent-backend:latest
+
+# Or use Docker Compose
+docker-compose up -d
+```
+
+### Option 2: Manual Installation
 
 ```bash
 # Clone or receive the ICC Agent repository
@@ -504,7 +519,17 @@ CORS_ORIGINS=*
 
 ## Deployment
 
-### Docker Deployment
+**📖 For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)**
+
+This includes:
+- Docker deployment (recommended)
+- Manual deployment (Linux/Mac/Windows)
+- Production deployment (Gunicorn, Systemd)
+- Cloud deployment (AWS, Azure, Google Cloud)
+- Kubernetes deployment
+- Monitoring and troubleshooting
+
+### Quick Docker Deployment
 
 ```dockerfile
 FROM python:3.11-slim
