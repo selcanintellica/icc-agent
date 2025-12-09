@@ -63,20 +63,35 @@ The ICC Agent is a natural language interface for database operations. Users des
   - Manages memory state
 - **Performance**: Singleton pattern prevents LLM reloading between requests
 
-### 3. Stage Handlers
-Each handler manages a specific job type's conversation flow:
+### 3. Stage Handlers (Strategy Pattern)
+Each handler manages a specific job type's conversation flow using the **Strategy Pattern**:
+
+**Architecture**:
+- **Base Class**: `StageStrategy` - Abstract base with `execute()` method
+- **Handler**: Orchestrator that delegates to appropriate strategy
+- **Registry**: `StageStrategyRegistry` - Maps stages to strategy instances
+- **Help Integration**: Automatic help detection via `handle_with_help()` method
+
+**Benefits**:
+- **Separation of Concerns**: Each stage = one strategy class
+- **Extensibility**: Add new stages without modifying handler
+- **Testability**: Test strategies in isolation
+- **Help System**: Automatic context-aware help for every stage
 
 #### ReadSQL Handler (src/ai/router/stage_handlers/readsql_handler.py)
-- **Stages**: 
-  - `Stage.ASK_SQL_METHOD` → Choose between generating SQL or providing manually
-  - `Stage.NEED_NATURAL_LANGUAGE` → Generate SQL from natural language
-  - `Stage.NEED_USER_SQL` → User provides SQL manually
-  - `Stage.CONFIRM_GENERATED_SQL` / `Stage.CONFIRM_USER_SQL` → Show SQL for user approval
-  - `Stage.EXECUTE_SQL` → Gather parameters (job name)
-  - `Stage.SHOW_RESULTS` → Display results & offer next actions
-  - `Stage.NEED_WRITE_OR_EMAIL` → Ask what to do with results
-- **Key Feature**: Filters confirmation words to prevent extraction as parameters
-- **Managed Stages**: 8 stages total (defined in `MANAGED_STAGES` set)
+- **Architecture**: Uses Strategy Pattern with `StageStrategyRegistry`
+- **Stages & Strategies**: 
+  - `Stage.ASK_SQL_METHOD` → `AskSqlMethodStrategy` - Choose generation or manual
+  - `Stage.NEED_NATURAL_LANGUAGE` → `NeedNaturalLanguageStrategy` - Generate from NL
+  - `Stage.NEED_USER_SQL` → `NeedUserSqlStrategy` - Accept manual SQL
+  - `Stage.CONFIRM_GENERATED_SQL` → `ConfirmGeneratedSqlStrategy` - Confirm generated
+  - `Stage.CONFIRM_USER_SQL` → `ConfirmUserSqlStrategy` - Confirm manual SQL
+  - `Stage.EXECUTE_SQL` → `ExecuteSqlStrategy` - Gather params & execute
+  - `Stage.SHOW_RESULTS` → `ShowResultsStrategy` - Display & offer actions
+  - `Stage.NEED_WRITE_OR_EMAIL` → `NeedWriteOrEmailStrategy` - Choose next action
+- **Strategy Location**: `src/ai/router/stage_handlers/strategies/readsql/`
+- **Key Feature**: Each strategy self-contained with help integration
+- **Managed Stages**: 8 stages total with dedicated strategy classes
 
 #### WriteData Handler (src/ai/router/stage_handlers/writedata_handler.py)
 - **Stages**:
@@ -96,24 +111,25 @@ Each handler manages a specific job type's conversation flow:
 - **Managed Stages**: 2 stages for email flow
 
 #### CompareSQL Handler (src/ai/router/stage_handlers/comparesql_handler.py)
-- **Stages**:
-  - `Stage.ASK_FIRST_SQL_METHOD` → Choose generation or manual SQL for first query
-  - `Stage.NEED_FIRST_NATURAL_LANGUAGE` → Generate first SQL from natural language
-  - `Stage.NEED_FIRST_USER_SQL` → User provides first SQL manually
-  - `Stage.CONFIRM_FIRST_GENERATED_SQL` / `Stage.CONFIRM_FIRST_USER_SQL` → Confirm first SQL
-  - `Stage.ASK_SECOND_SQL_METHOD` → Choose method for second query
-  - `Stage.NEED_SECOND_NATURAL_LANGUAGE` → Generate second SQL
-  - `Stage.NEED_SECOND_USER_SQL` → User provides second SQL
-  - `Stage.CONFIRM_SECOND_GENERATED_SQL` / `Stage.CONFIRM_SECOND_USER_SQL` → Confirm second SQL
-  - `Stage.ASK_AUTO_MATCH` → Ask if auto-match columns
-  - `Stage.WAITING_MAP_TABLE` → Wait for manual column mapping
-  - `Stage.ASK_REPORTING_TYPE` → Choose reporting type
-  - `Stage.ASK_COMPARE_SCHEMA` → Select schema for comparison results
-  - `Stage.ASK_COMPARE_TABLE_NAME` → Name the comparison table
-  - `Stage.ASK_COMPARE_JOB_NAME` → Name the comparison job
-  - `Stage.EXECUTE_COMPARE_SQL` → Execute comparison
+- **Architecture**: Uses Strategy Pattern with 14 dedicated strategy classes
+- **Strategy Location**: `src/ai/router/stage_handlers/strategies/comparesql/`
+- **Stages & Strategies**:
+  - `Stage.ASK_FIRST_SQL_METHOD` → `AskFirstSQLMethodStrategy`
+  - `Stage.NEED_FIRST_NATURAL_LANGUAGE` → `NeedFirstNaturalLanguageStrategy`
+  - `Stage.NEED_FIRST_USER_SQL` → `NeedFirstUserSQLStrategy`
+  - `Stage.CONFIRM_FIRST_GENERATED_SQL` / `CONFIRM_FIRST_USER_SQL` → `ConfirmFirstSQLStrategy`
+  - `Stage.ASK_SECOND_SQL_METHOD` → `AskSecondSQLMethodStrategy`
+  - `Stage.NEED_SECOND_NATURAL_LANGUAGE` → `NeedSecondNaturalLanguageStrategy`
+  - `Stage.NEED_SECOND_USER_SQL` → `NeedSecondUserSQLStrategy`
+  - `Stage.CONFIRM_SECOND_GENERATED_SQL` / `CONFIRM_SECOND_USER_SQL` → `ConfirmSecondSQLStrategy`
+  - `Stage.ASK_AUTO_MATCH` → `AskAutoMatchStrategy`
+  - `Stage.WAITING_MAP_TABLE` → `WaitingMapTableStrategy`
+  - `Stage.ASK_REPORTING_TYPE` → `AskReportingTypeStrategy`
+  - `Stage.ASK_COMPARE_SCHEMA` → `AskCompareSchemaStrategy`
+  - `Stage.ASK_COMPARE_TABLE_NAME` → `AskCompareTableNameStrategy`
+  - `Stage.EXECUTE_COMPARE_SQL` / `ASK_COMPARE_JOB_NAME` → `AskCompareJobNameStrategy`
 - **Uses Both Agents**: SQL agent for query generation, job agent for parameters
-- **Managed Stages**: 14 stages for complete comparison workflow
+- **Managed Stages**: 14 strategies for complete comparison workflow
 
 ### 4. LLM Agents (Singleton Pattern)
 
@@ -140,7 +156,28 @@ Each handler manages a specific job type's conversation flow:
 - **Used By**: All handlers (ReadSQL, WriteData, SendEmail, CompareSQL)
 - **Prompt Logging**: When `ENABLE_PROMPT_LOGGING=true`, saves all prompts to `prompt_logs/session_TIMESTAMP/NNNN_job_agent.txt`
 
-### 5. Parameter Validator (src/ai/router/validators/parameter_validator.py)
+### 5. Job Prompts (src/ai/router/prompts/job_prompts/)
+- **Purpose**: Organized prompt templates for each job type
+- **Structure**:
+  - `write_data_prompt.py` → `WriteDataPrompt` class
+  - `read_sql_prompt.py` → `ReadSQLPrompt` class
+  - `send_email_prompt.py` → `SendEmailPrompt` class
+- **Pattern**: Each prompt class inherits from base with job-specific customization
+- **Usage**: Imported by `PromptManager` for LLM parameter extraction
+- **Note**: CompareSQL uses stage-by-stage validation (no dedicated prompt file)
+
+### 6. Help System (src/ai/router/utils/help_handler.py)
+- **Purpose**: Context-aware help responses for any stage
+- **Key Class**: `HelpHandler` with LLM-powered help generation
+- **Detection**: `is_help_request()` checks for help keywords ("help", "?", "what")
+- **Integration**: Every `StageStrategy.handle_with_help()` automatically checks for help
+- **Features**:
+  - **Stage Descriptions**: 25+ human-readable stage descriptions
+  - **Context Injection**: Shows gathered params, current SQL, available options
+  - **Smart Prompts**: Instructs LLM not to interpret stage names literally
+- **Example**: User types "help" at `need_second_user_sql` → explains "providing your SECOND SQL query for comparison" with context showing first SQL
+
+### 7. Parameter Validator (src/ai/router/validators/parameter_validator.py)
 - **Purpose**: Check required parameters & determine next action
 - **Actions**:
   - `ASK` → Use LLM to ask user for missing parameter
@@ -290,12 +327,25 @@ ChatOllama(
 ## Development Workflow
 
 ### Adding a New Job Type
-1. Create handler in `src/ai/router/stage_handlers/`
-2. Define stage flow and transitions
-3. Add parameter definitions to `src/ai/router/prompts/`
-4. Create payload builder in `src/payload_builders/builders/`
-5. Register handler in `router.py`
-6. Add toolkit function in `src/ai/toolkits/`
+
+**See comprehensive guide**: [ADDING_NEW_JOB.md](ADDING_NEW_JOB.md)
+
+**Quick Overview**:
+1. Define stages in `Stage` enum
+2. Create strategy classes in `src/ai/router/stage_handlers/strategies/yourjob/`
+3. Create job prompt in `src/ai/router/prompts/job_prompts/yourjob_prompt.py`
+4. Use LLM for parameter extraction (Job Agent integration)
+5. Create stage handler that registers strategies
+6. Register handler in router
+7. Create wire builder in `src/payload_builders/builders/`
+8. Add request model in `src/api/`
+9. Update help system with stage descriptions
+
+**Benefits of Strategy Pattern**:
+- Each stage is isolated and testable
+- Easy to add/modify stages without affecting others
+- Automatic help system integration
+- Clear separation of concerns
 
 ### Modifying Prompts
 - Job agent prompts: `src/ai/router/prompts/prompt_manager.py`
