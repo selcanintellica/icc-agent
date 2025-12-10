@@ -12,11 +12,11 @@
 
 ```powershell
 # Clone repository
-cd C:\Users\ICC_Agent
+cd ICC_try
 
-# Install dependencies
-pip install -r requirements_app.txt
-#or
+# Install backend dependencies
+pip install -r requirements.txt
+# or
 uv sync
 
 # Verify Ollama models
@@ -27,17 +27,42 @@ ollama list
 # qwen2.5-coder:7b
 ```
 
-### Running the Application
+### Running the Backend (Production)
 
 ```powershell
 # Start Ollama (if not running)
 ollama serve
 
-# Run the web UI
-uv run app.py
+# Option 1: Run directly
+uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# Option 2: Use startup script
+.\scripts\start_backend.bat    # Windows
+# or
+./scripts/start_backend.sh     # Linux/Mac
+
+# Option 3: Docker
+docker-compose up -d
+
+# API available at: http://localhost:8000
+# API docs at: http://localhost:8000/docs
+```
+
+### Running the Test UI (Optional)
+
+The Dash UI is available for **testing purposes only**:
+
+```powershell
+# Install test UI dependencies
+pip install -r requirements-dev.txt
+
+# Run test UI
+python app.py
 
 # Open browser to http://localhost:8050
 ```
+
+**Note**: Production integrations should use the FastAPI backend, not the Dash UI.
 
 ### Configuration
 
@@ -86,6 +111,114 @@ prompt_logs/
 }
 ```
 
+## Backend API Integration
+
+### Using the REST API
+
+The backend provides a complete REST API for external integrations. See main [README.md](../README.md) for full endpoint documentation and integration examples.
+
+**Quick Example** (Python):
+```python
+import requests
+
+# 1. Create session
+response = requests.post("http://localhost:8000/api/chat/sessions")
+session_id = response.json()["session_id"]
+
+# 2. Send message
+response = requests.post("http://localhost:8000/api/chat/message", json={
+    "session_id": session_id,
+    "message": "read customer data",
+    "connection": "ORACLE_10",
+    "schema_name": "SALES",
+    "tables": ["customers"]
+})
+
+result = response.json()
+print(f"Agent: {result['response']}")
+print(f"Stage: {result['stage']}")
+print(f"Params: {result['gathered_params']}")
+
+# 3. Continue conversation
+response = requests.post("http://localhost:8000/api/chat/message", json={
+    "session_id": session_id,
+    "message": "generate sql to select all customers"
+})
+
+# 4. Clean up
+requests.delete(f"http://localhost:8000/api/chat/sessions/{session_id}")
+```
+
+**Quick Example** (JavaScript):
+```javascript
+// 1. Create session
+const sessionResp = await fetch('http://localhost:8000/api/chat/sessions', {
+  method: 'POST'
+});
+const { session_id } = await sessionResp.json();
+
+// 2. Send message
+const messageResp = await fetch('http://localhost:8000/api/chat/message', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    session_id,
+    message: 'read customer data',
+    connection: 'ORACLE_10',
+    schema_name: 'SALES',
+    tables: ['customers']
+  })
+});
+
+const result = await messageResp.json();
+console.log('Agent:', result.response);
+console.log('Stage:', result.stage);
+```
+
+### Testing the API
+
+```powershell
+# Health check
+curl http://localhost:8000/api/health
+
+# List connections
+curl http://localhost:8000/api/connections
+
+# Create session
+curl -X POST http://localhost:8000/api/chat/sessions
+
+# Send message
+curl -X POST http://localhost:8000/api/chat/message \
+  -H "Content-Type: application/json" \
+  -d '{
+    "session_id": "your-session-id",
+    "message": "help"
+  }'
+
+# Run automated tests
+python tests/test_backend.py
+```
+
+### Docker Deployment
+
+```powershell
+# Build image
+docker build -t icc-agent-backend .
+
+# Run container
+docker run -d -p 8000:8000 --name icc-backend icc-agent-backend
+
+# Or use docker-compose
+docker-compose up -d
+
+# View logs
+docker logs -f icc-backend
+
+# Stop
+docker-compose down
+```
+
+See `DEPLOYMENT.md` and `TESTING.md` for complete deployment and testing guides.
 
 ## Architecture Patterns
 
