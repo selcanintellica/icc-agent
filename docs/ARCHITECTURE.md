@@ -4,13 +4,33 @@
 
 The ICC Agent is a natural language interface for database operations. Users describe what they want in plain English, and the system translates those requests into executable database jobs.
 
+This system provides a **FastAPI REST API backend** that can be integrated into any application. A Dash web UI (`app.py`) is available for testing purposes only.
+
 ## High-Level Architecture
 
 ```
-┌─────────────────┐
-│   Dash Web UI   │  (User Interface)
-│   (app.py)      │
-└────────┬────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                        Client Applications                        │
+│  (External services, frontends, integrations via REST API)       │
+└────────────────────────────┬─────────────────────────────────────┘
+                             │
+                             ▼
+                   ┌─────────────────┐
+                   │  FastAPI Backend│  (Production API)
+                   │  (backend/)     │
+                   │  Port 8000      │
+                   └────────┬────────┘
+                            │
+         ┏━━━━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━┓
+         ▼                                      ▼
+┌─────────────────┐                  ┌─────────────────┐
+│  Service Layer  │                  │  API Routes     │
+│  (src/services/)│                  │  (backend/api/) │
+├─────────────────┤                  ├─────────────────┤
+│ RouterService   │                  │ /api/chat/*     │
+│ SessionManager  │                  │ /api/connections│
+│ ConnectionSvc   │                  │ /api/health     │
+└────────┬────────┘                  └─────────────────┘
          │
          ▼
 ┌─────────────────┐
@@ -41,19 +61,37 @@ The ICC Agent is a natural language interface for database operations. Users des
 
 ## Core Components
 
-### 1. Web UI (app.py)
-- **Purpose**: Dash-based web interface
-- **Responsibilities**:
-  - Renders chat interface
-  - Displays dropdown menus for connections/schemas
-  - Manages user sessions
-  - Handles dropdown selections with special prefixes
-- **Key Features**:
-  - Connection/schema selection bypasses LLM
-  - Dropdown rendering based on handler responses
-  - Session-based memory management
+### 1. FastAPI Backend (backend/)
+- **Purpose**: Production REST API for external integrations
+- **Location**: `backend/main.py`
+- **Port**: 8000
+- **Key Endpoints**:
+  - `POST /api/chat/sessions` - Create new session
+  - `POST /api/chat/message` - Send message to agent
+  - `GET /api/chat/sessions/{session_id}` - Get session details
+  - `DELETE /api/chat/sessions/{session_id}` - Delete session
+  - `GET /api/connections` - List database connections
+  - `GET /api/connections/{connection_id}/schemas` - List schemas
+  - `GET /api/connections/{connection_id}/schemas/{schema_name}/tables` - List tables
+  - `GET /api/health` - Health check
+- **Features**:
+  - Session management with unique IDs
+  - Comprehensive error handling
+  - CORS support for web integrations
+  - OpenAPI documentation at `/docs`
+- **Deployment**: Docker container, systemd service, or cloud platforms
 
-### 2. Router Orchestrator (src/ai/router/router.py)
+### 2. Service Layer (src/services/)
+- **Purpose**: Business logic and orchestration for API
+- **Components**:
+  - **RouterService**: Invokes router with memory management
+  - **SessionManager**: Manages user sessions and memory state
+  - **ConnectionService**: Provides database metadata (connections/schemas/tables)
+  - **UIFormatter**: Formats errors for display (backend uses error formatting only)
+- **Pattern**: Singleton services initialized at startup
+- **Benefits**: Decouples API routes from core logic, testable independently
+
+### 3. Router Orchestrator (src/ai/router/router.py)
 - **Purpose**: Central state machine controller
 - **Pattern**: **Singleton** - single instance reused across all requests via `get_default_router_orchestrator()`
 - **Responsibilities**:
@@ -63,7 +101,7 @@ The ICC Agent is a natural language interface for database operations. Users des
   - Manages memory state
 - **Performance**: Singleton pattern prevents LLM reloading between requests
 
-### 3. Stage Handlers (Strategy Pattern)
+### 4. Stage Handlers (Strategy Pattern)
 Each handler manages a specific job type's conversation flow using the **Strategy Pattern**:
 
 **Architecture**:
@@ -131,7 +169,7 @@ Each handler manages a specific job type's conversation flow using the **Strateg
 - **Uses Both Agents**: SQL agent for query generation, job agent for parameters
 - **Managed Stages**: 14 strategies for complete comparison workflow
 
-### 4. LLM Agents (Singleton Pattern)
+### 5. LLM Agents (Singleton Pattern)
 
 #### SQL Agent (src/ai/router/sql_agent.py)
 - **Purpose**: Generate SQL from natural language
@@ -321,6 +359,118 @@ ChatOllama(
 ### keep_alive Behavior
 - Timer resets on every request (Ollama feature)
 - Model stays loaded as long as requests arrive within timeout
+
+## Backend API Integration
+
+### REST API Endpoints
+
+#### Chat Endpoints
+- `POST /api/chat/sessions`
+  - Creates new conversation session
+  - Returns: `{session_id: "uuid", created_at: "timestamp"}`
+  
+- `POST /api/chat/message`
+  - Sends message to agent
+  - Request: `{session_id, message, connection?, schema?, tables?[]}`
+  - Response: `{session_id, response, stage, gathered_params, job_context, requires_dropdown?, dropdown_type?, dropdown_options?}`
+  
+- `GET /api/chat/sessions/{session_id}`
+  - Retrieves session details
+  - Returns: Memory state, gathered params, conversation stage
+  
+- `DELETE /api/chat/sessions/{session_id}`
+  - Deletes session and frees memory
+  - Returns: `{message: "Session deleted"}`
+
+#### Metadata Endpoints
+- `GET /api/connections`
+  - Lists all configured database connections
+  - Returns: Array of connection objects with IDs and display names
+  
+- `GET /api/connections/{connection_id}/schemas`
+  - Lists schemas for specific connection
+  - Returns: Array of schema names
+  
+- `GET /api/connections/{connection_id}/schemas/{schema_name}/tables`
+  - Lists tables for specific schema
+  - Returns: Array of table objects with names and metadata
+
+#### Health Check
+- `GET /api/health`
+  - Service health status
+  - Returns: `{status: "healthy", version, timestamp, services: {...}}`
+
+### Request/Response Flow
+
+```
+External Client
+     │
+     │ POST /api/chat/message
+     │ {session_id, message}
+     ▼
+FastAPI Route (chat.py)
+     │
+     │ get_or_create_session()
+     ▼
+SessionManager
+     │
+     │ Returns Memory object
+     ▼
+RouterService.invoke_router()
+     │
+     │ populate_memory_connections() if provided
+     │ handle_turn(memory, user_input)
+     ▼
+Router Orchestrator
+     │
+     │ Delegates to stage handler
+     ▼
+Stage Handler → LLM Agents
+     │
+     │ Returns (updated_memory, response_text)
+     ▼
+RouterService
+     │
+     │ Formats response dict
+     ▼
+FastAPI Route
+     │
+     │ Returns ChatMessageResponse
+     ▼
+External Client
+```
+
+### Session Management
+- **Stateful**: Sessions stored in-memory dict (can be swapped for Redis/DB)
+- **Memory Objects**: Each session has dedicated Memory instance
+- **Lifecycle**: Create → Use → Delete (or timeout)
+- **Concurrency**: Thread-safe singleton services
+
+### Error Handling
+- **ICCBaseError**: Custom exceptions with error codes and categories
+- **ErrorHandler**: Converts Python exceptions to ICC errors
+- **UIFormatter**: Formats errors for API responses
+- **Categories**: AUTHENTICATION, CONNECTION, VALIDATION, JOB, LLM, CONFIGURATION, SQL
+- **Response Format**: `{icon, code, message, is_retryable}`
+
+### Deployment Options
+1. **Docker**: Single container with health checks
+2. **Docker Compose**: Multi-service orchestration
+3. **Systemd**: Linux service with auto-restart
+4. **Cloud**: AWS ECS/Fargate, Azure Container Instances, GCP Cloud Run
+5. **Kubernetes**: Production-grade with scaling and load balancing
+
+See `README_BACKEND.md`, `DEPLOYMENT.md`, and `TESTING.md` for detailed guides.
+
+## Testing Interface
+
+A Dash web UI (`app.py`) is provided for **testing purposes only**. It demonstrates:
+- Session management
+- Chat interface
+- Dropdown rendering
+- Error display
+
+**Note**: The Dash UI is not intended for production use. External applications should integrate via the FastAPI REST API.
 - Singleton pattern ensures same instance reused
 - Check with `ollama ps` - should show model loaded continuously
 

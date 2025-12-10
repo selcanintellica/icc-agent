@@ -4,6 +4,8 @@
 
 This document explains why ICC Agent uses a **semi-static router architecture** with limited LLM activity instead of traditional agentic frameworks (LangChain, AutoGPT) or standard Model Context Protocol (MCP) servers.
 
+The system provides a **FastAPI REST API backend** for production integrations, with an optional Dash UI for testing.
+
 ## The Problem with Traditional Agentic Systems
 
 ### LangChain ReAct Agents
@@ -328,6 +330,136 @@ registry.register("comparesql", CompareSQLHandler())
 # Router just dispatches to correct handler
 ```
 
+## Backend Architecture Decisions
+
+### FastAPI Over Flask
+
+**Decision**: Use FastAPI for REST API backend
+
+**Reasons**:
+1. **Automatic OpenAPI docs** - `/docs` endpoint for API exploration
+2. **Async support** - Native async/await for LLM calls
+3. **Pydantic validation** - Automatic request/response validation
+4. **Type safety** - Full type hints and IDE support
+5. **Performance** - ASGI-based, faster than Flask
+6. **Modern** - Built for Python 3.11+ with latest features
+
+### Service Layer Pattern
+
+**Decision**: Separate business logic from API routes
+
+**Structure**:
+```
+backend/api/routes/        # HTTP layer (FastAPI routes)
+src/services/              # Business logic layer
+src/ai/router/             # Core AI logic
+```
+
+**Benefits**:
+1. **Testability** - Services can be tested without HTTP layer
+2. **Reusability** - Same services used by both Dash UI and FastAPI
+3. **Separation of concerns** - Routes handle HTTP, services handle logic
+4. **Easy migration** - Can swap API framework without changing business logic
+
+### Session Management
+
+**Decision**: In-memory session storage with pluggable backend
+
+**Current Implementation**:
+```python
+class SessionManager:
+    def __init__(self, storage: Optional[Dict[str, Memory]] = None):
+        self._storage = storage if storage is not None else {}
+```
+
+**Benefits**:
+1. **Simple** - No external dependencies for basic usage
+2. **Fast** - O(1) lookup, no network calls
+3. **Extensible** - Can swap for Redis/database without changing interface
+
+**Trade-offs**:
+- ❌ Lost on restart (use Redis for persistence)
+- ❌ Not distributed (use Redis for multi-instance)
+- ✅ Perfect for single-instance deployments
+- ✅ Easy to test
+
+**Future**: Add Redis adapter for distributed deployments
+
+### Stateless API Design
+
+**Decision**: Session ID in every request (no cookies/JWT)
+
+**Why**:
+```python
+# Client manages session ID
+POST /api/chat/message
+{
+  "session_id": "uuid-here",
+  "message": "user input"
+}
+```
+
+**Benefits**:
+1. **Simple** - No authentication/token management needed
+2. **Flexible** - Works with any HTTP client
+3. **Testable** - Easy to test with curl/httpx
+4. **Multi-client** - Same session from different clients
+
+**Trade-offs**:
+- ❌ Client must store session ID
+- ❌ No built-in security (add separately if needed)
+- ✅ Simple integration
+- ✅ No server-side session management complexity
+
+### Error Handling Strategy
+
+**Decision**: Custom exception hierarchy with error codes
+
+**Structure**:
+```python
+ICCBaseError
+  ├─ AuthenticationError (AUTH_xxx)
+  ├─ ConnectionError (CONN_xxx)  
+  ├─ ValidationError (VAL_xxx)
+  ├─ JobError (JOB_xxx)
+  ├─ LLMError (LLM_xxx)
+  ├─ ConfigurationError (CFG_xxx)
+  └─ SQLError (SQL_xxx)
+```
+
+**Benefits**:
+1. **Categorized** - Easy to handle different error types
+2. **Coded** - Unique error codes for debugging
+3. **Retryable** - Flags for auto-retry logic
+4. **Formatted** - Consistent error responses
+
+**Response Format**:
+```json
+{
+  "icon": "🌐",
+  "code": "CONN_101",
+  "message": "Connection failed",
+  "is_retryable": true
+}
+```
+
+### Docker-First Deployment
+
+**Decision**: Docker as primary deployment method
+
+**Why**:
+1. **Consistency** - Same environment everywhere
+2. **Dependencies** - All dependencies bundled
+3. **Isolation** - No conflicts with system packages
+4. **Scalability** - Easy to replicate/scale
+5. **CI/CD** - Standard build/deploy pipeline
+
+**Provided**:
+- `Dockerfile` - Production-ready image
+- `docker-compose.yml` - Single-command deployment
+- `.dockerignore` - Optimized build context
+- Health checks - Container monitoring
+
 ## Conclusion
 
 ICC Agent uses a **semi-static router architecture** because:
@@ -339,17 +471,28 @@ ICC Agent uses a **semi-static router architecture** because:
 5. ✅ **Production ready** - consistent performance, low resource usage
 6. ✅ **User control** - confirmations at critical steps
 
+The **FastAPI backend** provides:
+
+1. ✅ **REST API** - Standard HTTP interface for integrations
+2. ✅ **Async support** - Efficient LLM call handling
+3. ✅ **Type safety** - Pydantic validation, fewer bugs
+4. ✅ **Auto docs** - OpenAPI spec at `/docs`
+5. ✅ **Docker ready** - Production deployment out of the box
+
 Traditional agentic systems (LangChain, MCP) work well for:
 - Open-ended research tasks
 - Large model deployments (70B+)
 - Exploratory workflows
 - When latency is not critical
 
-But for **structured database operations** with **small models** in **production**, semi-static routing is the optimal architecture.
+But for **structured database operations** with **small models** in **production**, semi-static routing with a FastAPI backend is the optimal architecture.
 
 ## Further Reading
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview
 - [TECHNICAL_DETAILS.md](TECHNICAL_DETAILS.md) - Implementation deep dive
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - Development guide
+- [README_BACKEND.md](../README_BACKEND.md) - Backend API reference
+- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
+- [TESTING.md](../TESTING.md) - Testing guide
 - [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) - Router patterns
