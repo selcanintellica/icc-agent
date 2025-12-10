@@ -460,7 +460,7 @@ External Client
 4. **Cloud**: AWS ECS/Fargate, Azure Container Instances, GCP Cloud Run
 5. **Kubernetes**: Production-grade with scaling and load balancing
 
-See `README_BACKEND.md`, `DEPLOYMENT.md`, and `TESTING.md` for detailed guides.
+See main [README.md](../README.md), [DEPLOYMENT.md](DEPLOYMENT.md), and [TESTING.md](TESTING.md) for detailed guides.
 
 ## Testing Interface
 

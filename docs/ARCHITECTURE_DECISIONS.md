@@ -492,7 +492,6 @@ But for **structured database operations** with **small models** in **production
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture overview
 - [TECHNICAL_DETAILS.md](TECHNICAL_DETAILS.md) - Implementation deep dive
 - [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) - Development guide
-- [README_BACKEND.md](../README_BACKEND.md) - Backend API reference
-- [DEPLOYMENT.md](../DEPLOYMENT.md) - Deployment guide
-- [TESTING.md](../TESTING.md) - Testing guide
-- [ROUTER_ARCHITECTURE.md](ROUTER_ARCHITECTURE.md) - Router patterns
+- [Main README.md](../README.md) - Backend API reference and integration guide
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment guide
+- [TESTING.md](TESTING.md) - Testing guide

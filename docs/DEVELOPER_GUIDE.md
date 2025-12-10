@@ -115,7 +115,7 @@ prompt_logs/
 
 ### Using the REST API
 
-The backend provides a complete REST API for external integrations. See `README_BACKEND.md` for full endpoint documentation.
+The backend provides a complete REST API for external integrations. See main [README.md](../README.md) for full endpoint documentation and integration examples.
 
 **Quick Example** (Python):
 ```python
