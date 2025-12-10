@@ -98,22 +98,25 @@ class RuleRepository:
         payload: RulePayload
     ) -> Dict[str, Any]:
         """Save rule with automatic retry for transient failures."""
+        logger.info("[RULE_DEBUG] >>> Entering _save_rule_with_retry")
         try:
             async with httpx.AsyncClient(
                 headers=self.auth_headers,
                 verify=False,
                 timeout=self.timeout
             ) as client:
+                logger.info("[RULE_DEBUG] Sending POST request...")
                 resp = await client.post(
                     endpoint,
                     json=payload.to_api_payload()
                 )
                 
-                logger.debug(f"Rule save response status: {resp.status_code}")
-                logger.debug(f"Rule save response body: {resp.text[:500]}...")
+                logger.info(f"[RULE_DEBUG] Response received - status: {resp.status_code}")
+                logger.info(f"[RULE_DEBUG] Response text (first 200 chars): {resp.text[:200]}")
                 
                 # Handle authentication errors
                 if resp.status_code == 401 or resp.status_code == 403:
+                    logger.info("[RULE_DEBUG] Auth error detected")
                     raise AuthenticationError(
                         error_code=ErrorCode.AUTH_FAILED,
                         message=f"Authentication failed when saving rule: {resp.status_code}",
@@ -122,48 +125,92 @@ class RuleRepository:
                 
                 # Handle server errors (retry)
                 if resp.status_code >= 500:
+                    logger.info("[RULE_DEBUG] Server error detected")
                     raise APIUnavailableError(
                         message=f"Server error {resp.status_code} when saving rule",
                         user_message="The server is temporarily unavailable."
                     )
                 
                 # Parse response
+                logger.info("[RULE_DEBUG] Parsing response...")
                 try:
                     data = resp.json()
-                except Exception:
-                    data = {"raw_response": resp.text}
+                    logger.info(f"[RULE_DEBUG] JSON parsed successfully, type: {type(data).__name__}")
+                except Exception as json_err:
+                    logger.info(f"[RULE_DEBUG] JSON parse failed ({json_err}), using raw text")
+                    data = resp.text
                 
-                # Handle duplicate name error
-                error_message = data.get("errorMessage") or data.get("error") or ""
-                if "already exists" in error_message.lower() or "duplicate" in error_message.lower():
+                logger.info(f"[RULE_DEBUG] Data type: {type(data).__name__}, value: {str(data)[:100]}")
+                
+                # Check for success FIRST if status is 200
+                if resp.status_code == 200:
+                    logger.info("[RULE_DEBUG] Status 200 - extracting rule ID...")
+                    # Extract rule ID from response based on type
+                    rule_id = None
+                    if isinstance(data, dict):
+                        logger.info("[RULE_DEBUG] Data is dict, extracting id...")
+                        # First try direct "id" field
+                        rule_id = data.get("id")
+                        if not rule_id:
+                            # Then check "object" field - it might be the ID directly (string)
+                            # or a nested dict with an "id" field
+                            obj = data.get("object")
+                            if isinstance(obj, str):
+                                # "object" contains the rule ID directly
+                                rule_id = obj
+                            elif isinstance(obj, dict):
+                                # "object" is a nested dict with "id"
+                                rule_id = obj.get("id")
+                    elif isinstance(data, str):
+                        logger.info("[RULE_DEBUG] Data is string, using as rule ID...")
+                        # API returns just the rule ID as a string
+                        stripped = data.strip()
+                        rule_id = stripped if stripped else None
+                    elif isinstance(data, (int, float)):
+                        logger.info("[RULE_DEBUG] Data is number, converting to string...")
+                        # API might return numeric ID directly
+                        rule_id = str(int(data))
+                    else:
+                        logger.info(f"[RULE_DEBUG] Unexpected data type: {type(data)}")
+                    
+                    logger.info(f"[RULE_DEBUG] Extracted rule_id: {rule_id}")
+                    logger.info(f"[RULE_DEBUG] <<< Returning success for rule '{payload.props.name}'")
+                    return {
+                        "message": "Success",
+                        "rule_id": rule_id,
+                        "data": data
+                    }
+                
+                # Handle error responses (non-200 status codes)
+                logger.info(f"[RULE_DEBUG] Non-200 status ({resp.status_code}), handling error...")
+                error_message = ""
+                if isinstance(data, dict):
+                    logger.info("[RULE_DEBUG] Extracting error from dict...")
+                    error_message = data.get("errorMessage") or data.get("error") or ""
+                elif isinstance(data, str):
+                    logger.info("[RULE_DEBUG] Using string response as error message...")
+                    error_message = data
+                
+                logger.info(f"[RULE_DEBUG] Error message: {error_message[:100] if error_message else 'empty'}")
+                
+                # Check for duplicate name error
+                error_lower = error_message.lower() if error_message else ""
+                if "already exists" in error_lower or "duplicate" in error_lower or "same name" in error_lower:
+                    logger.info("[RULE_DEBUG] Duplicate name error detected")
                     raise DuplicateJobNameError(
                         job_name=payload.props.name,
                         message=f"Rule name already exists: {payload.props.name}",
                         user_message=f"A rule named '{payload.props.name}' already exists. Please choose a different name."
                     )
                 
-                # Check for success
-                if resp.status_code == 200:
-                    # Extract rule ID from response
-                    rule_id = None
-                    if isinstance(data, dict):
-                        rule_id = data.get("id") or data.get("object", {}).get("id")
-                    
-                    logger.info(f"Rule '{payload.props.name}' saved successfully (ID: {rule_id})")
-                    return {
-                        "message": "Success",
-                        "rule_id": rule_id,
-                        "data": data
-                    }
-                else:
-                    # Other error
-                    error_msg = error_message or f"HTTP {resp.status_code}"
-                    logger.error(f"Rule save failed: {error_msg}")
-                    raise JobCreationFailedError(
-                        job_type="Rule",
-                        message=f"Failed to save rule: {error_msg}",
-                        user_message=f"Failed to create rule: {error_msg}"
-                    )
+                # Other error (non-200 status code without duplicate name)
+                error_msg = error_message or f"HTTP {resp.status_code}"
+                logger.error(f"[RULE_DEBUG] Rule save failed: {error_msg}")
+                raise JobCreationFailedError(
+                    job_type="Rule",
+                    message=f"Failed to save rule: {error_msg}",
+                    user_message=f"Failed to create rule: {error_msg}"
+                )
                     
         except httpx.TimeoutException as e:
             logger.error(f"Timeout saving rule: {e}")
@@ -186,6 +233,19 @@ class RuleRepository:
                 user_message="Failed to save rule. Please try again.",
                 status_code=e.response.status_code,
                 cause=e
+            )
+        except (DuplicateJobNameError, JobCreationFailedError, AuthenticationError, APIUnavailableError, NetworkTimeoutError, HTTPError):
+            # Re-raise known ICC errors
+            raise
+        except Exception as e:
+            # Catch-all for unexpected errors (like AttributeError)
+            logger.error(f"[RULE_DEBUG] UNEXPECTED ERROR: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"[RULE_DEBUG] Traceback:\n{traceback.format_exc()}")
+            raise JobCreationFailedError(
+                job_type="Rule",
+                message=f"Unexpected error: {type(e).__name__}: {str(e)}",
+                user_message=f"An unexpected error occurred while saving the rule. Please try again."
             )
 
 

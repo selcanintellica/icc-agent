@@ -124,7 +124,7 @@ class RuleHandler(BaseStageHandler):
         )
     
     async def _fetch_and_show_folders(self, memory: Memory) -> StageHandlerResult:
-        """Fetch folders from API and show selection list."""
+        """Fetch folders from API and show interactive dropdown selection."""
         logger.info("Fetching folders for rule creation")
         
         try:
@@ -159,13 +159,12 @@ class RuleHandler(BaseStageHandler):
             # Store in memory for persistence
             memory.gathered_params["available_folders"] = folders
             
-            # Format and display
-            folder_display = format_folders_for_display(folders)
+            # Return interactive dropdown format (similar to SCHEMA_DROPDOWN)
+            question_text = "Select the folder where you want to save the rule:"
+            folder_names = [f["name"] for f in folders]
             
-            response = (
-                f"{folder_display}\n\n"
-                f"Enter the number or name of the folder where you want to save the rule:"
-            )
+            response = f"FOLDER_DROPDOWN:{json.dumps({'folders': folder_names, 'question': question_text})}"
+            memory.last_question = question_text
             
             return self._create_result(memory, response, Stage.ASK_RULE_FOLDER)
             
@@ -181,8 +180,14 @@ class RuleHandler(BaseStageHandler):
         """
         Handle ASK_RULE_FOLDER stage.
         
-        User selects a folder from the list.
+        User selects a folder from the dropdown or types a name.
         """
+        # Check for direct folder selection from dropdown (bypass text matching)
+        if user_input.startswith("__FOLDER_SELECTED__:"):
+            folder_name = user_input.replace("__FOLDER_SELECTED__:", "").strip()
+            logger.debug(f"Folder directly selected via dropdown: {folder_name}")
+            user_input = folder_name
+        
         user_lower = user_input.lower().strip()
         
         # Check for skip/cancel
@@ -204,9 +209,16 @@ class RuleHandler(BaseStageHandler):
         selected_folder = get_folder_by_selection(folders, user_input)
         
         if not selected_folder:
+            # Try direct name match (for dropdown selections)
+            for folder in folders:
+                if folder["name"] == user_input:
+                    selected_folder = folder
+                    break
+        
+        if not selected_folder:
             return self._create_result(
                 memory,
-                f"Could not find folder '{user_input}'. Please enter a valid number or folder name:"
+                f"Could not find folder '{user_input}'. Please select a folder from the dropdown or enter a valid folder name:"
             )
         
         # Store selected folder

@@ -312,12 +312,30 @@ class SendEmailHandler(BaseStageHandler):
                 # DON'T clear: connection, schema, output_table_info (needed for next email)
                 
                 to_email = params.get('to')
-                response = (
-                    f"Email job '{job_name}' created successfully!\n\n"
-                    f"Results will be sent to: {to_email}\n"
-                    f"Subject: {params.get('subject', 'Query Results')}\n\n"
-                    f"Would you like to continue? (Type 'yes')\n- 'email' - Send another email\n- 'done' - Finish"
-                )
+                
+                # Check if we have multiple jobs for rule creation option
+                created_jobs = memory.get_created_jobs()
+                has_multiple_jobs = len(created_jobs) >= 2 if created_jobs else False
+                
+                if has_multiple_jobs:
+                    response = (
+                        f"Email job '{job_name}' created successfully!\n\n"
+                        f"Results will be sent to: {to_email}\n"
+                        f"Subject: {params.get('subject', 'Query Results')}\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send another email\n"
+                        f"- 'rule' - Create a rule from your jobs\n"
+                        f"- 'done' - Finish"
+                    )
+                else:
+                    response = (
+                        f"Email job '{job_name}' created successfully!\n\n"
+                        f"Results will be sent to: {to_email}\n"
+                        f"Subject: {params.get('subject', 'Query Results')}\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send another email\n"
+                        f"- 'done' - Finish"
+                    )
                 return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
             else:
                 error_msg = result.get("error", "Unknown error")

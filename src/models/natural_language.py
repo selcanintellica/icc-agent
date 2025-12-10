@@ -77,16 +77,19 @@ class SendEmailLLMRequest(BaseLLMRequest):
     def to_field_values(self) -> Dict[str, Any]:
         # Access first variable since it's a list
         var = self.variables[0]
-        return {
+        result = {
             "template": self.template,
             "connection": var.connection,
             "query": var.query,
             "to": var.to,
-            "cc": var.cc or "",
             "subject": var.subject,
             "text": var.text,
             "attachment": "true" if var.attachment else "false",
         }
+        # Only include CC if it has a value (API rejects empty string as invalid email)
+        if var.cc and var.cc.strip():
+            result["cc"] = var.cc
+        return result
 
 
 class SelectedColumn(BaseModel):

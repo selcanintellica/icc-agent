@@ -290,11 +290,27 @@ class WriteDataHandler(BaseStageHandler):
                 memory.current_tool = None
                 memory.last_question = None
                 
-                response = (
-                    f"Job '{job_name}' created successfully!\n\n"
-                    f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
-                    f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
-                )
+                # Check if we have multiple jobs for rule creation option
+                created_jobs = memory.get_created_jobs()
+                has_multiple_jobs = len(created_jobs) >= 2 if created_jobs else False
+                
+                if has_multiple_jobs:
+                    response = (
+                        f"Job '{job_name}' created successfully!\n\n"
+                        f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send results via email\n"
+                        f"- 'rule' - Create a rule from your jobs\n"
+                        f"- 'done' - Finish"
+                    )
+                else:
+                    response = (
+                        f"Job '{job_name}' created successfully!\n\n"
+                        f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send results via email\n"
+                        f"- 'done' - Finish"
+                    )
                 return self._create_result(memory, response)
             else:
                 error_msg = result.get("error", "Unknown error")

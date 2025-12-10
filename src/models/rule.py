@@ -163,12 +163,17 @@ class RuleBuilder:
             RulePayload: Ready to send to API
             
         Raises:
-            ValueError: If jobs list is empty or has less than 2 jobs
+            ValueError: If jobs list is empty, has less than 2 jobs, or has jobs with missing IDs
         """
         if not jobs:
             raise ValueError("Cannot create rule with no jobs")
         if len(jobs) < 2:
             raise ValueError("Rule requires at least 2 jobs")
+        
+        # Validate all jobs have valid IDs
+        jobs_without_ids = [job.get("name", "unknown") for job in jobs if not job.get("id")]
+        if jobs_without_ids:
+            raise ValueError(f"Cannot create rule: the following jobs are missing IDs: {', '.join(jobs_without_ids)}")
         
         # Build nodes
         nodes = cls._build_nodes(jobs)

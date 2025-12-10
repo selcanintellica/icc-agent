@@ -60,7 +60,7 @@ class JobToolExecutor:
             data: Write data request payload
             
         Returns:
-            dict: Job execution result
+            dict: Job execution result with job_id
         """
         job_name = data.props.get("name", "WriteData_Job") if hasattr(data, "props") and data.props else "WriteData_Job"
         
@@ -70,10 +70,28 @@ class JobToolExecutor:
             
             async with self.client_manager.get_authenticated_client() as client:
                 repo = create_job_repository(client)
-                await repo.write_data_job(data)
+                response = await repo.write_data_job(data)
             
-            logger.info(f"Write data job executed successfully: {data.id}")
-            return {"message": "Success", "data": data.model_dump()}
+            if response.success:
+                logger.info(f"Write data job executed successfully: {response.data.object_id}")
+                return {
+                    "message": "Success",
+                    "job_id": response.data.object_id,
+                    "data": data.model_dump()
+                }
+            else:
+                error_msg = response.error or "Unknown error"
+                logger.error(f"Write data job failed: {error_msg}")
+                
+                error_lower = error_msg.lower()
+                if "same name" in error_lower or "already exists" in error_lower:
+                    raise DuplicateJobNameError(
+                        job_name=job_name,
+                        message=error_msg,
+                        user_message=f"A job named '{job_name}' already exists. Please choose a different name."
+                    )
+                
+                return {"message": "Error", "error": error_msg}
         
         except DuplicateJobNameError:
             # Re-raise to let handler deal with it and enable retry with new name
@@ -181,7 +199,7 @@ class JobToolExecutor:
             data: Send email request payload
             
         Returns:
-            dict: Job execution result
+            dict: Job execution result with job_id
         """
         job_name = data.props.get("name", "Email_Job") if hasattr(data, "props") and data.props else "Email_Job"
         
@@ -191,10 +209,28 @@ class JobToolExecutor:
             
             async with self.client_manager.get_authenticated_client() as client:
                 repo = create_job_repository(client)
-                await repo.send_email_job(data)
+                response = await repo.send_email_job(data)
             
-            logger.info(f"Send email job executed successfully: {data.id}")
-            return {"message": "Success", "data": data.model_dump()}
+            if response.success:
+                logger.info(f"Send email job executed successfully: {response.data.object_id}")
+                return {
+                    "message": "Success",
+                    "job_id": response.data.object_id,
+                    "data": data.model_dump()
+                }
+            else:
+                error_msg = response.error or "Unknown error"
+                logger.error(f"Send email job failed: {error_msg}")
+                
+                error_lower = error_msg.lower()
+                if "same name" in error_lower or "already exists" in error_lower:
+                    raise DuplicateJobNameError(
+                        job_name=job_name,
+                        message=error_msg,
+                        user_message=f"A job named '{job_name}' already exists. Please choose a different name."
+                    )
+                
+                return {"message": "Error", "error": error_msg}
         
         except DuplicateJobNameError:
             # Re-raise to let handler deal with it and enable retry with new name
