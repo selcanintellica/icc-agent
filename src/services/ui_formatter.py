@@ -109,6 +109,8 @@ class UIFormatter:
             return UIFormatter._format_schema_dropdown(content, timestamp, **kwargs)
         elif role == "connection_dropdown":
             return UIFormatter._format_connection_dropdown(content, timestamp, **kwargs)
+        elif role == "folder_dropdown":
+            return UIFormatter._format_folder_dropdown(content, timestamp, **kwargs)
         elif role == "tool_call":
             return UIFormatter._format_tool_call(content, timestamp, **kwargs)
         else:
@@ -239,6 +241,35 @@ class UIFormatter:
                 )
             ])
         ], className="mb-3", style={"backgroundColor": "#e8f5e9", "borderLeft": "4px solid #4caf50"})
+    
+    @staticmethod
+    def _format_folder_dropdown(content: str, timestamp: str, **kwargs) -> dbc.Card:
+        """Format folder dropdown message for rule creation."""
+        folders = kwargs.get("folders", [])
+        
+        return dbc.Card([
+            dbc.CardBody([
+                html.Div([
+                    html.Strong("🤖 ICC Agent", className="text-success"),
+                    html.Small(f" • {timestamp}", className="text-muted ms-2")
+                ]),
+                html.P(content, className="mb-2 mt-2"),
+                dcc.Dropdown(
+                    id={"type": "folder-selector", "param": "folder"},
+                    options=[{"label": folder, "value": folder} for folder in folders],
+                    placeholder="Select a folder...",
+                    className="mt-2",
+                    style={"marginBottom": "10px"}
+                ),
+                dbc.Button(
+                    "Confirm Selection",
+                    id={"type": "folder-confirm", "param": "folder"},
+                    color="primary",
+                    size="sm",
+                    className="mt-2"
+                )
+            ])
+        ], className="mb-3", style={"backgroundColor": "#e8eaf6", "borderLeft": "4px solid #3f51b5"})
     
     @staticmethod
     def _format_tool_call(content: str, timestamp: str, **kwargs) -> dbc.Card:
