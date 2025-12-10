@@ -15,7 +15,7 @@
 cd ICC_try
 
 # Install backend dependencies
-pip install -r requirements_backend.txt
+pip install -r requirements.txt
 # or
 uv sync
 
@@ -37,9 +37,9 @@ ollama serve
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 # Option 2: Use startup script
-.\start_backend.bat    # Windows
+.\scripts\start_backend.bat    # Windows
 # or
-./start_backend.sh     # Linux/Mac
+./scripts/start_backend.sh     # Linux/Mac
 
 # Option 3: Docker
 docker-compose up -d
@@ -54,7 +54,7 @@ The Dash UI is available for **testing purposes only**:
 
 ```powershell
 # Install test UI dependencies
-pip install -r requirements_app.txt
+pip install -r requirements-dev.txt
 
 # Run test UI
 python app.py
@@ -196,7 +196,7 @@ curl -X POST http://localhost:8000/api/chat/message \
   }'
 
 # Run automated tests
-python test_backend.py
+python tests/test_backend.py
 ```
 
 ### Docker Deployment

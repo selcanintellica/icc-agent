@@ -339,7 +339,7 @@ netstat -an | grep 8000  # for local
 # Solution: Start the backend
 docker-compose up -d
 # or
-.\start_backend.bat
+.\scripts\start_backend.bat
 ```
 
 ### Issue: "Port 8000 already in use"

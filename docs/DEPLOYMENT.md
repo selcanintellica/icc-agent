@@ -92,7 +92,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2. Install dependencies
-pip install -r requirements_backend.txt
+pip install -r requirements.txt
 
 # 3. Configure environment
 export PYTHONPATH=$(pwd)
@@ -103,7 +103,7 @@ export API_PORT=8000
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 # Or use the startup script
-./start_backend.sh
+./scripts/start_backend.sh
 ```
 
 ### Windows
@@ -114,10 +114,10 @@ python -m venv .venv
 .venv\Scripts\activate
 
 # 2. Install dependencies
-pip install -r requirements_backend.txt
+pip install -r requirements.txt
 
 # 3. Start server
-.\start_backend.bat
+.\scripts\start_backend.bat
 ```
 
 ---
@@ -432,7 +432,7 @@ Provide:
 - Source code repository access
 - `README_BACKEND.md` (integration guide)
 - `DEPLOYMENT.md` (this file)
-- `requirements_backend.txt`
+- `requirements.txt`
 - `db_config.json` (or template)
 
 ---
