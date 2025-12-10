@@ -93,17 +93,20 @@ class RuleHandler(BaseStageHandler):
         """
         Handle ASK_CREATE_RULE stage.
         
-        Shows the jobs created in this session and asks if user wants to create a rule.
+        User has already been shown the jobs list and asked if they want to create a rule.
+        This handler processes their yes/no response.
         """
         user_lower = user_input.lower().strip()
         
+        logger.info(f"ASK_CREATE_RULE: user_input='{user_input}'")
+        
         # Check for positive response
-        if any(word in user_lower for word in ["yes", "ok", "sure", "create", "rule"]):
+        if any(word in user_lower for word in ["yes", "y", "ok", "sure", "create", "rule", "yeah"]):
             logger.info("User wants to create a rule")
             return await self._fetch_and_show_folders(memory)
         
         # Check for negative response
-        if any(word in user_lower for word in ["no", "nope", "skip", "done", "finish"]):
+        if any(word in user_lower for word in ["no", "n", "nope", "skip", "done", "finish", "nah"]):
             logger.info("User declined rule creation")
             return self._create_result(
                 memory,
@@ -111,27 +114,14 @@ class RuleHandler(BaseStageHandler):
                 Stage.DONE
             )
         
-        # First time at this stage - show jobs and ask
+        # Unclear response - ask again
         jobs = memory.get_created_jobs()
-        if not jobs or len(jobs) < 2:
-            # Shouldn't happen, but handle gracefully
-            logger.warning(f"Not enough jobs for rule creation: {len(jobs) if jobs else 0}")
-            return self._create_result(
-                memory,
-                "All done! Say 'new query' or 'start' to begin a fresh job.",
-                Stage.DONE
-            )
+        job_count = len(jobs) if jobs else 0
         
-        # Format job list for display
-        job_list = self._format_jobs_for_display(jobs)
-        
-        response = (
-            f"You've created {len(jobs)} jobs in this session:\n"
-            f"{job_list}\n\n"
-            f"Would you like to create a Rule combining these jobs into a workflow? (yes/no)"
+        return self._create_result(
+            memory,
+            f"Would you like to create a Rule from your {job_count} jobs? Please respond 'yes' or 'no':"
         )
-        
-        return self._create_result(memory, response)
     
     async def _fetch_and_show_folders(self, memory: Memory) -> StageHandlerResult:
         """Fetch folders from API and show selection list."""
@@ -341,6 +331,7 @@ class RuleHandler(BaseStageHandler):
             
             # Build rule payload
             logger.info(f"Building rule payload: name={rule_name}, folder={folder_id}, jobs={len(jobs)}")
+            logger.info(f"Jobs being used: {jobs}")
             
             payload = RuleBuilder.build(
                 jobs=jobs,
@@ -348,7 +339,9 @@ class RuleHandler(BaseStageHandler):
                 rule_name=rule_name
             )
             
-            logger.debug(f"Rule payload detail: {payload.detail[:200]}...")
+            # Log the full detail for debugging
+            logger.info(f"Rule payload detail (FULL): {payload.detail}")
+            logger.info(f"Rule payload as API: {payload.to_api_payload()}")
             
             # Save rule
             result = await save_rule(payload, auth_headers=auth_headers)

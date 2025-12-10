@@ -41,12 +41,24 @@ class NeedWriteOrEmailStrategy(StageStrategy):
                 memory.current_tool = None
                 
                 # Check if user has created multiple jobs - offer rule creation
+                created_jobs = memory.get_created_jobs()
+                logger.info(f"RULE_CHECK: created_jobs count = {len(created_jobs)}, jobs = {created_jobs}")
+                
                 if memory.has_multiple_jobs():
-                    created_jobs = memory.get_created_jobs()
                     logger.info(f"User has {len(created_jobs)} jobs, offering rule creation")
+                    
+                    # Build job list summary
+                    job_list = "\n".join([f"  {i+1}. {j['name']} ({j['type']})" for i, j in enumerate(created_jobs)])
+                    
+                    response = (
+                        f"You've created {len(created_jobs)} jobs in this session:\n"
+                        f"{job_list}\n\n"
+                        f"Would you like to create a Rule combining these jobs into a workflow? (yes/no)"
+                    )
+                    
                     return self._create_result(
                         memory,
-                        "",  # Empty response - RuleHandler will show the jobs
+                        response,
                         Stage.ASK_CREATE_RULE
                     )
                 else:
