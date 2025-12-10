@@ -37,13 +37,25 @@ class NeedWriteOrEmailStrategy(StageStrategy):
             done_patterns = ["done", "finish", "complete", "nothing"]
             if (user_lower in ["no", "nope", "nah"] or 
                 any(pattern in user_lower for pattern in done_patterns)):
-                logger.info("User said done, transitioning to DONE stage")
+                logger.info("User said done")
                 memory.current_tool = None
-                return self._create_result(
-                    memory,
-                    "All done! 🎉\n\nSay 'new query' or 'start' to begin a fresh job.",
-                    Stage.DONE
-                )
+                
+                # Check if user has created multiple jobs - offer rule creation
+                if memory.has_multiple_jobs():
+                    created_jobs = memory.get_created_jobs()
+                    logger.info(f"User has {len(created_jobs)} jobs, offering rule creation")
+                    return self._create_result(
+                        memory,
+                        "",  # Empty response - RuleHandler will show the jobs
+                        Stage.ASK_CREATE_RULE
+                    )
+                else:
+                    # Only one or no jobs - go directly to done
+                    return self._create_result(
+                        memory,
+                        "All done! Say 'new query' or 'start' to begin a fresh job.",
+                        Stage.DONE
+                    )
         
         if memory.execute_query_enabled and any(word in user_lower for word in ["write", "save"]):
             return self._create_result(

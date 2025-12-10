@@ -139,11 +139,23 @@ class ExecuteSqlStrategy(StageStrategy):
             logger.info(f"read_sql_job result: {json.dumps(result, indent=2)}")
             
             if result.get("message") == "Success":
-                memory.last_job_id = result.get("job_id")
+                job_id = result.get("job_id")
+                job_folder = "3023602439587835"
+                
+                memory.last_job_id = job_id
                 memory.last_job_name = job_name
-                memory.last_job_folder = "3023602439587835"
+                memory.last_job_folder = job_folder
                 memory.last_columns = result.get("columns", [])
                 memory.execute_query_enabled = execute_query
+                
+                # Track job for rule creation
+                memory.add_created_job(
+                    job_id=job_id,
+                    job_name=job_name,
+                    job_type="read_sql",
+                    job_folder=job_folder
+                )
+                logger.info(f"Added read_sql job to created_jobs: {job_name} (ID: {job_id})")
 
                 if execute_query:
                     memory.output_table_info = {

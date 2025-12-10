@@ -265,24 +265,44 @@ class WriteDataHandler(BaseStageHandler):
             result = await write_data_job(request)
             logger.info(f"write_data_job result: {json.dumps(result, indent=2, default=str)}")
             
-            # Track output table info for send_email query generation
-            memory.output_table_info = {
-                "schema": schemas,
-                "table": table_name
-            }
-            logger.info(f"Set output_table_info: {memory.output_table_info}")
-            
-            # Clean up memory
-            memory.gathered_params = {}
-            memory.current_tool = None
-            memory.last_question = None
-            
-            response = (
-                f"Job '{job_name}' created successfully!\n\n"
-                f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
-                f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
-            )
-            return self._create_result(memory, response)
+            if result.get("message") == "Success":
+                job_id = result.get("job_id")
+                job_folder = "3023602439587835"
+                
+                # Track output table info for send_email query generation
+                memory.output_table_info = {
+                    "schema": schemas,
+                    "table": table_name
+                }
+                logger.info(f"Set output_table_info: {memory.output_table_info}")
+                
+                # Track job for rule creation
+                memory.add_created_job(
+                    job_id=job_id,
+                    job_name=job_name,
+                    job_type="write_data",
+                    job_folder=job_folder
+                )
+                logger.info(f"Added write_data job to created_jobs: {job_name} (ID: {job_id})")
+                
+                # Clean up memory
+                memory.gathered_params = {}
+                memory.current_tool = None
+                memory.last_question = None
+                
+                response = (
+                    f"Job '{job_name}' created successfully!\n\n"
+                    f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
+                    f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
+                )
+                return self._create_result(memory, response)
+            else:
+                error_msg = result.get("error", "Unknown error")
+                return self._create_result(
+                    memory,
+                    f"Error creating WriteData job: {error_msg}",
+                    is_error=True
+                )
 
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name '{job_name}': {e}")

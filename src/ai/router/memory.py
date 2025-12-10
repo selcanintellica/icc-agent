@@ -317,6 +317,16 @@ class Memory:
         """Set available schemas."""
         self.connection_manager.available_schemas = value
     
+    @property
+    def created_jobs(self) -> List[Dict[str, str]]:
+        """Get list of jobs created in this session."""
+        return self.job_context.created_jobs
+    
+    @created_jobs.setter
+    def created_jobs(self, value: List[Dict[str, str]]) -> None:
+        """Set list of created jobs."""
+        self.job_context.created_jobs = value
+    
     # Delegated methods
     
     def get_connection_id(self, connection_name: str) -> Optional[str]:
@@ -330,6 +340,28 @@ class Memory:
     def get_schema_list_for_llm(self) -> str:
         """Get schema list for LLM (delegates to ConnectionManager)."""
         return self.connection_manager.get_schema_list_for_llm()
+    
+    def add_created_job(
+        self,
+        job_id: str,
+        job_name: str,
+        job_type: str,
+        job_folder: str = "3023602439587835"
+    ) -> None:
+        """Add a created job to session history (delegates to JobContext)."""
+        self.job_context.add_created_job(job_id, job_name, job_type, job_folder)
+    
+    def get_created_jobs(self) -> List[Dict[str, str]]:
+        """Get all jobs created in this session (delegates to JobContext)."""
+        return self.job_context.get_created_jobs()
+    
+    def clear_created_jobs(self) -> None:
+        """Clear the list of created jobs (delegates to JobContext)."""
+        self.job_context.clear_created_jobs()
+    
+    def has_multiple_jobs(self) -> bool:
+        """Check if multiple jobs were created (delegates to JobContext)."""
+        return self.job_context.has_multiple_jobs()
     
     def reset(self) -> None:
         """Reset all contexts."""
