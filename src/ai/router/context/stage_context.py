@@ -39,6 +39,7 @@ class Stage(Enum):
     ASK_AUTO_MATCH = "ask_auto_match"
     WAITING_MAP_TABLE = "waiting_map_table"
     ASK_REPORTING_TYPE = "ask_reporting_type"
+    GATHER_COMPARE_PARAMS = "gather_compare_params"
     ASK_COMPARE_SCHEMA = "ask_compare_schema"
     ASK_COMPARE_TABLE_NAME = "ask_compare_table_name"
     ASK_COMPARE_JOB_NAME = "ask_compare_job_name"
@@ -131,6 +132,7 @@ class StageContext:
             Stage.ASK_AUTO_MATCH,
             Stage.WAITING_MAP_TABLE,
             Stage.ASK_REPORTING_TYPE,
+            Stage.GATHER_COMPARE_PARAMS,
             Stage.ASK_COMPARE_SCHEMA,
             Stage.ASK_COMPARE_TABLE_NAME,
             Stage.ASK_COMPARE_JOB_NAME,

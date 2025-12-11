@@ -7,7 +7,7 @@ This module manages prompts for the job agent following SOLID principles:
 """
 
 from typing import Dict, Protocol
-from .job_prompts import WriteDataPrompt, ReadSQLPrompt, SendEmailPrompt
+from .job_prompts import WriteDataPrompt, ReadSQLPrompt, SendEmailPrompt, CompareSQLPrompt
 
 
 class PromptProvider(Protocol):
@@ -36,6 +36,7 @@ class PromptManager:
             "write_data": WriteDataPrompt(),
             "read_sql": ReadSQLPrompt(),
             "send_email": SendEmailPrompt(),
+            "compare_sql": CompareSQLPrompt(),
         }
     
     def get_prompt(self, tool_name: str, **kwargs) -> str:

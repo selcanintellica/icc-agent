@@ -25,6 +25,7 @@ from src.ai.router.stage_handlers.strategies.comparesql import (
     AskAutoMatchStrategy,
     WaitingMapTableStrategy,
     AskReportingTypeStrategy,
+    GatherCompareParamsStrategy,
     AskCompareSchemaStrategy,
     AskCompareTableNameStrategy,
     AskCompareJobNameStrategy,
@@ -56,6 +57,7 @@ class CompareSQLHandler(BaseStageHandler):
         Stage.ASK_AUTO_MATCH,
         Stage.WAITING_MAP_TABLE,
         Stage.ASK_REPORTING_TYPE,
+        Stage.GATHER_COMPARE_PARAMS,
         Stage.ASK_COMPARE_SCHEMA,
         Stage.ASK_COMPARE_TABLE_NAME,
         Stage.ASK_COMPARE_JOB_NAME,
@@ -95,8 +97,11 @@ class CompareSQLHandler(BaseStageHandler):
         self._registry.register(Stage.ASK_AUTO_MATCH, AskAutoMatchStrategy())
         self._registry.register(Stage.WAITING_MAP_TABLE, WaitingMapTableStrategy())
         self._registry.register(Stage.ASK_REPORTING_TYPE, AskReportingTypeStrategy())
-        
-        # Job parameters and execution
+
+        # Job parameters and execution (consolidated with job agent)
+        self._registry.register(Stage.GATHER_COMPARE_PARAMS, GatherCompareParamsStrategy())
+
+        # Legacy stages (kept for backward compatibility)
         self._registry.register(Stage.ASK_COMPARE_SCHEMA, AskCompareSchemaStrategy())
         self._registry.register(Stage.ASK_COMPARE_TABLE_NAME, AskCompareTableNameStrategy())
         self._registry.register(Stage.ASK_COMPARE_JOB_NAME, AskCompareJobNameStrategy())

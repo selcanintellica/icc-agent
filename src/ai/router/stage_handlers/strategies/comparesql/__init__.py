@@ -14,6 +14,7 @@ from .ask_reporting_type import AskReportingTypeStrategy
 from .ask_compare_schema import AskCompareSchemaStrategy
 from .ask_compare_table_name import AskCompareTableNameStrategy
 from .execute_compare_sql import AskCompareJobNameStrategy, ExecuteCompareSQLStrategy
+from .gather_params import GatherCompareParamsStrategy
 
 __all__ = [
     "AskFirstSQLMethodStrategy",
@@ -31,4 +32,5 @@ __all__ = [
     "AskCompareTableNameStrategy",
     "AskCompareJobNameStrategy",
     "ExecuteCompareSQLStrategy",
+    "GatherCompareParamsStrategy",
 ]
