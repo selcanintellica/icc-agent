@@ -765,7 +765,7 @@ Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}, "question": "..." if A
             }
         
         elif tool_name == "compare_sql":
-            result = self.validator.validate_compare_sql_params(params)
+            result = self.validator.validate_compare_sql_params(params, memory)
             if result:
                 return result
             return {
