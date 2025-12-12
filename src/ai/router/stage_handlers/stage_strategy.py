@@ -105,23 +105,6 @@ class StageStrategy(ABC):
             is_error=is_error,
             error_code=error_code
         )
-    
-    def _check_navigation_commands(self, user_input: str) -> Optional[str]:
-        """
-        Check if user input is a navigation command (back/reset).
-        
-        Args:
-            user_input: User's input
-            
-        Returns:
-            Optional[str]: 'back', 'reset', or None if not a navigation command
-        """
-        user_lower = user_input.lower().strip()
-        if user_lower in ["back", "go back", "previous"]:
-            return "back"
-        elif user_lower in ["reset", "start over", "cancel", "restart"]:
-            return "reset"
-        return None
 
 
 class StageStrategyRegistry:

@@ -13,18 +13,21 @@ class ConfirmFirstSQLStrategy(StageStrategy):
     
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Execute CONFIRM_FIRST_GENERATED_SQL / CONFIRM_FIRST_USER_SQL stage."""
-        # Check for navigation commands
-        nav_cmd = self._check_navigation_commands(user_input)
-        if nav_cmd == "back":
-            next_stage = Stage.NEED_FIRST_NATURAL_LANGUAGE if memory.stage == Stage.CONFIRM_FIRST_GENERATED_SQL else Stage.NEED_FIRST_USER_SQL
-            prompt = "Describe what data you want for the FIRST query." if next_stage == Stage.NEED_FIRST_NATURAL_LANGUAGE else "Please provide your FIRST SQL query:"
-            return self._create_result(memory, prompt, next_stage)
-        elif nav_cmd == "reset":
-            memory.current_tool = None
-            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
-        
-        user_lower = user_input.lower()
-        
+        user_lower = user_input.lower().strip()
+
+        # If empty input (from "back" command), show the full confirmation
+        if not user_lower:
+            if memory.first_sql:
+                return self._create_result(
+                    memory,
+                    f"You provided this FIRST SQL:\n```sql\n{memory.first_sql}\n```\nIs this correct? (yes/no)"
+                )
+            else:
+                return self._create_result(
+                    memory,
+                    "Please say 'yes' to proceed or 'no' to change the first query."
+                )
+
         if any(word in user_lower for word in ["yes", "ok", "correct"]):
             return self._create_result(
                 memory,

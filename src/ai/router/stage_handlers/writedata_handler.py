@@ -13,6 +13,8 @@ from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
 from src.ai.router.utils.connection_fetcher import ConnectionFetcher
+from src.ai.router.global_command_handler import GlobalCommandHandler
+from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 from src.ai.toolkits.icc_toolkit import write_data_job
 from src.models.natural_language import WriteDataLLMRequest, WriteDataVariables, ColumnSchema
 from src.errors import (
@@ -51,21 +53,57 @@ class WriteDataHandler(BaseStageHandler):
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Process the WriteData workflow."""
         logger.info("WriteDataHandler: Processing write_data request")
-        
+
         try:
+            # Check for global commands first (back, reset, edit, review)
+            global_cmd = GlobalCommandHandler.check_global_command(memory, user_input)
+
+            if global_cmd == "reset":
+                result = GlobalCommandHandler.handle_reset(memory)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
+            elif global_cmd == "back":
+                result = GlobalCommandHandler.handle_back(memory)
+
+                # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
+                if result.get("transition_to"):
+                    memory.stage = result["transition_to"]
+                    logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
+                    return await self.handle(memory, "")  # Re-run with empty input
+                else:
+                    # No transition - just show the message
+                    return self._create_result(memory, result["message"])
+
+            elif global_cmd == "review":
+                result = GlobalCommandHandler.handle_review(memory)
+                return self._create_result(memory, result["message"])
+
+            elif global_cmd == "edit":
+                edit_resolver = EditTargetResolver()
+                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
             # Clear params only when switching from read_sql
             has_read_sql_only_params = (
-                "execute_query" in memory.gathered_params and 
+                "execute_query" in memory.gathered_params and
                 not any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
             )
             if has_read_sql_only_params:
                 logger.info("Switching from read_sql to write_data, clearing gathered_params")
                 memory.gathered_params = {}
                 memory.last_question = None
-            
+
             memory.current_tool = "write_data"
             logger.info("Processing write_data request...")
-            
+
             # Validate prerequisites
             if not memory.last_job_id:
                 return self._create_result(
@@ -74,26 +112,26 @@ class WriteDataHandler(BaseStageHandler):
                     is_error=True,
                     error_code=ErrorCode.JOB_MISSING_DATASET.code
                 )
-            
+
             # Get action from job agent
             action = call_job_agent(memory, user_input, tool_name="write_data")
-            
+
             # Handle different action types
             if action.get("action") == "FETCH_CONNECTIONS":
                 return await self._fetch_connections(memory)
-            
+
             if action.get("action") == "FETCH_SCHEMAS":
                 return await self._fetch_schemas(memory, action.get("connection"))
-            
+
             if action.get("action") == "ASK":
                 memory.last_question = action["question"]
                 return self._create_result(memory, action["question"])
-            
+
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
                 return await self._execute_write_data_job(memory, action.get("params", {}))
-            
+
             return self._create_result(memory, "Please provide write_data parameters. What should I name this job?")
-            
+
         except ICCBaseError as e:
             logger.error(f"ICC error in WriteData handler: {e}")
             return self._create_error_result(memory, e)

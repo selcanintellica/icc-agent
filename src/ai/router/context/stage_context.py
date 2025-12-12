@@ -47,11 +47,17 @@ class Stage(Enum):
 
     SHOW_RESULTS = "show_results"
     NEED_WRITE_OR_EMAIL = "need_write_or_email"
-    
+
     # SendEmail Flow
     CONFIRM_EMAIL_QUERY = "confirm_email_query"
     NEED_EMAIL_QUERY = "need_email_query"
-    
+
+    # Final Confirmation Stages (NEW - before job execution)
+    CONFIRM_READ_SQL_JOB = "confirm_read_sql_job"
+    CONFIRM_WRITE_DATA_JOB = "confirm_write_data_job"
+    CONFIRM_SEND_EMAIL_JOB = "confirm_send_email_job"
+    CONFIRM_COMPARE_SQL_JOB = "confirm_compare_sql_job"
+
     DONE = "done"
 
 
@@ -65,12 +71,13 @@ class StageContext:
     def __init__(self, initial_stage: Stage = Stage.START):
         """
         Initialize stage context.
-        
+
         Args:
             initial_stage: Starting stage
         """
         self._stage: Stage = initial_stage
         self._last_question: Optional[str] = None
+        self._stage_history: list = []  # NEW: Track visited stages for back functionality
     
     @property
     def stage(self) -> Stage:
@@ -94,15 +101,33 @@ class StageContext:
     
     def transition_to(self, new_stage: Stage, question: Optional[str] = None) -> None:
         """
-        Transition to a new stage.
-        
+        Transition to a new stage and track history.
+
         Args:
             new_stage: Stage to transition to
             question: Optional question being asked (for context)
         """
+        # Track history before transition
+        if new_stage != self._stage:
+            self._stage_history.append(self._stage)
         self._stage = new_stage
         if question:
             self._last_question = question
+
+    def go_back(self) -> Stage:
+        """
+        Go to previous stage.
+
+        Returns:
+            Stage: The previous stage (or current if no history)
+        """
+        if self._stage_history:
+            self._stage = self._stage_history.pop()
+        return self._stage
+
+    def reset_history(self) -> None:
+        """Clear stage history."""
+        self._stage_history.clear()
     
     def is_read_sql_flow(self) -> bool:
         """Check if currently in ReadSQL flow."""
@@ -152,6 +177,7 @@ class StageContext:
         """Reset to initial stage."""
         self._stage = Stage.START
         self._last_question = None
+        self._stage_history.clear()
     
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""

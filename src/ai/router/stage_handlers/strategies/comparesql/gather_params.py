@@ -71,7 +71,8 @@ class GatherCompareParamsStrategy(StageStrategy):
                 return await self._fetch_schemas(memory, action.get("connection"))
 
             if action.get("action") == "TOOL" and action.get("tool_name") == "compare_sql":
-                return await self._execute_compare_job(memory, action.get("params", {}))
+                # NEW: Go to confirmation instead of executing directly
+                return await self._show_confirmation(memory, action.get("params", {}))
 
             return self._create_result(
                 memory,
@@ -110,6 +111,37 @@ class GatherCompareParamsStrategy(StageStrategy):
                 f"Unable to fetch schemas: {icc_error.user_message}\n\nPlease try again or specify the schema name directly.",
                 is_error=True
             )
+
+    async def _show_confirmation(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
+        """
+        Show confirmation summary before executing job.
+
+        Args:
+            memory: Conversation memory
+            params: Job parameters
+
+        Returns:
+            StageHandlerResult with confirmation summary
+        """
+        logger.info("Showing confirmation summary for CompareSQL job")
+
+        # Merge params into gathered_params
+        memory.gathered_params.update(params)
+
+        # Import and use confirmation strategy
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+
+        # Create confirmation strategy with execution callback
+        confirm_strategy = ConfirmJobStrategy(
+            job_type="compare_sql",
+            execution_callback=lambda m: self._execute_compare_job(m, params)
+        )
+
+        # Transition to confirmation stage
+        memory.stage = Stage.CONFIRM_COMPARE_SQL_JOB
+
+        # Show summary
+        return await confirm_strategy.execute(memory, "")
 
     async def _execute_compare_job(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
         """

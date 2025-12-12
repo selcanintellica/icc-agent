@@ -14,7 +14,14 @@ class AskSecondSQLMethodStrategy(StageStrategy):
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Execute ASK_SECOND_SQL_METHOD stage."""
         user_lower = user_input.lower().strip()
-        
+
+        # If empty input (from "back" command), show the initial prompt
+        if not user_lower:
+            return self._create_result(
+                memory,
+                "Great! Now for the SECOND query, how would you like to proceed?\n- 'create' - I'll generate SQL\n- 'provide' - You'll write the SQL"
+            )
+
         # Handle back/reset commands - go back to first SQL method
         if user_lower in ["back", "go back"]:
             logger.info("User requested 'back' - going back to first SQL method selection")
@@ -25,7 +32,7 @@ class AskSecondSQLMethodStrategy(StageStrategy):
                 "Okay, let's go back to the first query.\n\nFor the FIRST query, how would you like to proceed?\n- 'create' - I'll generate SQL from your description\n- 'provide' - You provide the SQL query directly",
                 Stage.ASK_FIRST_SQL_METHOD
             )
-        
+
         if user_lower in ["reset", "start over", "cancel"]:
             logger.info(f"User requested '{user_lower}' - going back to job type selection")
             memory.current_tool = None
@@ -37,7 +44,7 @@ class AskSecondSQLMethodStrategy(StageStrategy):
                 "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
                 Stage.ASK_JOB_TYPE
             )
-        
+
         if any(word in user_lower for word in ["create", "generate"]):
             return self._create_result(
                 memory,
