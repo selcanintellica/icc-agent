@@ -20,6 +20,7 @@ class NeedNaturalLanguageStrategy(StageStrategy):
         Args:
             sql_agent: SQL agent for query generation (optional, uses default if None)
         """
+        super().__init__()
         self.sql_agent = sql_agent
     
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:

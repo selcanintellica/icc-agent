@@ -31,6 +31,7 @@ class ExecuteSqlStrategy(StageStrategy):
         Args:
             job_agent: Job agent for parameter gathering (optional)
         """
+        super().__init__()
         self.job_agent = job_agent
     
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
