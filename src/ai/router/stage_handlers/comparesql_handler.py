@@ -11,6 +11,8 @@ from src.ai.router.stage_handlers.stage_strategy import StageStrategyRegistry
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.errors import ICCBaseError
+from src.ai.router.global_command_handler import GlobalCommandHandler
+from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 
 # Import all CompareSQL strategies
 from src.ai.router.stage_handlers.strategies.comparesql import (
@@ -25,6 +27,7 @@ from src.ai.router.stage_handlers.strategies.comparesql import (
     AskAutoMatchStrategy,
     WaitingMapTableStrategy,
     AskReportingTypeStrategy,
+    GatherCompareParamsStrategy,
     AskCompareSchemaStrategy,
     AskCompareTableNameStrategy,
     AskCompareJobNameStrategy,
@@ -56,6 +59,8 @@ class CompareSQLHandler(BaseStageHandler):
         Stage.ASK_AUTO_MATCH,
         Stage.WAITING_MAP_TABLE,
         Stage.ASK_REPORTING_TYPE,
+        Stage.GATHER_COMPARE_PARAMS,
+        Stage.CONFIRM_COMPARE_SQL_JOB,  # NEW: Confirmation stage
         Stage.ASK_COMPARE_SCHEMA,
         Stage.ASK_COMPARE_TABLE_NAME,
         Stage.ASK_COMPARE_JOB_NAME,
@@ -95,8 +100,15 @@ class CompareSQLHandler(BaseStageHandler):
         self._registry.register(Stage.ASK_AUTO_MATCH, AskAutoMatchStrategy())
         self._registry.register(Stage.WAITING_MAP_TABLE, WaitingMapTableStrategy())
         self._registry.register(Stage.ASK_REPORTING_TYPE, AskReportingTypeStrategy())
-        
-        # Job parameters and execution
+
+        # Job parameters and execution (consolidated with job agent)
+        self._registry.register(Stage.GATHER_COMPARE_PARAMS, GatherCompareParamsStrategy())
+
+        # Confirmation stage (NEW - shows summary before execution)
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+        self._registry.register(Stage.CONFIRM_COMPARE_SQL_JOB, ConfirmJobStrategy(job_type="compare_sql"))
+
+        # Legacy stages (kept for backward compatibility)
         self._registry.register(Stage.ASK_COMPARE_SCHEMA, AskCompareSchemaStrategy())
         self._registry.register(Stage.ASK_COMPARE_TABLE_NAME, AskCompareTableNameStrategy())
         self._registry.register(Stage.ASK_COMPARE_JOB_NAME, AskCompareJobNameStrategy())
@@ -109,18 +121,54 @@ class CompareSQLHandler(BaseStageHandler):
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Process the CompareSQL stage by delegating to appropriate strategy."""
         logger.info(f"CompareSQLHandler: Processing stage {memory.stage.value}")
-        
+
         try:
+            # Check for global commands first (back, reset, edit, review)
+            global_cmd = GlobalCommandHandler.check_global_command(memory, user_input)
+
+            if global_cmd == "reset":
+                result = GlobalCommandHandler.handle_reset(memory)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
+            elif global_cmd == "back":
+                result = GlobalCommandHandler.handle_back(memory)
+
+                # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
+                if result.get("transition_to"):
+                    memory.stage = result["transition_to"]
+                    logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
+                    return await self.handle(memory, "")  # Re-run with empty input
+                else:
+                    # No transition - just show the message
+                    return self._create_result(memory, result["message"])
+
+            elif global_cmd == "review":
+                result = GlobalCommandHandler.handle_review(memory)
+                return self._create_result(memory, result["message"])
+
+            elif global_cmd == "edit":
+                edit_resolver = EditTargetResolver()
+                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
             # Get strategy for current stage
             strategy = self._registry.get_strategy(memory.stage)
-            
+
             if strategy:
                 # Delegate to strategy
                 return await strategy.handle_with_help(memory, user_input)
             else:
                 logger.warning(f"No strategy registered for stage {memory.stage.value}")
                 return self._create_result(memory, "Unhandled stage in CompareSQL flow")
-            
+
         except ICCBaseError as e:
             logger.error(f"ICC error in CompareSQL handler: {e}")
             return self._create_error_result(memory, e)

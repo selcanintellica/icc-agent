@@ -12,6 +12,8 @@ from src.ai.router.stage_handlers.base_handler import BaseStageHandler, StageHan
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
+from src.ai.router.global_command_handler import GlobalCommandHandler
+from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 from src.ai.toolkits.icc_toolkit import send_email_job
 from src.models.natural_language import SendEmailLLMRequest, SendEmailVariables
 from src.errors import (
@@ -62,6 +64,42 @@ class SendEmailHandler(BaseStageHandler):
         logger.info(f"SendEmailHandler: current_tool={memory.current_tool}")
 
         try:
+            # Check for global commands first (back, reset, edit, review)
+            global_cmd = GlobalCommandHandler.check_global_command(memory, user_input)
+
+            if global_cmd == "reset":
+                result = GlobalCommandHandler.handle_reset(memory)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
+            elif global_cmd == "back":
+                result = GlobalCommandHandler.handle_back(memory)
+
+                # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
+                if result.get("transition_to"):
+                    memory.stage = result["transition_to"]
+                    logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
+                    return await self.handle(memory, "")  # Re-run with empty input
+                else:
+                    # No transition - just show the message
+                    return self._create_result(memory, result["message"])
+
+            elif global_cmd == "review":
+                result = GlobalCommandHandler.handle_review(memory)
+                return self._create_result(memory, result["message"])
+
+            elif global_cmd == "edit":
+                edit_resolver = EditTargetResolver()
+                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
             if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
                 return await self._handle_confirm_email_query(memory, user_input)
             elif memory.stage == Stage.NEED_EMAIL_QUERY:
@@ -73,7 +111,7 @@ class SendEmailHandler(BaseStageHandler):
             else:
                 logger.warning(f"SendEmailHandler received unexpected stage: {memory.stage.value}")
                 return await self._handle_initial_request(memory, user_input)
-                
+
         except ICCBaseError as e:
             logger.error(f"ICC error in SendEmail handler: {e}")
             return self._create_error_result(memory, e)

@@ -524,14 +524,25 @@ Output JSON only:"""
         elif tool_name == "send_email":
             missing = self._get_missing_params_send_email(memory.gathered_params)
             system_prompt = self.prompt_manager.get_prompt("send_email")
-            
+
             last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
             prompt_text = f"""{last_q}User answer: "{user_input}"
 Current: {json.dumps(memory.gathered_params)}
 Missing: {', '.join(missing) if missing else 'none'}
 
 Output JSON only:"""
-            
+
+        elif tool_name == "compare_sql":
+            missing = self._get_missing_params_compare_sql(memory.gathered_params)
+            system_prompt = self.prompt_manager.get_prompt("compare_sql")
+
+            last_q = f'Last question: "{memory.last_question}"\n' if memory.last_question else ""
+            prompt_text = f"""{last_q}User answer: "{user_input}"
+Current: {json.dumps(memory.gathered_params)}
+Missing: {', '.join(missing) if missing else 'none'}
+
+Output JSON only:"""
+
         else:
             # Fallback: Use generic extraction (should not happen with proper tool routing)
             logger.warning(f"Unknown tool name '{tool_name}', using fallback extraction")
@@ -754,7 +765,7 @@ Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}, "question": "..." if A
             }
         
         elif tool_name == "compare_sql":
-            result = self.validator.validate_compare_sql_params(params)
+            result = self.validator.validate_compare_sql_params(params, memory)
             if result:
                 return result
             return {
@@ -792,6 +803,26 @@ Output JSON: {{"action": "ASK"|"TOOL", "params": {{...}}, "question": "..." if A
         if not params.get("name"): missing.append("name")
         if not params.get("to"): missing.append("to")
         if not params.get("subject"): missing.append("subject")
+        return missing
+
+    def _get_missing_params_compare_sql(self, params: Dict[str, Any]) -> list:
+        """
+        Get list of missing parameters for compare_sql job.
+
+        Note: Key columns and mapped columns are already set from UI mapping.
+        We only gather: schemas, table_name, job_name
+        """
+        missing = []
+
+        if not params.get("schemas"):
+            missing.append("schemas")
+
+        if not params.get("table_name"):
+            missing.append("table_name")
+
+        if not params.get("job_name"):
+            missing.append("job_name")
+
         return missing
 
 

@@ -31,23 +31,7 @@ class NeedNaturalLanguageStrategy(StageStrategy):
         into a SQL query.
         """
         logger.info("Generating SQL from natural language...")
-        
-        # Check for navigation commands
-        nav_cmd = self._check_navigation_commands(user_input)
-        if nav_cmd == "back":
-            return self._create_result(
-                memory,
-                "How would you like to proceed?\n- 'create' - I'll generate SQL for you\n- 'provide' - You'll write the SQL",
-                Stage.ASK_SQL_METHOD
-            )
-        elif nav_cmd == "reset":
-            memory.current_tool = None
-            return self._create_result(
-                memory,
-                "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
-                Stage.ASK_JOB_TYPE
-            )
-        
+
         if not user_input or not user_input.strip():
             return self._create_result(
                 memory,

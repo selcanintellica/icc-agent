@@ -18,18 +18,21 @@ class ConfirmSecondSQLStrategy(StageStrategy):
     
     async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Execute CONFIRM_SECOND_GENERATED_SQL / CONFIRM_SECOND_USER_SQL stage."""
-        # Check for navigation commands
-        nav_cmd = self._check_navigation_commands(user_input)
-        if nav_cmd == "back":
-            next_stage = Stage.NEED_SECOND_NATURAL_LANGUAGE if memory.stage == Stage.CONFIRM_SECOND_GENERATED_SQL else Stage.NEED_SECOND_USER_SQL
-            prompt = "Describe what data you want for the SECOND query." if next_stage == Stage.NEED_SECOND_NATURAL_LANGUAGE else "Please provide your SECOND SQL query:"
-            return self._create_result(memory, prompt, next_stage)
-        elif nav_cmd == "reset":
-            memory.current_tool = None
-            return self._create_result(memory, "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries", Stage.ASK_JOB_TYPE)
-        
-        user_lower = user_input.lower()
-        
+        user_lower = user_input.lower().strip()
+
+        # If empty input (from "back" command), show the full confirmation
+        if not user_lower:
+            if memory.second_sql:
+                return self._create_result(
+                    memory,
+                    f"You provided this SECOND SQL:\n```sql\n{memory.second_sql}\n```\nIs this correct? (yes/no)"
+                )
+            else:
+                return self._create_result(
+                    memory,
+                    "Please say 'yes' to execute or 'no' to change the second query."
+                )
+
         if any(word in user_lower for word in ["yes", "ok", "correct"]):
             return await self._fetch_columns_for_both_queries(memory)
         elif any(word in user_lower for word in ["no", "change", "modify"]):

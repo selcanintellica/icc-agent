@@ -246,28 +246,68 @@ class ParameterValidator:
         return None
     
     @staticmethod
-    def validate_compare_sql_params(params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def validate_compare_sql_params(params: Dict[str, Any], memory: Memory) -> Optional[Dict[str, Any]]:
         """
         Validate compare_sql parameters.
-        
+
+        Note: Key columns and mapped columns are already set from UI mapping.
+        We only need to gather: schemas, table_name, job_name
+
         Args:
             params: Current gathered parameters
-            
+            memory: Conversation memory
+
         Returns:
-            Dict with ASK action if missing parameters, None if all valid
+            Dict with ASK/FETCH_SCHEMAS action if missing parameters, None if all valid
         """
-        if not params.get("first_table_keys"):
+        # Check if schemas is selected
+        if not params.get("schemas"):
+            connection_name = memory.connection
+            if connection_name and not memory.available_schemas:
+                logger.debug(f"Need to fetch schemas for connection: {connection_name}")
+                memory.available_schemas = []
+                return {
+                    "action": "FETCH_SCHEMAS",
+                    "connection": connection_name,
+                    "question": "Fetching available schemas..."
+                }
+            elif memory.available_schemas:
+                logger.debug("Missing: schemas (have cached list)")
+                schema_list = memory.get_schema_list_for_llm()
+                return {
+                    "action": "ASK",
+                    "question": f"Which schema should I save the comparison results to?\n\nAvailable schemas:\n{schema_list}"
+                }
+            else:
+                logger.debug("Missing: schemas (no cached list)")
+                return {
+                    "action": "ASK",
+                    "question": "What schema should I save the comparison results to?"
+                }
+
+        if not params.get("table_name"):
+            logger.debug("Missing: table_name")
             return {
                 "action": "ASK",
-                "question": "What are the key columns for the first query? (comma separated)"
+                "question": "What table name should I use for the comparison results?"
             }
-        
-        if not params.get("second_table_keys"):
+
+        if not params.get("job_name"):
+            logger.debug("Missing: job_name")
             return {
                 "action": "ASK",
-                "question": "What are the key columns for the second query? (comma separated)"
+                "question": "What would you like to name this comparison job? (This helps you find it in ICC)"
             }
-        
+
+        # Set defaults for optional params
+        if "case_sensitive" not in params:
+            params["case_sensitive"] = False
+        if "calculate_difference" not in params:
+            params["calculate_difference"] = False
+        if "drop_before_create" not in params:
+            params["drop_before_create"] = True
+
+        logger.debug(f"All compare_sql params present: {params}")
         return None
     
     @staticmethod
