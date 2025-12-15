@@ -102,13 +102,17 @@ class WriteDataHandler(BaseStageHandler):
                     result.get("transition_to")
                 )
 
-            # Clear params only when switching from read_sql
+            # Clear params when starting fresh or switching from read_sql
             has_read_sql_only_params = (
                 "execute_query" in memory.gathered_params and
                 not any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
             )
-            if has_read_sql_only_params:
-                logger.info("Switching from read_sql to write_data, clearing gathered_params")
+
+            # Also clear if we have old write_data params (from previous write) but no active job in progress
+            has_old_write_params = any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
+
+            if has_read_sql_only_params or (has_old_write_params and memory.current_tool != "write_data"):
+                logger.info("Clearing gathered_params for fresh write_data flow")
                 memory.gathered_params = {}
                 memory.last_question = None
 
