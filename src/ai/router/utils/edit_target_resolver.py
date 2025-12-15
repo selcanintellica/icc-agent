@@ -122,6 +122,23 @@ class EditTargetResolver:
             "transition": None,
             "message": "Cleared table name. What table would you like to use?"
         },
+
+        # SendEmail parameters
+        "to": {
+            "clear": ["gathered_params.to"],
+            "transition": None,
+            "message": "Cleared 'To' email address. Please provide the recipient email address:"
+        },
+        "subject": {
+            "clear": ["gathered_params.subject"],
+            "transition": None,
+            "message": "Cleared email subject. What should the email subject be?"
+        },
+        "body": {
+            "clear": ["gathered_params.body"],
+            "transition": None,
+            "message": "Cleared email body. What should the email body say?"
+        },
     }
 
     # Fuzzy matching alternatives
@@ -134,6 +151,9 @@ class EditTargetResolver:
         "job name": ["name", "job", "the name"],
         "schema": ["the schema", "result schema"],
         "table": ["table name", "the table", "result table"],
+        "to": ["to email", "recipient", "to address"],
+        "subject": ["email subject", "the subject"],
+        "body": ["email body", "message", "the body"],
     }
 
     @staticmethod

@@ -79,8 +79,13 @@ class SendEmailHandler(BaseStageHandler):
             elif global_cmd == "back":
                 result = GlobalCommandHandler.handle_back(memory)
 
+                # If we need to re-gather parameters (during parameter gathering)
+                if result.get("re_gather"):
+                    logger.info("Re-gathering parameters after back command")
+                    # Continue below to re-run job agent with empty input
+                    user_input = ""
                 # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
-                if result.get("transition_to"):
+                elif result.get("transition_to"):
                     memory.stage = result["transition_to"]
                     logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
                     return await self.handle(memory, "")  # Re-run with empty input
@@ -93,13 +98,24 @@ class SendEmailHandler(BaseStageHandler):
                 return self._create_result(memory, result["message"])
 
             elif global_cmd == "edit":
-                edit_resolver = EditTargetResolver()
-                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
-                return self._create_result(
-                    memory,
-                    result["message"],
-                    result.get("transition_to")
-                )
+                # If we're in confirmation stage, don't intercept - let ConfirmJobStrategy handle it
+                if memory.stage != Stage.CONFIRM_SEND_EMAIL_JOB:
+                    edit_resolver = EditTargetResolver()
+                    result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+
+                    # If editing a parameter during parameter gathering (no stage transition)
+                    if not result.get("transition_to") and memory.current_tool:
+                        logger.info("Edited parameter during parameter gathering - continuing to re-gather")
+                        # Clear last_question to trigger fresh parameter gathering
+                        memory.last_question = None
+                        # Continue below to re-run job agent with empty input
+                        user_input = ""
+                    else:
+                        return self._create_result(
+                            memory,
+                            result["message"],
+                            result.get("transition_to")
+                        )
 
             if memory.stage == Stage.CONFIRM_SEND_EMAIL_JOB:
                 # Handle confirmation stage with ConfirmJobStrategy

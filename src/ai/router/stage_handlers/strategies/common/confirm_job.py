@@ -267,27 +267,29 @@ class ConfirmJobStrategy(StageStrategy):
 
         logger.info(f"User wants to edit: {param_name}")
 
-        # Handle write_count editing
-        if param_name in ["write count", "write_count", "writecount", "row count"]:
-            if self.job_type not in ["read_sql", "write_data"]:
-                return await self._show_summary(memory, hint=f"Write count is not available for {self._get_job_display_name()} jobs.")
-
+        # Handle write_count editing (flexible matching for variations)
+        if any(keyword in param_name for keyword in ["write count", "write_count", "writecount", "row count"]) and self.job_type in ["read_sql", "write_data"]:
             memory.confirmation_substate = "editing_write_count"
             return self._create_result(
                 memory,
                 "Do you want to write row counts? (yes/no)"
             )
 
-        # Handle CC editing
-        if param_name in ["cc", "carbon copy"]:
-            if self.job_type != "send_email":
-                return await self._show_summary(memory, hint="CC is only available for SendEmail jobs.")
+        # Write count requested but not available for this job type
+        if any(keyword in param_name for keyword in ["write count", "write_count", "writecount", "row count"]) and self.job_type not in ["read_sql", "write_data"]:
+            return await self._show_summary(memory, hint=f"Write count is not available for {self._get_job_display_name()} jobs.")
 
+        # Handle CC editing (flexible matching for variations)
+        if any(keyword in param_name for keyword in ["cc", "carbon copy"]) and self.job_type == "send_email":
             memory.confirmation_substate = "editing_cc"
             return self._create_result(
                 memory,
                 "Please provide CC email addresses (comma-separated), or type 'none' to clear:"
             )
+
+        # CC requested but not a SendEmail job
+        if any(keyword in param_name for keyword in ["cc", "carbon copy"]) and self.job_type != "send_email":
+            return await self._show_summary(memory, hint="CC is only available for SendEmail jobs.")
 
         # Handle other parameter edits via EditTargetResolver
         from src.ai.router.utils.edit_target_resolver import EditTargetResolver

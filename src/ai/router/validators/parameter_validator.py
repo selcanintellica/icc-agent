@@ -37,7 +37,7 @@ class ParameterValidator:
                 "question": "What should I name this read_sql job?"
             }
         
-        # Check execute_query - treat empty string as missing
+        # Check execute_query - treat empty string as missing, convert yes/no to boolean
         execute_query_value = params.get("execute_query")
         if execute_query_value is None or execute_query_value == "":
             logger.debug("Asking about execute_query")
@@ -45,7 +45,22 @@ class ParameterValidator:
                 "action": "ASK",
                 "question": "Would you like to save the query results to the database? (yes/no)"
             }
-        
+
+        # Convert yes/no strings to boolean
+        if isinstance(execute_query_value, str):
+            execute_query_lower = execute_query_value.lower().strip()
+            if execute_query_lower in ["yes", "y", "true", "1"]:
+                params["execute_query"] = True
+            elif execute_query_lower in ["no", "n", "false", "0"]:
+                params["execute_query"] = False
+            else:
+                # Invalid value, ask again
+                logger.debug(f"Invalid execute_query value: {execute_query_value}")
+                return {
+                    "action": "ASK",
+                    "question": "Would you like to save the query results to the database? (yes/no)"
+                }
+
         if params.get("execute_query"):
             # Need result_schema (fetch if needed for the SAME connection as query)
             if not params.get("result_schema"):
@@ -79,7 +94,7 @@ class ParameterValidator:
                     "action": "ASK",
                     "question": "What table should I write the results to?"
                 }
-            # Check drop_before_create - treat empty string as missing
+            # Check drop_before_create - treat empty string as missing, convert yes/no to boolean
             drop_value = params.get("drop_before_create")
             if drop_value is None or drop_value == "":
                 logger.debug("Asking about drop_before_create")
@@ -87,11 +102,33 @@ class ParameterValidator:
                     "action": "ASK",
                     "question": "Should I drop the table before creating it? (yes/no)"
                 }
+
+            # Convert yes/no strings to boolean
+            if isinstance(drop_value, str):
+                drop_lower = drop_value.lower().strip()
+                if drop_lower in ["yes", "y", "true", "1"]:
+                    params["drop_before_create"] = True
+                elif drop_lower in ["no", "n", "false", "0"]:
+                    params["drop_before_create"] = False
+                else:
+                    # Invalid value, ask again
+                    logger.debug(f"Invalid drop_before_create value: {drop_value}")
+                    return {
+                        "action": "ASK",
+                        "question": "Should I drop the table before creating it? (yes/no)"
+                    }
         
         # Set default for write_count if not specified (optional parameter)
         if "write_count" not in params or params.get("write_count") is None or params.get("write_count") == "":
             params["write_count"] = False
             logger.debug("Set write_count default: False")
+        elif isinstance(params.get("write_count"), str):
+            # Convert yes/no strings to boolean
+            write_count_lower = params["write_count"].lower().strip()
+            if write_count_lower in ["yes", "y", "true", "1"]:
+                params["write_count"] = True
+            elif write_count_lower in ["no", "n", "false", "0"]:
+                params["write_count"] = False
 
         # If write_count is explicitly enabled, validate its sub-parameters
         if params.get("write_count") is True:
@@ -172,6 +209,13 @@ class ParameterValidator:
         if "write_count" not in params or params.get("write_count") is None or params.get("write_count") == "":
             params["write_count"] = False
             logger.debug("Set write_count default: False")
+        elif isinstance(params.get("write_count"), str):
+            # Convert yes/no strings to boolean
+            write_count_lower = params["write_count"].lower().strip()
+            if write_count_lower in ["yes", "y", "true", "1"]:
+                params["write_count"] = True
+            elif write_count_lower in ["no", "n", "false", "0"]:
+                params["write_count"] = False
 
         # If write_count is explicitly enabled, validate its sub-parameters
         if params.get("write_count") is True:
