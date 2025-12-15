@@ -366,7 +366,6 @@ class WriteDataHandler(BaseStageHandler):
                 )
                 logger.info(f"Added write_data job to created_jobs: {job_name} (ID: {job_id})")
 
-
                 # Clean up memory
                 memory.gathered_params = {}
                 memory.current_tool = None
