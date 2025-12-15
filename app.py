@@ -53,6 +53,7 @@ print("="*60 + "\n")
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
 from src.utils.connection_api_client import populate_memory_connections
+from src.utils.folder_api_client import fetch_folders as fetch_folders_async
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.utils.async_helper import run_async, run_async_safe
 from src.services import (
@@ -100,6 +101,14 @@ initial_schemas = initial_config["schemas"]
 initial_schema = initial_config["initial_schema"]
 initial_tables = initial_config["tables"]
 initial_table_selection = initial_config["initial_tables"]
+
+# Default folder ID (same as in job_context.py)
+DEFAULT_JOB_FOLDER_ID = "3023602439587835"
+DEFAULT_JOB_FOLDER_NAME = "Default"
+
+# Folders will be fetched dynamically - start with empty list
+initial_folders = []
+initial_folder = None
 
 
 def create_map_table_modal():
@@ -231,7 +240,7 @@ app.layout = dbc.Container([
                                 placeholder="Select a database connection...",
                                 style={"marginBottom": "10px"}
                             ),
-                        ], md=4),
+                        ], md=3),
                         dbc.Col([
                             html.Label("2. Select Schema:", className="fw-bold"),
                             dcc.Dropdown(
@@ -242,7 +251,7 @@ app.layout = dbc.Container([
                                 placeholder="First select a connection...",
                                 style={"marginBottom": "10px"}
                             ),
-                        ], md=4),
+                        ], md=3),
                         dbc.Col([
                             html.Label("3. Select Tables:", className="fw-bold"),
                             dcc.Dropdown(
@@ -253,12 +262,23 @@ app.layout = dbc.Container([
                                 placeholder="First select a schema...",
                                 style={"marginBottom": "10px"}
                             ),
-                        ], md=4),
+                        ], md=3),
+                        dbc.Col([
+                            html.Label("4. Save Jobs To:", className="fw-bold"),
+                            dcc.Dropdown(
+                                id="folder-dropdown",
+                                options=[],  # Populated dynamically on load
+                                value=None,
+                                clearable=False,
+                                placeholder="Loading folders...",
+                                style={"marginBottom": "10px"}
+                            ),
+                        ], md=3),
                     ]),
                     html.Div(
                         id="config-status",
                         className="mt-2",
-                        children="Please select connection, schema, and tables to begin"
+                        children="Please select connection, schema, tables, and folder to begin"
                     )
                 ])
             ], className="mb-3")
@@ -315,7 +335,8 @@ app.layout = dbc.Container([
     
     # Hidden stores
     dcc.Store(id="chat-store", data=[]),
-    dcc.Store(id="config-store", data={"connection": initial_connection, "schema": initial_schema, "tables": initial_table_selection}),
+    dcc.Store(id="config-store", data={"connection": initial_connection, "schema": initial_schema, "tables": initial_table_selection, "folder": None, "folder_id": DEFAULT_JOB_FOLDER_ID}),
+    dcc.Store(id="folders-store", data=[]),  # Store for available folders
     dcc.Store(id="map-table-data", data={"first_columns": [], "second_columns": [], "mappings": [], "auto_matched": False}),
     dcc.Store(id="pending-map-response", data=None),
     
@@ -560,7 +581,7 @@ def create_mapping_row(idx, first_col, second_col, is_first_key, is_second_key):
     ], className="mb-2 py-2 border-bottom", id={"type": "mapping-row", "index": idx})
 
 
-async def invoke_router_async(user_message, session_id="default-session", connection=None, schema=None, selected_tables=None):
+async def invoke_router_async(user_message, session_id="default-session", connection=None, schema=None, selected_tables=None, folder_id=None):
     """Invoke the staged router with memory and comprehensive error handling"""
     try:
         # Use both print and logging for maximum visibility
@@ -570,6 +591,7 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         print(f"Connection: {connection}")
         print(f"Schema: {schema}")
         print(f"Selected Tables: {selected_tables}")
+        print(f"Folder ID: {folder_id}")
         print("="*60)
         
         logger.info(f"User query: {user_message}")
@@ -616,19 +638,23 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         except Exception as e:
             logger.error(f"Error fetching connections: {e}, will use static connections.py as fallback", exc_info=True)
         
-        # Update connection, schema, and tables from UI if provided
+        # Update connection, schema, tables, and folder from UI if provided
         if connection:
             memory.connection = connection
             logger.info(f"Updated connection: {connection}")
-        
+
         if schema:
             memory.schema = schema
             logger.info(f"Updated schema: {schema}")
-        
+
         if selected_tables:
             memory.selected_tables = selected_tables
             logger.info(f"Updated selected tables: {selected_tables}")
-        
+
+        if folder_id:
+            memory.job_folder = folder_id
+            logger.info(f"Updated job folder: {folder_id}")
+
         logger.info(f"Current stage: {memory.stage.value}")
         
         # Call the router
@@ -754,29 +780,102 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return table_options, default_tables
 
 
+# Callback to fetch folders on app load
+@app.callback(
+    [Output("folder-dropdown", "options"),
+     Output("folder-dropdown", "value"),
+     Output("folders-store", "data")],
+    [Input("connection-dropdown", "value")],  # Trigger on connection change (or app load)
+    prevent_initial_call=False
+)
+def fetch_folders_on_load(connection):
+    """Fetch available folders from ICC API on app load"""
+    try:
+        logger.info("Fetching folders from ICC API...")
+        
+        # Fetch folders asynchronously
+        folders = run_async_safe(
+            fetch_folders_async,
+            auth_headers=None,  # Will use default auth
+            default=[],
+            log_errors=True
+        )
+        
+        if folders:
+            logger.info(f"Fetched {len(folders)} folders from API")
+            folder_options = [{"label": f["name"], "value": f["id"]} for f in folders]
+            
+            # Set default folder (first one or the hardcoded default if found)
+            default_folder_id = DEFAULT_JOB_FOLDER_ID
+            for f in folders:
+                if f["id"] == DEFAULT_JOB_FOLDER_ID:
+                    default_folder_id = f["id"]
+                    break
+            
+            # If hardcoded default not found, use first folder
+            if not any(f["id"] == default_folder_id for f in folders) and folders:
+                default_folder_id = folders[0]["id"]
+            
+            return folder_options, default_folder_id, folders
+        else:
+            logger.warning("No folders fetched from API, using default")
+            # Fallback with just the default folder
+            default_option = [{"label": DEFAULT_JOB_FOLDER_NAME, "value": DEFAULT_JOB_FOLDER_ID}]
+            return default_option, DEFAULT_JOB_FOLDER_ID, [{"id": DEFAULT_JOB_FOLDER_ID, "name": DEFAULT_JOB_FOLDER_NAME}]
+            
+    except Exception as e:
+        logger.error(f"Error fetching folders: {e}", exc_info=True)
+        # Fallback with just the default folder
+        default_option = [{"label": DEFAULT_JOB_FOLDER_NAME, "value": DEFAULT_JOB_FOLDER_ID}]
+        return default_option, DEFAULT_JOB_FOLDER_ID, [{"id": DEFAULT_JOB_FOLDER_ID, "name": DEFAULT_JOB_FOLDER_NAME}]
+
+
 # Callback to save configuration
 @app.callback(
     [Output("config-store", "data"),
      Output("config-status", "children")],
     [Input("connection-dropdown", "value"),
      Input("schema-dropdown", "value"),
-     Input("tables-dropdown", "value")]
+     Input("tables-dropdown", "value"),
+     Input("folder-dropdown", "value")],
+    [State("folders-store", "data")]
 )
-def save_configuration(connection, schema, tables):
-    """Save connection, schema, and table configuration"""
+def save_configuration(connection, schema, tables, folder_id, folders_data):
+    """Save connection, schema, table, and folder configuration"""
     if not connection:
-        return {"connection": None, "schema": None, "tables": []}, "Please select a connection"
+        return {"connection": None, "schema": None, "tables": [], "folder": None, "folder_id": DEFAULT_JOB_FOLDER_ID}, "Please select a connection"
     
     if not schema:
-        return {"connection": connection, "schema": None, "tables": []}, "Please select a schema"
+        return {"connection": connection, "schema": None, "tables": [], "folder": None, "folder_id": DEFAULT_JOB_FOLDER_ID}, "Please select a schema"
     
     if not tables:
-        return {"connection": connection, "schema": schema, "tables": []}, "Please select at least one table"
+        return {"connection": connection, "schema": schema, "tables": [], "folder": None, "folder_id": DEFAULT_JOB_FOLDER_ID}, "Please select at least one table"
     
-    config = {"connection": connection, "schema": schema, "tables": tables}
-    status_msg = f"Using {connection}.{schema} with {len(tables)} table(s): {', '.join(tables[:3])}"
+    # Get folder name from folder_id
+    folder_name = None
+    if folder_id and folders_data:
+        for f in folders_data:
+            if f["id"] == folder_id:
+                folder_name = f["name"]
+                break
+    
+    # Use default if no folder selected
+    if not folder_id:
+        folder_id = DEFAULT_JOB_FOLDER_ID
+        folder_name = DEFAULT_JOB_FOLDER_NAME
+    
+    config = {
+        "connection": connection,
+        "schema": schema,
+        "tables": tables,
+        "folder": folder_name,
+        "folder_id": folder_id
+    }
+    
+    folder_display = folder_name if folder_name else "Default"
+    status_msg = f"Using {connection}.{schema} with {len(tables)} table(s) | Saving to: {folder_display}"
     if len(tables) > 3:
-        status_msg += f" and {len(tables)-3} more"
+        status_msg = f"Using {connection}.{schema} with {len(tables)} table(s) | Saving to: {folder_display}"
     
     logger.info(f"Configuration saved: {config}")
     
@@ -858,7 +957,8 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 session_id="web-chat-session",
                 connection=connection,
                 schema=schema,
-                selected_tables=selected_tables
+                selected_tables=selected_tables,
+                folder_id=config.get("folder_id")
             )
             
             if "error" in response:
@@ -946,11 +1046,12 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
         # Invoke router with session memory and configuration using async helper
         response = run_async(
             invoke_router_async,
-            user_input, 
+            user_input,
             session_id="web-chat-session",
             connection=connection,
             schema=schema,
-            selected_tables=selected_tables
+            selected_tables=selected_tables,
+            folder_id=config.get("folder_id")
         )
         
         if "error" in response:
@@ -1371,7 +1472,8 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
                 session_id=session_id,
                 connection=config.get("connection"),
                 schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
+                selected_tables=config.get("tables", []),
+                folder_id=config.get("folder_id")
             )
 
             response_text = response.get("response", "Schema selected successfully!")
@@ -1531,7 +1633,8 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
                 session_id=session_id,
                 connection=config.get("connection"),
                 schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
+                selected_tables=config.get("tables", []),
+                folder_id=config.get("folder_id")
             )
 
             response_text = response.get("response", "Connection selected successfully!")
@@ -1677,7 +1780,8 @@ def handle_folder_selection(n_clicks, selected_folders, button_ids, chat_data, c
                 session_id=session_id,
                 connection=config.get("connection"),
                 schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
+                selected_tables=config.get("tables", []),
+                folder_id=config.get("folder_id")
             )
 
             response_text = response.get("response", "Folder selected successfully!")
