@@ -8,6 +8,10 @@ from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
 
+# Default folder ID for backward compatibility
+DEFAULT_JOB_FOLDER = "3023602439587835"
+
+
 @dataclass
 class JobContext:
     """
@@ -15,6 +19,9 @@ class JobContext:
     
     Following SRP - only responsible for job-related state.
     """
+    
+    # Session-level folder for saving jobs (set from UI config panel)
+    job_folder: str = DEFAULT_JOB_FOLDER
     
     # Job type
     job_type: str = "readsql"  # readsql or comparesql
@@ -60,7 +67,12 @@ class JobContext:
     created_jobs: List[Dict[str, str]] = field(default_factory=list)
     
     def reset(self) -> None:
-        """Reset job context for new conversation."""
+        """Reset job context for new conversation.
+        
+        Note: job_folder is NOT reset as it's a session-level setting
+        configured from the UI config panel.
+        """
+        # Keep job_folder - it's session-level
         self.job_type = "readsql"
         self.last_sql = None
         self.first_sql = None
@@ -195,6 +207,7 @@ class JobContext:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
+            "job_folder": self.job_folder,
             "job_type": self.job_type,
             "last_sql": self.last_sql,
             "first_sql": self.first_sql,
@@ -222,6 +235,7 @@ class JobContext:
     def from_dict(cls, data: Dict[str, Any]) -> "JobContext":
         """Create JobContext from dictionary."""
         return cls(
+            job_folder=data.get("job_folder", DEFAULT_JOB_FOLDER),
             job_type=data.get("job_type", "readsql"),
             last_sql=data.get("last_sql"),
             first_sql=data.get("first_sql"),

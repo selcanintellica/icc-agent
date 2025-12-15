@@ -203,7 +203,7 @@ class GatherCompareParamsStrategy(StageStrategy):
             if result.get("message") == "Success":
                 memory.last_job_id = result.get("job_id")
                 memory.last_job_name = job_name
-                memory.last_job_folder = "3023602439587835"
+                memory.last_job_folder = memory.job_folder  # Use session-level folder from config
 
                 memory.output_table_info = {
                     "schema": all_params.get("schemas", "cache"),

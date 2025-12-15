@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 import json
 
+# Default folder ID for backward compatibility (same as in job_context.py)
+DEFAULT_JOB_FOLDER = "3023602439587835"
+
 
 class RuleNode(BaseModel):
     """
@@ -114,7 +117,7 @@ class CreatedJob:
     id: str
     name: str
     type: str  # read_sql, write_data, send_email, compare_sql
-    folder: str = "3023602439587835"
+    folder: str = DEFAULT_JOB_FOLDER
     
     def to_dict(self) -> Dict[str, str]:
         """Convert to dictionary."""

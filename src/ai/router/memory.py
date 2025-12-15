@@ -327,6 +327,16 @@ class Memory:
         """Set list of created jobs."""
         self.job_context.created_jobs = value
     
+    @property
+    def job_folder(self) -> str:
+        """Get session-level folder for saving jobs."""
+        return self.job_context.job_folder
+    
+    @job_folder.setter
+    def job_folder(self, value: str) -> None:
+        """Set session-level folder for saving jobs."""
+        self.job_context.job_folder = value
+    
     # Delegated methods
     
     def get_connection_id(self, connection_name: str) -> Optional[str]:
@@ -346,10 +356,14 @@ class Memory:
         job_id: str,
         job_name: str,
         job_type: str,
-        job_folder: str = "3023602439587835"
+        job_folder: Optional[str] = None
     ) -> None:
-        """Add a created job to session history (delegates to JobContext)."""
-        self.job_context.add_created_job(job_id, job_name, job_type, job_folder)
+        """Add a created job to session history (delegates to JobContext).
+        
+        If job_folder is not provided, uses the session-level job_folder.
+        """
+        folder = job_folder if job_folder else self.job_folder
+        self.job_context.add_created_job(job_id, job_name, job_type, folder)
     
     def get_created_jobs(self) -> List[Dict[str, str]]:
         """Get all jobs created in this session (delegates to JobContext)."""
