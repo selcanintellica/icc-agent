@@ -81,10 +81,6 @@ class ReadSQLHandler(BaseStageHandler):
 
         self.strategy_registry.register(Stage.SHOW_RESULTS, ShowResultsStrategy())
         self.strategy_registry.register(Stage.NEED_WRITE_OR_EMAIL, NeedWriteOrEmailStrategy())
-
-        # Confirmation stage (NEW - shows summary before execution)
-        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
-        self.strategy_registry.register(Stage.CONFIRM_READ_SQL_JOB, ConfirmJobStrategy(job_type="read_sql"))
     
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
