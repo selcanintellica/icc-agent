@@ -18,23 +18,7 @@ class NeedUserSqlStrategy(StageStrategy):
         Validates basic SQL syntax and stores the query.
         """
         logger.info("User provided SQL directly")
-        
-        # Check for navigation commands
-        nav_cmd = self._check_navigation_commands(user_input)
-        if nav_cmd == "back":
-            return self._create_result(
-                memory,
-                "How would you like to proceed?\n- 'create' - I'll generate SQL for you\n- 'provide' - You'll write the SQL",
-                Stage.ASK_SQL_METHOD
-            )
-        elif nav_cmd == "reset":
-            memory.current_tool = None
-            return self._create_result(
-                memory,
-                "Starting fresh!\n\nHow would you like to proceed?\n- 'readsql' - Execute a single SQL query\n- 'comparesql' - Compare two SQL queries",
-                Stage.ASK_JOB_TYPE
-            )
-        
+
         sql = user_input.strip()
         
         if not sql:

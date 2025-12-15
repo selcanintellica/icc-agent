@@ -46,10 +46,10 @@ You should see interactive API documentation.
 pip install requests
 
 # Run all tests
-python test_backend.py
+python tests/test_backend.py
 
 # Test a different URL
-python test_backend.py --url http://localhost:8001
+python tests/test_backend.py --url http://localhost:8001
 ```
 
 The test script will:
@@ -226,7 +226,7 @@ INFO:     Application startup complete.
 curl http://localhost:8000/api/health
 
 # Or run the test script
-python test_backend.py
+python tests/test_backend.py
 
 # Or open in browser
 start http://localhost:8000/docs  # Windows
@@ -339,7 +339,7 @@ netstat -an | grep 8000  # for local
 # Solution: Start the backend
 docker-compose up -d
 # or
-.\start_backend.bat
+.\scripts\start_backend.bat
 ```
 
 ### Issue: "Port 8000 already in use"
@@ -481,5 +481,5 @@ If tests continue to fail:
 1. Check the logs: `docker logs icc-test`
 2. Verify environment variables
 3. Test health endpoint manually
-4. Review [README_BACKEND.md](README_BACKEND.md)
+4. Review main [README.md](../README.md) for API details
 5. Check [DEPLOYMENT.md](DEPLOYMENT.md) troubleshooting

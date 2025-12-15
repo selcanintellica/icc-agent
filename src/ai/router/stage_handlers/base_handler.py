@@ -40,7 +40,12 @@ class StageHandlerResult:
     def __post_init__(self):
         """Update memory stage if next_stage is provided."""
         if self.next_stage is not None:
-            self.memory.stage = self.next_stage
+            # Use transition_to() to properly track stage history for "back" functionality
+            if hasattr(self.memory, 'stage_context') and hasattr(self.memory.stage_context, 'transition_to'):
+                self.memory.stage_context.transition_to(self.next_stage)
+            else:
+                # Fallback if stage_context doesn't exist
+                self.memory.stage = self.next_stage
 
 
 class BaseStageHandler(ABC):

@@ -11,6 +11,8 @@ from src.ai.router.stage_handlers.stage_strategy import StageStrategyRegistry
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.errors import ICCBaseError, ErrorHandler
+from src.ai.router.global_command_handler import GlobalCommandHandler
+from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 
 # Import all ReadSQL strategies
 from src.ai.router.stage_handlers.strategies.readsql import (
@@ -79,6 +81,10 @@ class ReadSQLHandler(BaseStageHandler):
 
         self.strategy_registry.register(Stage.SHOW_RESULTS, ShowResultsStrategy())
         self.strategy_registry.register(Stage.NEED_WRITE_OR_EMAIL, NeedWriteOrEmailStrategy())
+
+        # Confirmation stage (NEW - shows summary before execution)
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+        self.strategy_registry.register(Stage.CONFIRM_READ_SQL_JOB, ConfirmJobStrategy(job_type="read_sql"))
     
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
@@ -87,18 +93,54 @@ class ReadSQLHandler(BaseStageHandler):
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """
         Process the ReadSQL stage using registered strategy.
-        
+
         This method demonstrates the Strategy pattern:
         - Looks up the appropriate strategy for the current stage
         - Delegates execution to that strategy
         - Handles errors gracefully
         """
         logger.info(f"ReadSQLHandler: Processing stage {memory.stage.value}")
-        
+
         try:
+            # Check for global commands first (back, reset, edit, review)
+            global_cmd = GlobalCommandHandler.check_global_command(memory, user_input)
+
+            if global_cmd == "reset":
+                result = GlobalCommandHandler.handle_reset(memory)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
+            elif global_cmd == "back":
+                result = GlobalCommandHandler.handle_back(memory)
+
+                # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
+                if result.get("transition_to"):
+                    memory.stage = result["transition_to"]
+                    logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
+                    return await self.handle(memory, "")  # Re-run with empty input
+                else:
+                    # No transition - just show the message
+                    return self._create_result(memory, result["message"])
+
+            elif global_cmd == "review":
+                result = GlobalCommandHandler.handle_review(memory)
+                return self._create_result(memory, result["message"])
+
+            elif global_cmd == "edit":
+                edit_resolver = EditTargetResolver()
+                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+                return self._create_result(
+                    memory,
+                    result["message"],
+                    result.get("transition_to")
+                )
+
             # Get strategy for current stage
             strategy = self.strategy_registry.get_strategy(memory.stage)
-            
+
             if strategy is None:
                 logger.error(f"No strategy found for stage {memory.stage.value}")
                 return self._create_result(
@@ -106,7 +148,7 @@ class ReadSQLHandler(BaseStageHandler):
                     f"Unhandled stage in ReadSQL flow: {memory.stage.value}",
                     is_error=True
                 )
-            
+
             # Delegate to strategy with automatic help detection
             return await strategy.handle_with_help(memory, user_input)
 

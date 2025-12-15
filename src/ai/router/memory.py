@@ -336,6 +336,48 @@ class Memory:
         self.stage_context.reset()
         self.job_context.reset()
         # Keep connection_manager as is (set externally)
+
+    def get_editable_summary(self) -> Dict[str, Any]:
+        """
+        Get all editable parameters for review and confirmation.
+
+        Returns:
+            Dict with all current parameters organized by category
+        """
+        summary = {}
+
+        # Connection info
+        if self.connection:
+            summary["connection"] = self.connection
+        if self.schema:
+            summary["schema"] = self.schema
+
+        # SQL queries
+        if self.last_sql:
+            summary["sql"] = self.last_sql
+        if self.first_sql:
+            summary["first_sql"] = self.first_sql
+        if self.second_sql:
+            summary["second_sql"] = self.second_sql
+
+        # Column mappings (CompareSQL)
+        if self.column_mappings:
+            summary["column_mappings"] = self.column_mappings
+        if self.key_mappings:
+            summary["key_mappings"] = self.key_mappings
+
+        # Job parameters
+        if self.gathered_params:
+            summary["job_params"] = dict(self.gathered_params)
+
+        # Job type
+        if self.job_type:
+            summary["job_type"] = self.job_type
+
+        # Current stage
+        summary["current_stage"] = self.stage.value
+
+        return summary
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert memory to dictionary for serialization."""

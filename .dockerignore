@@ -43,13 +43,12 @@ docs/
 !README_BACKEND.md
 
 # Scripts
-start_backend.bat
-start_backend.sh
+scripts/
 run.sh
 
 # Dash UI (not needed for backend)
 app.py
-requirements_app.txt
+requirements-dev.txt
 
 # Tests
 tests/
