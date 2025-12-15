@@ -61,7 +61,19 @@ class ExecuteSqlStrategy(StageStrategy):
                 return await self._fetch_schemas_for_result(memory, action.get("connection"))
 
             if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
-                return await self._execute_read_sql_job(memory, action.get("params", {}))
+                # Store params and invoke confirmation strategy immediately
+                params = action.get("params", {})
+                memory.gathered_params.update(params)
+                memory.stage = Stage.CONFIRM_READ_SQL_JOB
+                logger.info("All read_sql params gathered, showing confirmation")
+
+                # Import and invoke confirmation strategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="read_sql",
+                    execution_callback=lambda m: self._execute_read_sql_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, "")
 
             return self._create_result(
                 memory,

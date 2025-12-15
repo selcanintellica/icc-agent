@@ -40,6 +40,7 @@ class SendEmailHandler(BaseStageHandler):
     MANAGED_STAGES = {
         Stage.CONFIRM_EMAIL_QUERY,
         Stage.NEED_EMAIL_QUERY,
+        Stage.CONFIRM_SEND_EMAIL_JOB,
     }
     
     # Note: NEED_WRITE_OR_EMAIL routing is handled by HandlerRegistry based on memory.current_tool
@@ -62,7 +63,15 @@ class SendEmailHandler(BaseStageHandler):
         logger.info(f"SendEmailHandler: current_tool={memory.current_tool}")
 
         try:
-            if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
+            if memory.stage == Stage.CONFIRM_SEND_EMAIL_JOB:
+                # Handle confirmation stage with ConfirmJobStrategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="send_email",
+                    execution_callback=lambda m: self._execute_send_email_job_final(m)
+                )
+                return await confirm_strategy.execute(memory, user_input)
+            elif memory.stage == Stage.CONFIRM_EMAIL_QUERY:
                 return await self._handle_confirm_email_query(memory, user_input)
             elif memory.stage == Stage.NEED_EMAIL_QUERY:
                 return await self._handle_need_email_query(memory, user_input)
@@ -240,14 +249,45 @@ class SendEmailHandler(BaseStageHandler):
 
     async def _execute_confirmed_email_job(self, memory: Memory) -> StageHandlerResult:
         """Execute send_email job after query has been confirmed."""
-        logger.info("Executing SEND_EMAIL_JOB")
+        logger.info("Email query confirmed, transitioning to job confirmation")
         logger.debug(f"Pending params: {memory.pending_email_params}")
         logger.debug(f"Gathered params: {memory.gathered_params}")
-        
-        try:
+
+        # First time here - show confirmation summary
+        if memory.stage != Stage.CONFIRM_SEND_EMAIL_JOB:
             params = memory.pending_email_params
             if not params:
                 logger.error("No pending_email_params found")
+                return self._create_result(
+                    memory,
+                    "Email parameters not found. Please start over and provide the email details.",
+                    Stage.NEED_WRITE_OR_EMAIL,
+                    is_error=True
+                )
+
+            # Copy pending_email_params to gathered_params for confirmation strategy
+            memory.gathered_params.update(params)
+            memory.stage = Stage.CONFIRM_SEND_EMAIL_JOB
+
+            # Show confirmation
+            from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+            confirm_strategy = ConfirmJobStrategy(
+                job_type="send_email",
+                execution_callback=lambda m: self._execute_send_email_job_final(m)
+            )
+            return await confirm_strategy.execute(memory, "")
+
+        # If we get here, it means we're being called from confirmation - should not happen
+        return await self._execute_send_email_job_final(memory)
+
+    async def _execute_send_email_job_final(self, memory: Memory) -> StageHandlerResult:
+        """Actually execute the send_email job after confirmation."""
+        logger.info("Executing SEND_EMAIL_JOB (after confirmation)")
+
+        try:
+            params = memory.gathered_params  # Use gathered_params (copied from pending)
+            if not params:
+                logger.error("No gathered_params found")
                 return self._create_result(
                     memory,
                     "Email parameters not found. Please start over and provide the email details.",

@@ -88,20 +88,17 @@ class ParameterValidator:
                     "question": "Should I drop the table before creating it? (yes/no)"
                 }
         
-        # Check write_count - treat empty string as missing
-        write_count_value = params.get("write_count")
-        if write_count_value is None or write_count_value == "":
-            logger.debug("Asking about write_count")
-            return {
-                "action": "ASK",
-                "question": "Would you like to track the row count of the query results? (yes/no)"
-            }
-        
-        if params.get("write_count"):
+        # Set default for write_count if not specified (optional parameter)
+        if "write_count" not in params or params.get("write_count") is None or params.get("write_count") == "":
+            params["write_count"] = False
+            logger.debug("Set write_count default: False")
+
+        # If write_count is explicitly enabled, validate its sub-parameters
+        if params.get("write_count") is True:
             result = ParameterValidator._check_write_count_params(params, memory, "write_count")
             if result:
                 return result
-        
+
         logger.debug(f"All read_sql params present: {params}")
         return None
     
@@ -171,18 +168,17 @@ class ParameterValidator:
                 "question": "Should I 'drop' (remove and recreate), 'truncate' (clear data), or 'none' (append)?"
             }
         
-        if "write_count" not in params:
-            logger.debug("Asking about write_count for write_data")
-            return {
-                "action": "ASK",
-                "question": "Would you like to track the row count for this write operation? (yes/no)"
-            }
-        
-        if params.get("write_count"):
+        # Set default for write_count if not specified (optional parameter)
+        if "write_count" not in params or params.get("write_count") is None or params.get("write_count") == "":
+            params["write_count"] = False
+            logger.debug("Set write_count default: False")
+
+        # If write_count is explicitly enabled, validate its sub-parameters
+        if params.get("write_count") is True:
             result = ParameterValidator._check_write_count_params(params, memory, "write_count")
             if result:
                 return result
-        
+
         logger.debug(f"All write_data params present: {params}")
         return None
     
@@ -210,14 +206,24 @@ class ParameterValidator:
                 "action": "ASK",
                 "question": "Who should I send the email to?"
             }
-        
+
+        # Validate 'to' email format
+        to_emails = [e.strip() for e in params.get("to", "").split(',')]
+        invalid_to = [e for e in to_emails if e and not ParameterValidator._is_valid_email(e)]
+        if invalid_to:
+            logger.debug(f"Invalid 'to' email format: {invalid_to}")
+            return {
+                "action": "ASK",
+                "question": f"Invalid email format in 'to': {', '.join(invalid_to)}\n\nPlease provide valid email addresses (comma-separated):"
+            }
+
         if not params.get("subject"):
             logger.debug("Missing: subject")
             return {
                 "action": "ASK",
                 "question": "What should the email subject be?"
             }
-        
+
         # Check text - allow empty string, only ask if not provided at all
         if "text" not in params or params.get("text") is None:
             logger.debug("Missing: text")
@@ -225,24 +231,25 @@ class ParameterValidator:
                 "action": "ASK",
                 "question": "What should the email body say?"
             }
-        
-        # Check CC - empty string means user was asked and declined, None means not asked yet
+
+        # Set default for cc if not specified (optional parameter)
         if "cc" not in params or params.get("cc") is None:
-            logger.debug("CC not in params or is None, asking user")
-            return {
-                "action": "ASK",
-                "question": "Would you like to add any CC email addresses? (Say 'no' or 'none' to skip, or provide email addresses)"
-            }
-        
-        cc_value = params.get("cc", "")
-        logger.debug(f"CC value received: '{cc_value}' (type: {type(cc_value).__name__})")
-        
-        if isinstance(cc_value, str) and cc_value.lower().strip() in ["no", "none", "skip", "n/a"]:
             params["cc"] = ""
-            logger.debug("CC normalized to empty string (user declined)")
-        
+            logger.debug("Set cc default: empty string")
+
+        # Validate 'cc' email format if provided
+        if params.get("cc"):
+            cc_emails = [e.strip() for e in params.get("cc", "").split(',')]
+            invalid_cc = [e for e in cc_emails if e and not ParameterValidator._is_valid_email(e)]
+            if invalid_cc:
+                logger.debug(f"Invalid 'cc' email format: {invalid_cc}")
+                return {
+                    "action": "ASK",
+                    "question": f"Invalid email format in 'cc': {', '.join(invalid_cc)}\n\nPlease provide valid email addresses (comma-separated), or 'none' to skip:"
+                }
+
         logger.debug("All send_email params present and validated")
-        logger.debug(f"Final params: name={params.get('name')}, to={params.get('to')}, subject={params.get('subject')[:30]}..., cc='{params.get('cc')}'")
+        logger.debug(f"Final params: name={params.get('name')}, to={params.get('to')}, subject={params.get('subject')[:30] if len(params.get('subject', '')) > 30 else params.get('subject')}..., cc='{params.get('cc')}'")
         return None
     
     @staticmethod
@@ -343,6 +350,23 @@ class ParameterValidator:
         
         return None
 
+    @staticmethod
+    def _is_valid_email(email: str) -> bool:
+        """
+        Validate email format.
+
+        Args:
+            email: Email address to validate
+
+        Returns:
+            bool: True if valid email format
+        """
+        import re
+        if not email:
+            return False
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return bool(re.match(pattern, email.strip()))
+
 
 class YesNoExtractor:
     """
@@ -397,5 +421,24 @@ class YesNoExtractor:
             memory.gathered_params["write_count"] = is_yes
             logger.debug(f"Set write_count={is_yes} from direct user input")
             return True
-        
+
         return False
+
+    @staticmethod
+    def _is_valid_email(email: str) -> bool:
+        """
+        Validate email format.
+
+        Args:
+            email: Email address to validate
+
+        Returns:
+            bool: True if valid email format
+        """
+        import re
+        if not email:
+            return False
+
+        # Basic email regex pattern
+        pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        return bool(re.match(pattern, email.strip()))

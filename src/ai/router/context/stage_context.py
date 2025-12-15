@@ -50,7 +50,14 @@ class Stage(Enum):
     # SendEmail Flow
     CONFIRM_EMAIL_QUERY = "confirm_email_query"
     NEED_EMAIL_QUERY = "need_email_query"
-    
+
+    # Job Confirmation Stages (before execution)
+    CONFIRM_READ_SQL_JOB = "confirm_read_sql_job"
+    CONFIRM_WRITE_DATA_JOB = "confirm_write_data_job"
+    CONFIRM_SEND_EMAIL_JOB = "confirm_send_email_job"
+    CONFIRM_COMPARE_SQL_JOB = "confirm_compare_sql_job"
+    GATHER_COMPARE_PARAMS = "gather_compare_params"
+
     DONE = "done"
 
 

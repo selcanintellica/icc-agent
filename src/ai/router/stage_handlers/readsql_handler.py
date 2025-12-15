@@ -62,7 +62,21 @@ class ReadSQLHandler(BaseStageHandler):
         self.strategy_registry.register(Stage.NEED_USER_SQL, NeedUserSqlStrategy())
         self.strategy_registry.register(Stage.CONFIRM_GENERATED_SQL, ConfirmGeneratedSqlStrategy())
         self.strategy_registry.register(Stage.CONFIRM_USER_SQL, ConfirmUserSqlStrategy())
-        self.strategy_registry.register(Stage.EXECUTE_SQL, ExecuteSqlStrategy(self.job_agent))
+
+        # Create ExecuteSqlStrategy instance (needed for confirmation callback)
+        execute_strategy = ExecuteSqlStrategy(self.job_agent)
+        self.strategy_registry.register(Stage.EXECUTE_SQL, execute_strategy)
+
+        # Register confirmation strategy with execution callback
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+        self.strategy_registry.register(
+            Stage.CONFIRM_READ_SQL_JOB,
+            ConfirmJobStrategy(
+                job_type="read_sql",
+                execution_callback=lambda m: execute_strategy._execute_read_sql_job(m, m.gathered_params)
+            )
+        )
+
         self.strategy_registry.register(Stage.SHOW_RESULTS, ShowResultsStrategy())
         self.strategy_registry.register(Stage.NEED_WRITE_OR_EMAIL, NeedWriteOrEmailStrategy())
     

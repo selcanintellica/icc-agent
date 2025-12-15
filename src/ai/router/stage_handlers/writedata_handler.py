@@ -37,35 +37,45 @@ class WriteDataHandler(BaseStageHandler):
     """
     
     MANAGED_STAGES = {
-        Stage.NEED_WRITE_OR_EMAIL,
+        Stage.NEED_WRITE_OR_EMAIL,  # Handle when current_tool="write_data" (parameter gathering)
+        Stage.CONFIRM_WRITE_DATA_JOB,
     }
-    
+
     def __init__(self, job_agent=None):
         """Initialize WriteData handler."""
         self.job_agent = job_agent
-    
+
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
         return stage in self.MANAGED_STAGES
     
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
         """Process the WriteData workflow."""
-        logger.info("WriteDataHandler: Processing write_data request")
-        
+        logger.info(f"WriteDataHandler: Processing stage {memory.stage.value}")
+
         try:
+            # Handle confirmation stage separately
+            if memory.stage == Stage.CONFIRM_WRITE_DATA_JOB:
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="write_data",
+                    execution_callback=lambda m: self._execute_write_data_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, user_input)
+
             # Clear params only when switching from read_sql
             has_read_sql_only_params = (
-                "execute_query" in memory.gathered_params and 
+                "execute_query" in memory.gathered_params and
                 not any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
             )
             if has_read_sql_only_params:
                 logger.info("Switching from read_sql to write_data, clearing gathered_params")
                 memory.gathered_params = {}
                 memory.last_question = None
-            
+
             memory.current_tool = "write_data"
             logger.info("Processing write_data request...")
-            
+
             # Validate prerequisites
             if not memory.last_job_id:
                 return self._create_result(
@@ -74,7 +84,7 @@ class WriteDataHandler(BaseStageHandler):
                     is_error=True,
                     error_code=ErrorCode.JOB_MISSING_DATASET.code
                 )
-            
+
             # Get action from job agent
             action = call_job_agent(memory, user_input, tool_name="write_data")
             
@@ -90,7 +100,19 @@ class WriteDataHandler(BaseStageHandler):
                 return self._create_result(memory, action["question"])
             
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
-                return await self._execute_write_data_job(memory, action.get("params", {}))
+                # Store params and transition to confirmation stage
+                params = action.get("params", {})
+                memory.gathered_params.update(params)
+                memory.stage = Stage.CONFIRM_WRITE_DATA_JOB
+                logger.info("All write_data params gathered, transitioning to confirmation")
+
+                # Import and use confirmation strategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="write_data",
+                    execution_callback=lambda m: self._execute_write_data_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, "")
             
             return self._create_result(memory, "Please provide write_data parameters. What should I name this job?")
             
@@ -276,13 +298,13 @@ class WriteDataHandler(BaseStageHandler):
             memory.gathered_params = {}
             memory.current_tool = None
             memory.last_question = None
-            
+
             response = (
                 f"Job '{job_name}' created successfully!\n\n"
                 f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
                 f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
             )
-            return self._create_result(memory, response)
+            return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
 
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name '{job_name}': {e}")
