@@ -121,6 +121,7 @@ class HelpHandler:
         
         try:
             if in_param_gathering:
+                logger.info(f"Building PARAMETER GATHERING help prompt for tool: {memory.current_tool}")
                 # Parameter gathering help
                 prompt = RouterConversationPrompt.build_param_gathering_context(
                     current_tool=memory.current_tool or "unknown",
@@ -131,7 +132,9 @@ class HelpHandler:
                     selected_tables=memory.selected_tables,
                     user_input=user_input
                 )
+                logger.info(f"Parameter gathering prompt:\n{prompt[:300]}...")
             else:
+                logger.info(f"Building STAGE-BASED help prompt for stage: {memory.stage.value}")
                 # Stage-based help with enhanced context
                 stage_desc = self._get_stage_description(memory.stage.value)
                 
@@ -153,10 +156,18 @@ class HelpHandler:
                     user_input=user_input,
                     stage_specific_help=stage_help_text
                 )
+                logger.info(f"Stage-based help prompt:\n{prompt[:300]}...")
             
             llm = self._create_llm()
+            logger.info(f"Invoking LLM with full prompt length: {len(prompt)} chars")
             response = llm.invoke(prompt)
-            return response.content.strip()
+            logger.debug(f"LLM response type: {type(response)}, content length: {len(response.content) if hasattr(response, 'content') else 'N/A'}")
+            result = response.content.strip()
+            logger.debug(f"Final help response length: {len(result)}")
+            if not result:
+                logger.warning("LLM returned empty response, using fallback")
+                return self._get_fallback_help(memory)
+            return result
             
         except Exception as e:
             logger.error(f"Error generating help response: {e}")
@@ -183,27 +194,31 @@ class HelpHandler:
             str: Human-readable stage description
         """
         stage_descriptions = {
+            # Initial stages
+            "start": "starting a new conversation - choose a job type",
+            "ask_job_type": "choosing which job type to run (ReadSQL or CompareSQL)",
+            
             # ReadSQL stages
-            "ask_sql_method": "choosing how to provide your SQL query (generate or provide manually)",
-            "need_natural_language": "describing what data you want in natural language",
-            "need_user_sql": "providing your SQL query",
-            "confirm_generated_sql": "confirming the generated SQL query",
-            "confirm_user_sql": "confirming your SQL query",
-            "execute_sql": "executing the SQL query",
-            "show_results": "reviewing query results",
+            "ask_sql_method": "being asked to CHOOSE between two options: 'create' (generate SQL from description) or 'provide' (write SQL yourself)",
+            "need_natural_language": "describing what data you want in natural language so SQL can be generated",
+            "need_user_sql": "writing and providing your SQL query directly",
+            "confirm_generated_sql": "reviewing and confirming the generated SQL query (answer yes/no or edit)",
+            "confirm_user_sql": "reviewing and confirming your SQL query (answer yes/no or edit)",
+            "execute_sql": "gathering job parameters (connection, schema, job name, etc.) to execute the SQL query",
+            "show_results": "reviewing query results and deciding next steps",
             
             # CompareSQL stages
-            "ask_first_sql_method": "choosing how to provide the FIRST SQL query",
-            "need_first_natural_language": "describing the FIRST query in natural language",
-            "need_first_user_sql": "providing your FIRST SQL query for comparison",
-            "confirm_first_generated_sql": "confirming the FIRST generated SQL",
-            "confirm_first_user_sql": "confirming your FIRST SQL query",
+            "ask_first_sql_method": "being asked to CHOOSE between two options for the FIRST query: 'create' (generate SQL from description) or 'provide' (write SQL yourself)",
+            "need_first_natural_language": "describing what data you want for the FIRST query in natural language so SQL can be generated",
+            "need_first_user_sql": "writing and providing your FIRST SQL query directly for comparison",
+            "confirm_first_generated_sql": "reviewing and confirming the FIRST generated SQL query (answer yes/no or edit)",
+            "confirm_first_user_sql": "reviewing and confirming your FIRST SQL query (answer yes/no or edit)",
             
-            "ask_second_sql_method": "choosing how to provide the SECOND SQL query",
-            "need_second_natural_language": "describing the SECOND query in natural language",
-            "need_second_user_sql": "providing your SECOND SQL query for comparison",
-            "confirm_second_generated_sql": "confirming the SECOND generated SQL",
-            "confirm_second_user_sql": "confirming your SECOND SQL query",
+            "ask_second_sql_method": "being asked to CHOOSE between two options for the SECOND query: 'create' (generate SQL from description) or 'provide' (write SQL yourself)",
+            "need_second_natural_language": "describing what data you want for the SECOND query in natural language so SQL can be generated",
+            "need_second_user_sql": "writing and providing your SECOND SQL query directly for comparison",
+            "confirm_second_generated_sql": "reviewing and confirming the SECOND generated SQL query (answer yes/no or edit)",
+            "confirm_second_user_sql": "reviewing and confirming your SECOND SQL query (answer yes/no or edit)",
             
             "ask_auto_match": "deciding whether to auto-match columns between queries",
             "waiting_map_table": "providing manual column mappings",
@@ -211,10 +226,17 @@ class HelpHandler:
             "ask_compare_schema": "choosing the schema for comparison results",
             "ask_compare_table_name": "naming the comparison results table",
             "ask_compare_job_name": "naming the comparison job",
-            "execute_compare_sql": "executing the comparison",
+            "execute_compare_sql": "gathering parameters and executing the comparison",
             
             # Post-execution stages
             "need_write_or_email": "deciding what to do with the results (write to DB or email)",
+            
+            # SendEmail stages
+            "confirm_email_query": "confirming the email query",
+            "need_email_query": "providing the email query",
+            
+            # Final stage
+            "done": "completed - ready for a new task",
         }
         
         return stage_descriptions.get(stage_value, f"at stage: {stage_value}")

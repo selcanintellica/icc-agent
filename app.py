@@ -636,7 +636,8 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         
         print("\nROUTER RESPONSE:")
         print(f"New stage: {updated_memory.stage.value}")
-        print(f"Response: {response_text[:200]}...")
+        print(f"Response length: {len(response_text)} chars")
+        print(f"Response: {response_text[:200]}..." if len(response_text) > 200 else f"Response: {response_text}")
         
         logger.info(f"Router completed")
         logger.info(f"New stage: {updated_memory.stage.value}")

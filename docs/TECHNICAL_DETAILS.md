@@ -1,5 +1,120 @@
 # ICC Agent - Technical Details
 
+## Backend Service Layer
+
+### Service Architecture (src/services/)
+
+The backend uses a service layer pattern to decouple API routes from core business logic:
+
+```python
+# Service initialization at startup (backend/main.py)
+@app.on_event("startup")
+async def startup_event():
+    # Initialize singleton services
+    router_service = get_router_service()      # Manages router invocation
+    session_manager = get_session_manager()    # Manages user sessions
+    connection_service = get_connection_service()  # Provides metadata
+    
+    logger.info("✓ All services initialized")
+```
+
+### RouterService (src/services/router_service.py)
+
+**Purpose**: Orchestrates router invocation with memory management
+
+**Key Method**:
+```python
+async def invoke_router(
+    self,
+    user_input: str,
+    memory: Memory,
+    connection: Optional[str] = None,
+    schema: Optional[str] = None,
+    selected_tables: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Invoke router with optional connection info pre-population.
+    
+    Returns:
+        Dict with response, memory, success flag, and optional error info
+    """
+    try:
+        # Populate memory with connection info if provided
+        if connection and schema and selected_tables:
+            memory.connection_manager.default_connection = connection
+            memory.connection_manager.default_schema = schema
+            memory.connection_manager.selected_tables = selected_tables
+        
+        # Invoke router
+        memory, response_text = await handle_turn(memory, user_input)
+        
+        return {
+            "response": response_text,
+            "memory": memory,
+            "success": True
+        }
+    except Exception as e:
+        logger.error(f"Error invoking router: {e}", exc_info=True)
+        error_info = UIFormatter.format_error_for_ui(e)
+        return {
+            "error": str(e),
+            "error_info": error_info,
+            "success": False
+        }
+```
+
+### SessionManager (src/services/session_manager.py)
+
+**Purpose**: Manages user sessions and associated memory states
+
+**Key Methods**:
+```python
+class SessionManager:
+    def __init__(self, storage: Optional[Dict[str, Memory]] = None):
+        """Initialize with optional storage backend (defaults to in-memory dict)"""
+        self._storage = storage if storage is not None else {}
+    
+    def get_or_create_session(self, session_id: str) -> Memory:
+        """Get existing session or create new one with fresh Memory"""
+        if session_id not in self._storage:
+            logger.info(f"Creating new session: {session_id}")
+            self._storage[session_id] = create_memory()
+        return self._storage[session_id]
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Delete session and free memory"""
+        if session_id in self._storage:
+            del self._storage[session_id]
+            return True
+        return False
+```
+
+**Storage Backend**: Currently in-memory dict, can be swapped for Redis, database, etc.
+
+### ConnectionService (src/services/connection_service.py)
+
+**Purpose**: Provides database metadata (connections, schemas, tables)
+
+**Key Methods**:
+```python
+class ConnectionService:
+    def get_connections(self) -> List[Dict[str, Any]]:
+        """Get all available connections from config"""
+        return config_loader.get_available_connections()
+    
+    def get_schemas(self, connection_id: str) -> List[str]:
+        """Get schemas for specific connection"""
+        return config_loader.get_schemas_for_connection(connection_id)
+    
+    async def get_tables(
+        self, 
+        connection_id: str, 
+        schema_name: str
+    ) -> List[Dict[str, Any]]:
+        """Get tables for specific schema (calls ICC API)"""
+        return await config_loader.get_tables_for_schema(connection_id, schema_name)
+```
+
 ## Router Orchestrator Deep Dive
 
 ### Singleton Implementation (src/ai/router/router.py)

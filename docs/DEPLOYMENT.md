@@ -92,7 +92,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2. Install dependencies
-pip install -r requirements_backend.txt
+pip install -r requirements.txt
 
 # 3. Configure environment
 export PYTHONPATH=$(pwd)
@@ -103,7 +103,7 @@ export API_PORT=8000
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 # Or use the startup script
-./start_backend.sh
+./scripts/start_backend.sh
 ```
 
 ### Windows
@@ -114,10 +114,10 @@ python -m venv .venv
 .venv\Scripts\activate
 
 # 2. Install dependencies
-pip install -r requirements_backend.txt
+pip install -r requirements.txt
 
 # 3. Start server
-.\start_backend.bat
+.\scripts\start_backend.bat
 ```
 
 ---
@@ -430,9 +430,9 @@ docker-compose up -d
 
 Provide:
 - Source code repository access
-- `README_BACKEND.md` (integration guide)
+- Main `README.md` (integration guide with API documentation)
 - `DEPLOYMENT.md` (this file)
-- `requirements_backend.txt`
+- `requirements.txt`
 - `db_config.json` (or template)
 
 ---
@@ -523,7 +523,7 @@ For deployment issues:
 2. Verify environment variables
 3. Test health endpoint
 4. Check network connectivity
-5. Review [README_BACKEND.md](README_BACKEND.md) for API details
+5. Review main [README.md](../README.md) for API details and integration examples
 
 ---
 

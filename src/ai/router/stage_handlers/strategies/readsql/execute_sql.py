@@ -61,7 +61,19 @@ class ExecuteSqlStrategy(StageStrategy):
                 return await self._fetch_schemas_for_result(memory, action.get("connection"))
 
             if action.get("action") == "TOOL" and action.get("tool_name") == "read_sql":
-                return await self._execute_read_sql_job(memory, action.get("params", {}))
+                # Store params and invoke confirmation strategy immediately
+                params = action.get("params", {})
+                memory.gathered_params.update(params)
+                memory.stage = Stage.CONFIRM_READ_SQL_JOB
+                logger.info("All read_sql params gathered, showing confirmation")
+
+                # Import and invoke confirmation strategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="read_sql",
+                    execution_callback=lambda m: self._execute_read_sql_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, "")
 
             return self._create_result(
                 memory,
@@ -75,7 +87,38 @@ class ExecuteSqlStrategy(StageStrategy):
                 f"Error: {icc_error.user_message}",
                 is_error=True
             )
-    
+
+    async def _show_confirmation(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
+        """
+        Show confirmation summary before executing job.
+
+        Args:
+            memory: Conversation memory
+            params: Job parameters
+
+        Returns:
+            StageHandlerResult with confirmation summary
+        """
+        logger.info("Showing confirmation summary for ReadSQL job")
+
+        # Merge params into gathered_params
+        memory.gathered_params.update(params)
+
+        # Import and use confirmation strategy
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+
+        # Create confirmation strategy with execution callback
+        confirm_strategy = ConfirmJobStrategy(
+            job_type="read_sql",
+            execution_callback=lambda m: self._execute_read_sql_job(m, params)
+        )
+
+        # Transition to confirmation stage
+        memory.stage = Stage.CONFIRM_READ_SQL_JOB
+
+        # Show summary
+        return await confirm_strategy.execute(memory, "")
+
     async def _execute_read_sql_job(self, memory: Memory, params: Dict[str, Any]) -> StageHandlerResult:
         """Execute the read_sql job with error handling."""
         logger.info("Executing read_sql_job...")

@@ -40,13 +40,13 @@ class AskReportingTypeStrategy(StageStrategy):
                         question_text = f"Reporting type set to '{value}'.\n\nWhich schema do you want to save the comparison results to?"
                         response = f"SCHEMA_DROPDOWN:{json.dumps({'schemas': memory.available_schemas, 'param_name': 'schemas', 'question': question_text})}"
                         memory.last_question = question_text
-                        return self._create_result(memory, response, Stage.ASK_COMPARE_SCHEMA)
+                        return self._create_result(memory, response, Stage.GATHER_COMPARE_PARAMS)
                 except Exception as e:
                     logger.warning(f"Could not fetch schemas for dropdown: {e}")
                 
                 # Fallback: ask without dropdown
                 response = f"Reporting type set to '{value}'.\n\nWhich schema do you want to save the comparison results to?"
-                return self._create_result(memory, response, Stage.ASK_COMPARE_SCHEMA)
+                return self._create_result(memory, response, Stage.GATHER_COMPARE_PARAMS)
         
         return self._create_result(
             memory,
