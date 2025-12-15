@@ -78,7 +78,7 @@ class StageContext:
         self._stage: Stage = initial_stage
         self._last_question: Optional[str] = None
         self._stage_history: list = []  # NEW: Track visited stages for back functionality
-    
+
     @property
     def stage(self) -> Stage:
         """Get current stage."""
@@ -128,7 +128,7 @@ class StageContext:
     def reset_history(self) -> None:
         """Clear stage history."""
         self._stage_history.clear()
-    
+
     def is_read_sql_flow(self) -> bool:
         """Check if currently in ReadSQL flow."""
         read_sql_stages = {
@@ -178,7 +178,7 @@ class StageContext:
         self._stage = Stage.START
         self._last_question = None
         self._stage_history.clear()
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {

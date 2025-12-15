@@ -124,6 +124,23 @@ class GlobalCommandHandler:
         """
         logger.info(f"User requested back from stage: {memory.stage.value}")
 
+        # If we're in parameter gathering mode (current_tool is set), handle specially
+        if memory.current_tool and memory.gathered_params:
+            # Remove last gathered parameter and re-trigger parameter gathering
+            last_param = list(memory.gathered_params.keys())[-1]
+            old_value = memory.gathered_params.pop(last_param)
+            logger.info(f"Removed last parameter during {memory.current_tool} gathering: {last_param}={old_value}")
+
+            # Clear last_question to trigger fresh parameter gathering
+            memory.last_question = None
+
+            return {
+                "action": "BACK_PARAM",
+                "message": f"⬅️ Removed: {last_param} = '{old_value}'",
+                "transition_to": None,  # Stay in current stage
+                "re_gather": True  # Signal to re-run parameter gathering
+            }
+
         # Use stage history if available
         if hasattr(memory.stage_context, 'go_back'):
             previous_stage = memory.stage_context.go_back()

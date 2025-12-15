@@ -42,6 +42,7 @@ class SendEmailHandler(BaseStageHandler):
     MANAGED_STAGES = {
         Stage.CONFIRM_EMAIL_QUERY,
         Stage.NEED_EMAIL_QUERY,
+        Stage.CONFIRM_SEND_EMAIL_JOB,
     }
     
     # Note: NEED_WRITE_OR_EMAIL routing is handled by HandlerRegistry based on memory.current_tool
@@ -78,8 +79,13 @@ class SendEmailHandler(BaseStageHandler):
             elif global_cmd == "back":
                 result = GlobalCommandHandler.handle_back(memory)
 
+                # If we need to re-gather parameters (during parameter gathering)
+                if result.get("re_gather"):
+                    logger.info("Re-gathering parameters after back command")
+                    # Continue below to re-run job agent with empty input
+                    user_input = ""
                 # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
-                if result.get("transition_to"):
+                elif result.get("transition_to"):
                     memory.stage = result["transition_to"]
                     logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
                     return await self.handle(memory, "")  # Re-run with empty input
@@ -92,15 +98,34 @@ class SendEmailHandler(BaseStageHandler):
                 return self._create_result(memory, result["message"])
 
             elif global_cmd == "edit":
-                edit_resolver = EditTargetResolver()
-                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
-                return self._create_result(
-                    memory,
-                    result["message"],
-                    result.get("transition_to")
-                )
+                # If we're in confirmation stage, don't intercept - let ConfirmJobStrategy handle it
+                if memory.stage != Stage.CONFIRM_SEND_EMAIL_JOB:
+                    edit_resolver = EditTargetResolver()
+                    result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
 
-            if memory.stage == Stage.CONFIRM_EMAIL_QUERY:
+                    # If editing a parameter during parameter gathering (no stage transition)
+                    if not result.get("transition_to") and memory.current_tool:
+                        logger.info("Edited parameter during parameter gathering - continuing to re-gather")
+                        # Clear last_question to trigger fresh parameter gathering
+                        memory.last_question = None
+                        # Continue below to re-run job agent with empty input
+                        user_input = ""
+                    else:
+                        return self._create_result(
+                            memory,
+                            result["message"],
+                            result.get("transition_to")
+                        )
+
+            if memory.stage == Stage.CONFIRM_SEND_EMAIL_JOB:
+                # Handle confirmation stage with ConfirmJobStrategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="send_email",
+                    execution_callback=lambda m: self._execute_send_email_job_final(m)
+                )
+                return await confirm_strategy.execute(memory, user_input)
+            elif memory.stage == Stage.CONFIRM_EMAIL_QUERY:
                 return await self._handle_confirm_email_query(memory, user_input)
             elif memory.stage == Stage.NEED_EMAIL_QUERY:
                 return await self._handle_need_email_query(memory, user_input)
@@ -278,11 +303,12 @@ class SendEmailHandler(BaseStageHandler):
 
     async def _execute_confirmed_email_job(self, memory: Memory) -> StageHandlerResult:
         """Execute send_email job after query has been confirmed."""
-        logger.info("Executing SEND_EMAIL_JOB")
+        logger.info("Email query confirmed, transitioning to job confirmation")
         logger.debug(f"Pending params: {memory.pending_email_params}")
         logger.debug(f"Gathered params: {memory.gathered_params}")
-        
-        try:
+
+        # First time here - show confirmation summary
+        if memory.stage != Stage.CONFIRM_SEND_EMAIL_JOB:
             params = memory.pending_email_params
             if not params:
                 logger.error("No pending_email_params found")
@@ -292,7 +318,37 @@ class SendEmailHandler(BaseStageHandler):
                     Stage.NEED_WRITE_OR_EMAIL,
                     is_error=True
                 )
-            
+
+            # Copy pending_email_params to gathered_params for confirmation strategy
+            memory.gathered_params.update(params)
+            memory.stage = Stage.CONFIRM_SEND_EMAIL_JOB
+
+            # Show confirmation
+            from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+            confirm_strategy = ConfirmJobStrategy(
+                job_type="send_email",
+                execution_callback=lambda m: self._execute_send_email_job_final(m)
+            )
+            return await confirm_strategy.execute(memory, "")
+
+        # If we get here, it means we're being called from confirmation - should not happen
+        return await self._execute_send_email_job_final(memory)
+
+    async def _execute_send_email_job_final(self, memory: Memory) -> StageHandlerResult:
+        """Actually execute the send_email job after confirmation."""
+        logger.info("Executing SEND_EMAIL_JOB (after confirmation)")
+
+        try:
+            params = memory.gathered_params  # Use gathered_params (copied from pending)
+            if not params:
+                logger.error("No gathered_params found")
+                return self._create_result(
+                    memory,
+                    "Email parameters not found. Please start over and provide the email details.",
+                    Stage.NEED_WRITE_OR_EMAIL,
+                    is_error=True
+                )
+
             job_name = params.get("name", "Email_Results")
             
             # Get connection ID

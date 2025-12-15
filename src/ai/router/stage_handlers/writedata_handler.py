@@ -39,13 +39,14 @@ class WriteDataHandler(BaseStageHandler):
     """
     
     MANAGED_STAGES = {
-        Stage.NEED_WRITE_OR_EMAIL,
+        Stage.NEED_WRITE_OR_EMAIL,  # Handle when current_tool="write_data" (parameter gathering)
+        Stage.CONFIRM_WRITE_DATA_JOB,
     }
-    
+
     def __init__(self, job_agent=None):
         """Initialize WriteData handler."""
         self.job_agent = job_agent
-    
+
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
         return stage in self.MANAGED_STAGES
@@ -55,6 +56,16 @@ class WriteDataHandler(BaseStageHandler):
         logger.info("WriteDataHandler: Processing write_data request")
 
         try:
+
+            # Handle confirmation stage separately
+            if memory.stage == Stage.CONFIRM_WRITE_DATA_JOB:
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="write_data",
+                    execution_callback=lambda m: self._execute_write_data_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, user_input)
+
             # Check for global commands first (back, reset, edit, review)
             global_cmd = GlobalCommandHandler.check_global_command(memory, user_input)
 
@@ -69,8 +80,13 @@ class WriteDataHandler(BaseStageHandler):
             elif global_cmd == "back":
                 result = GlobalCommandHandler.handle_back(memory)
 
+                # If we need to re-gather parameters (during parameter gathering)
+                if result.get("re_gather"):
+                    logger.info("Re-gathering parameters after back command")
+                    # Continue below to re-run job agent with empty input
+                    user_input = ""
                 # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
-                if result.get("transition_to"):
+                elif result.get("transition_to"):
                     memory.stage = result["transition_to"]
                     logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
                     return await self.handle(memory, "")  # Re-run with empty input
@@ -83,21 +99,36 @@ class WriteDataHandler(BaseStageHandler):
                 return self._create_result(memory, result["message"])
 
             elif global_cmd == "edit":
-                edit_resolver = EditTargetResolver()
-                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
-                return self._create_result(
-                    memory,
-                    result["message"],
-                    result.get("transition_to")
-                )
+                # If we're in confirmation stage, don't intercept - let ConfirmJobStrategy handle it
+                if memory.stage != Stage.CONFIRM_WRITE_DATA_JOB:
+                    edit_resolver = EditTargetResolver()
+                    result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
 
-            # Clear params only when switching from read_sql
+                    # If editing a parameter during parameter gathering (no stage transition)
+                    if not result.get("transition_to") and memory.current_tool:
+                        logger.info("Edited parameter during parameter gathering - continuing to re-gather")
+                        # Clear last_question to trigger fresh parameter gathering
+                        memory.last_question = None
+                        # Continue below to re-run job agent with empty input
+                        user_input = ""
+                    else:
+                        return self._create_result(
+                            memory,
+                            result["message"],
+                            result.get("transition_to")
+                        )
+
+            # Clear params when starting fresh or switching from read_sql
             has_read_sql_only_params = (
                 "execute_query" in memory.gathered_params and
                 not any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
             )
-            if has_read_sql_only_params:
-                logger.info("Switching from read_sql to write_data, clearing gathered_params")
+
+            # Also clear if we have old write_data params (from previous write) but no active job in progress
+            has_old_write_params = any(k in memory.gathered_params for k in ["connection", "schemas", "table", "drop_or_truncate"])
+
+            if has_read_sql_only_params or (has_old_write_params and memory.current_tool != "write_data"):
+                logger.info("Clearing gathered_params for fresh write_data flow")
                 memory.gathered_params = {}
                 memory.last_question = None
 
@@ -128,8 +159,20 @@ class WriteDataHandler(BaseStageHandler):
                 return self._create_result(memory, action["question"])
 
             if action.get("action") == "TOOL" and action.get("tool_name") == "write_data":
-                return await self._execute_write_data_job(memory, action.get("params", {}))
+                # Store params and transition to confirmation stage
+                params = action.get("params", {})
+                memory.gathered_params.update(params)
+                memory.stage = Stage.CONFIRM_WRITE_DATA_JOB
+                logger.info("All write_data params gathered, transitioning to confirmation")
 
+                # Import and use confirmation strategy
+                from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+                confirm_strategy = ConfirmJobStrategy(
+                    job_type="write_data",
+                    execution_callback=lambda m: self._execute_write_data_job(m, m.gathered_params)
+                )
+                return await confirm_strategy.execute(memory, "")
+            
             return self._create_result(memory, "Please provide write_data parameters. What should I name this job?")
 
         except ICCBaseError as e:
@@ -314,13 +357,13 @@ class WriteDataHandler(BaseStageHandler):
             memory.gathered_params = {}
             memory.current_tool = None
             memory.last_question = None
-            
+
             response = (
                 f"Job '{job_name}' created successfully!\n\n"
                 f"Data will be written to table '{table_name}' in {schemas} schema.\n\n"
                 f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
             )
-            return self._create_result(memory, response)
+            return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
 
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name '{job_name}': {e}")

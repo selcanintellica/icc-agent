@@ -64,13 +64,23 @@ class ReadSQLHandler(BaseStageHandler):
         self.strategy_registry.register(Stage.NEED_USER_SQL, NeedUserSqlStrategy())
         self.strategy_registry.register(Stage.CONFIRM_GENERATED_SQL, ConfirmGeneratedSqlStrategy())
         self.strategy_registry.register(Stage.CONFIRM_USER_SQL, ConfirmUserSqlStrategy())
-        self.strategy_registry.register(Stage.EXECUTE_SQL, ExecuteSqlStrategy(self.job_agent))
+
+        # Create ExecuteSqlStrategy instance (needed for confirmation callback)
+        execute_strategy = ExecuteSqlStrategy(self.job_agent)
+        self.strategy_registry.register(Stage.EXECUTE_SQL, execute_strategy)
+
+        # Register confirmation strategy with execution callback
+        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
+        self.strategy_registry.register(
+            Stage.CONFIRM_READ_SQL_JOB,
+            ConfirmJobStrategy(
+                job_type="read_sql",
+                execution_callback=lambda m: execute_strategy._execute_read_sql_job(m, m.gathered_params)
+            )
+        )
+
         self.strategy_registry.register(Stage.SHOW_RESULTS, ShowResultsStrategy())
         self.strategy_registry.register(Stage.NEED_WRITE_OR_EMAIL, NeedWriteOrEmailStrategy())
-
-        # Confirmation stage (NEW - shows summary before execution)
-        from src.ai.router.stage_handlers.strategies.common.confirm_job import ConfirmJobStrategy
-        self.strategy_registry.register(Stage.CONFIRM_READ_SQL_JOB, ConfirmJobStrategy(job_type="read_sql"))
     
     def can_handle(self, stage: Stage) -> bool:
         """Check if this handler can process the given stage."""
@@ -102,8 +112,15 @@ class ReadSQLHandler(BaseStageHandler):
             elif global_cmd == "back":
                 result = GlobalCommandHandler.handle_back(memory)
 
+                # If we need to re-gather parameters (during parameter gathering)
+                if result.get("re_gather"):
+                    logger.info("Re-gathering parameters after back command")
+                    # Get strategy and re-run with empty input
+                    strategy = self.strategy_registry.get_strategy(memory.stage)
+                    if strategy:
+                        return await strategy.execute(memory, "")
                 # If we transitioned to a new stage, re-run handler with empty input to trigger that stage's prompt
-                if result.get("transition_to"):
+                elif result.get("transition_to"):
                     memory.stage = result["transition_to"]
                     logger.info(f"Re-running handler after back to stage: {memory.stage.value}")
                     return await self.handle(memory, "")  # Re-run with empty input
@@ -116,13 +133,26 @@ class ReadSQLHandler(BaseStageHandler):
                 return self._create_result(memory, result["message"])
 
             elif global_cmd == "edit":
-                edit_resolver = EditTargetResolver()
-                result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
-                return self._create_result(
-                    memory,
-                    result["message"],
-                    result.get("transition_to")
-                )
+                # If we're in confirmation stage, don't intercept - let ConfirmJobStrategy handle it
+                if memory.stage != Stage.CONFIRM_READ_SQL_JOB:
+                    edit_resolver = EditTargetResolver()
+                    result = GlobalCommandHandler.handle_edit(memory, user_input, edit_resolver)
+
+                    # If editing a parameter during parameter gathering (no stage transition)
+                    if not result.get("transition_to") and memory.current_tool:
+                        logger.info("Edited parameter during parameter gathering - continuing to re-gather")
+                        # Clear last_question to trigger fresh parameter gathering
+                        memory.last_question = None
+                        # Get strategy and re-run with empty input
+                        strategy = self.strategy_registry.get_strategy(memory.stage)
+                        if strategy:
+                            return await strategy.execute(memory, "")
+
+                    return self._create_result(
+                        memory,
+                        result["message"],
+                        result.get("transition_to")
+                    )
 
             # Get strategy for current stage
             strategy = self.strategy_registry.get_strategy(memory.stage)
