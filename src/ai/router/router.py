@@ -15,6 +15,7 @@ from .stage_handlers.readsql_handler import ReadSQLHandler
 from .stage_handlers.comparesql_handler import CompareSQLHandler
 from .stage_handlers.writedata_handler import WriteDataHandler
 from .stage_handlers.sendemail_handler import SendEmailHandler
+from .stage_handlers.rule_handler import RuleHandler
 from .sql_agent import create_sql_agent, SQLAgent
 from .job_agent import create_job_agent, JobAgent
 from .utils.help_handler import is_help_request, HelpHandler
@@ -180,6 +181,12 @@ class RouterOrchestrator:
             SendEmailHandler(
                 job_agent=self.config.job_agent
             )
+        )
+        
+        # Register Rule handler
+        registry.register(
+            "rule",
+            RuleHandler()
         )
         
         return registry

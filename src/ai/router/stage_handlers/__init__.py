@@ -10,6 +10,7 @@ from src.ai.router.stage_handlers.readsql_handler import ReadSQLHandler
 from src.ai.router.stage_handlers.comparesql_handler import CompareSQLHandler
 from src.ai.router.stage_handlers.writedata_handler import WriteDataHandler
 from src.ai.router.stage_handlers.sendemail_handler import SendEmailHandler
+from src.ai.router.stage_handlers.rule_handler import RuleHandler
 
 __all__ = [
     "BaseStageHandler",
@@ -18,4 +19,5 @@ __all__ = [
     "CompareSQLHandler",
     "WriteDataHandler",
     "SendEmailHandler",
+    "RuleHandler",
 ]

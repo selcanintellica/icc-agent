@@ -33,17 +33,71 @@ class NeedWriteOrEmailStrategy(StageStrategy):
         if actively_gathering:
             logger.debug(f"Actively gathering params for {memory.current_tool}, not treating 'no' as done")
         else:
+            # Check for direct "rule" request (user wants to create rule immediately)
+            if "rule" in user_lower:
+                logger.info("User wants to create a rule directly")
+                memory.current_tool = None
+                
+                created_jobs = memory.get_created_jobs()
+                if memory.has_multiple_jobs():
+                    logger.info(f"User has {len(created_jobs)} jobs, proceeding to rule creation")
+                    
+                    # Build job list summary
+                    job_list = "\n".join([f"  {i+1}. {j['name']} ({j['type']})" for i, j in enumerate(created_jobs)])
+                    
+                    response = (
+                        f"You've created {len(created_jobs)} jobs in this session:\n"
+                        f"{job_list}\n\n"
+                        f"Would you like to create a Rule combining these jobs into a workflow? (yes/no)"
+                    )
+                    
+                    return self._create_result(
+                        memory,
+                        response,
+                        Stage.ASK_CREATE_RULE
+                    )
+                else:
+                    return self._create_result(
+                        memory,
+                        "You need at least 2 jobs to create a rule. Currently you have only one job.\n\n"
+                        "What would you like to do?\n- 'email' - Send results via email\n- 'done' - Finish"
+                    )
+            
             # Check for "done" intent
             done_patterns = ["done", "finish", "complete", "nothing"]
             if (user_lower in ["no", "nope", "nah"] or 
                 any(pattern in user_lower for pattern in done_patterns)):
-                logger.info("User said done, transitioning to DONE stage")
+                logger.info("User said done")
                 memory.current_tool = None
-                return self._create_result(
-                    memory,
-                    "All done! 🎉\n\nSay 'new query' or 'start' to begin a fresh job.",
-                    Stage.DONE
-                )
+                
+                # Check if user has created multiple jobs - offer rule creation
+                created_jobs = memory.get_created_jobs()
+                logger.info(f"RULE_CHECK: created_jobs count = {len(created_jobs)}, jobs = {created_jobs}")
+                
+                if memory.has_multiple_jobs():
+                    logger.info(f"User has {len(created_jobs)} jobs, offering rule creation")
+                    
+                    # Build job list summary
+                    job_list = "\n".join([f"  {i+1}. {j['name']} ({j['type']})" for i, j in enumerate(created_jobs)])
+                    
+                    response = (
+                        f"You've created {len(created_jobs)} jobs in this session:\n"
+                        f"{job_list}\n\n"
+                        f"Would you like to create a Rule combining these jobs into a workflow? (yes/no)"
+                    )
+                    
+                    return self._create_result(
+                        memory,
+                        response,
+                        Stage.ASK_CREATE_RULE
+                    )
+                else:
+                    # Only one or no jobs - go directly to done
+                    return self._create_result(
+                        memory,
+                        "All done! Say 'new query' or 'start' to begin a fresh job.",
+                        Stage.DONE
+                    )
         
         if memory.execute_query_enabled and any(word in user_lower for word in ["write", "save"]):
             return self._create_result(
@@ -73,7 +127,17 @@ class NeedWriteOrEmailStrategy(StageStrategy):
                 next_stage=memory.stage
             )
         
-        return self._create_result(
-            memory,
-            "Please specify what you'd like to do:\n- 'write' - Save to a table\n- 'email' - Send via email\n- 'done' - Finish"
-        )
+        # Build help message based on available options
+        created_jobs = memory.get_created_jobs()
+        has_multiple_jobs = len(created_jobs) >= 2 if created_jobs else False
+        
+        if has_multiple_jobs:
+            return self._create_result(
+                memory,
+                "Please specify what you'd like to do:\n- 'write' - Save to a table\n- 'email' - Send via email\n- 'rule' - Create a rule from your jobs\n- 'done' - Finish"
+            )
+        else:
+            return self._create_result(
+                memory,
+                "Please specify what you'd like to do:\n- 'write' - Save to a table\n- 'email' - Send via email\n- 'done' - Finish"
+            )

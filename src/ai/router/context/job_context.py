@@ -55,6 +55,10 @@ class JobContext:
     # UI selections
     selected_tables: List[str] = field(default_factory=lambda: ["customers", "orders"])
     
+    # Rule creation - track all jobs created in this session
+    # Each job: {id: str, name: str, type: str, folder: str}
+    created_jobs: List[Dict[str, str]] = field(default_factory=list)
+    
     def reset(self) -> None:
         """Reset job context for new conversation."""
         self.job_type = "readsql"
@@ -76,6 +80,7 @@ class JobContext:
         self.output_table_info = None
         self.pending_email_params = None
         self.email_query_confirmed = False
+        self.created_jobs = []
     
     def set_read_sql_result(
         self,
@@ -142,6 +147,51 @@ class JobContext:
         """Clear all gathered parameters."""
         self.gathered_params = {}
     
+    def add_created_job(
+        self,
+        job_id: str,
+        job_name: str,
+        job_type: str,
+        job_folder: str = "3023602439587835"
+    ) -> None:
+        """
+        Add a created job to the session history for rule creation.
+        
+        Args:
+            job_id: The job ID returned from the API
+            job_name: The name given to the job
+            job_type: Type of job (read_sql, write_data, send_email, compare_sql)
+            job_folder: Folder where the job is stored
+        """
+        self.created_jobs.append({
+            "id": job_id,
+            "name": job_name,
+            "type": job_type,
+            "folder": job_folder
+        })
+    
+    def get_created_jobs(self) -> List[Dict[str, str]]:
+        """
+        Get all jobs created in this session.
+        
+        Returns:
+            List of job dictionaries with id, name, type, folder
+        """
+        return self.created_jobs
+    
+    def clear_created_jobs(self) -> None:
+        """Clear the list of created jobs."""
+        self.created_jobs = []
+    
+    def has_multiple_jobs(self) -> bool:
+        """
+        Check if multiple jobs have been created (needed for rule creation).
+        
+        Returns:
+            True if 2 or more jobs were created
+        """
+        return len(self.created_jobs) >= 2
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -164,7 +214,8 @@ class JobContext:
             "selected_tables": self.selected_tables,
             "output_table_info": self.output_table_info,
             "pending_email_params": self.pending_email_params,
-            "email_query_confirmed": self.email_query_confirmed
+            "email_query_confirmed": self.email_query_confirmed,
+            "created_jobs": self.created_jobs
         }
     
     @classmethod
@@ -190,5 +241,6 @@ class JobContext:
             selected_tables=data.get("selected_tables", ["customers", "orders"]),
             output_table_info=data.get("output_table_info"),
             pending_email_params=data.get("pending_email_params"),
-            email_query_confirmed=data.get("email_query_confirmed", False)
+            email_query_confirmed=data.get("email_query_confirmed", False),
+            created_jobs=data.get("created_jobs", [])
         )

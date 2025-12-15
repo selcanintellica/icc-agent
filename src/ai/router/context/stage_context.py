@@ -58,6 +58,13 @@ class Stage(Enum):
     CONFIRM_SEND_EMAIL_JOB = "confirm_send_email_job"
     CONFIRM_COMPARE_SQL_JOB = "confirm_compare_sql_job"
 
+
+    # Rule Creation Flow
+    ASK_CREATE_RULE = "ask_create_rule"
+    ASK_RULE_FOLDER = "ask_rule_folder"
+    ASK_RULE_NAME = "ask_rule_name"
+    EXECUTE_RULE_CREATION = "execute_rule_creation"
+
     DONE = "done"
 
 
@@ -169,6 +176,16 @@ class StageContext:
         """Check if in post-execution stages."""
         return self._stage in {Stage.SHOW_RESULTS, Stage.NEED_WRITE_OR_EMAIL}
     
+    def is_rule_creation_flow(self) -> bool:
+        """Check if currently in Rule creation flow."""
+        rule_stages = {
+            Stage.ASK_CREATE_RULE,
+            Stage.ASK_RULE_FOLDER,
+            Stage.ASK_RULE_NAME,
+            Stage.EXECUTE_RULE_CREATION
+        }
+        return self._stage in rule_stages
+
     def is_done(self) -> bool:
         """Check if conversation is complete."""
         return self._stage == Stage.DONE

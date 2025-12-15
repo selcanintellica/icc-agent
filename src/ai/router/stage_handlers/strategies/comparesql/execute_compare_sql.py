@@ -80,7 +80,10 @@ class AskCompareJobNameStrategy(StageStrategy):
             result = await compare_sql_job(request)
             
             if result.get("message") == "Success":
-                memory.last_job_id = result.get("job_id")
+                job_id = result.get("job_id")
+                job_folder = "3023602439587835"
+                
+                memory.last_job_id = job_id
                 
                 memory.output_table_info = {
                     "schema": params.get("schemas", "cache"),
@@ -88,11 +91,20 @@ class AskCompareJobNameStrategy(StageStrategy):
                 }
                 logger.info(f"Set output_table_info: {memory.output_table_info}")
                 
+                # Track job for rule creation
+                memory.add_created_job(
+                    job_id=job_id,
+                    job_name=job_name,
+                    job_type="compare_sql",
+                    job_folder=job_folder
+                )
+                logger.info(f"Added compare_sql job to created_jobs: {job_name} (ID: {job_id})")
+                
                 memory.gathered_params = {}
                 
                 response = (
                     f"Compare Job '{job_name}' created successfully!\n"
-                    f"Job ID: {memory.last_job_id}\n\n"
+                    f"Job ID: {job_id}\n\n"
                     f"What would you like to do next?\n- 'email' - Send results via email\n- 'done' - Finish"
                 )
                 return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)

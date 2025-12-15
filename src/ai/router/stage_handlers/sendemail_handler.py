@@ -384,22 +384,60 @@ class SendEmailHandler(BaseStageHandler):
             result = await send_email_job(request)
             logger.info(f"send_email_job result: {json.dumps(result, indent=2, default=str)}")
             
-            # Reset email-specific params but keep output_table_info for subsequent emails
-            memory.gathered_params = {}
-            memory.current_tool = None
-            memory.pending_email_params = None
-            memory.email_query_confirmed = False
-            memory.last_question = None
-            # DON'T clear: connection, schema, output_table_info (needed for next email)
-            
-            to_email = params.get('to')
-            response = (
-                f"✅ Email job '{job_name}' created successfully!\n\n"
-                f"Results will be sent to: {to_email}\n"
-                f"Subject: {params.get('subject', 'Query Results')}\n\n"
-                f"Would you like to continue? (Type 'yes')\n- 'email' - Send another email\n- 'done' - Finish"
-            )
-            return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
+            if result.get("message") == "Success":
+                job_id = result.get("job_id")
+                job_folder = "3023602439587835"
+                
+                # Track job for rule creation
+                memory.add_created_job(
+                    job_id=job_id,
+                    job_name=job_name,
+                    job_type="send_email",
+                    job_folder=job_folder
+                )
+                logger.info(f"Added send_email job to created_jobs: {job_name} (ID: {job_id})")
+                
+                # Reset email-specific params but keep output_table_info for subsequent emails
+                memory.gathered_params = {}
+                memory.current_tool = None
+                memory.pending_email_params = None
+                memory.email_query_confirmed = False
+                memory.last_question = None
+                # DON'T clear: connection, schema, output_table_info (needed for next email)
+                
+                to_email = params.get('to')
+                
+                # Check if we have multiple jobs for rule creation option
+                created_jobs = memory.get_created_jobs()
+                has_multiple_jobs = len(created_jobs) >= 2 if created_jobs else False
+                
+                if has_multiple_jobs:
+                    response = (
+                        f"Email job '{job_name}' created successfully!\n\n"
+                        f"Results will be sent to: {to_email}\n"
+                        f"Subject: {params.get('subject', 'Query Results')}\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send another email\n"
+                        f"- 'rule' - Create a rule from your jobs\n"
+                        f"- 'done' - Finish"
+                    )
+                else:
+                    response = (
+                        f"Email job '{job_name}' created successfully!\n\n"
+                        f"Results will be sent to: {to_email}\n"
+                        f"Subject: {params.get('subject', 'Query Results')}\n\n"
+                        f"What would you like to do next?\n"
+                        f"- 'email' - Send another email\n"
+                        f"- 'done' - Finish"
+                    )
+                return self._create_result(memory, response, Stage.NEED_WRITE_OR_EMAIL)
+            else:
+                error_msg = result.get("error", "Unknown error")
+                return self._create_result(
+                    memory,
+                    f"Error creating SendEmail job: {error_msg}",
+                    is_error=True
+                )
         
         except DuplicateJobNameError as e:
             logger.warning(f"Duplicate job name '{job_name}': {e}")

@@ -1016,6 +1016,24 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 chat_display = [format_message(**msg) for msg in chat_data]
                 return chat_display, chat_data, "", "", False, map_data, [], [], None
 
+            # Check if this is a FOLDER_DROPDOWN response (for rule creation)
+            elif response_text.startswith("FOLDER_DROPDOWN:"):
+                folder_data = json.loads(response_text.replace("FOLDER_DROPDOWN:", ""))
+                folders = folder_data.get("folders", [])
+                question = folder_data.get("question", "Select a folder:")
+
+                # Add message with dropdown for folder selection
+                agent_message = {
+                    "role": "folder_dropdown",
+                    "content": question,
+                    "folders": folders,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+                chat_display = [format_message(**msg) for msg in chat_data]
+                return chat_display, chat_data, "", "", False, map_data, [], [], None
+
             # Check if this is a MAP_TABLE_POPUP response
             elif response_text.startswith("MAP_TABLE_POPUP:"):
                 popup_data = json.loads(response_text.replace("MAP_TABLE_POPUP:", ""))
@@ -1566,6 +1584,135 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     else:
         # Session not initialized - provide user feedback
         logger.warning(f"Session '{session_id}' could not be created during connection selection")
+        error_message = {
+            "role": "error",
+            "content": "Session not initialized. Please start a new conversation by typing a message first.",
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        chat_data.append(error_message)
+
+    chat_display = [format_message(**msg) for msg in chat_data]
+    return chat_display, chat_data, ""
+
+
+# Callback to handle folder dropdown selection for rule creation
+@app.callback(
+    [Output("chat-history", "children", allow_duplicate=True),
+     Output("chat-store", "data", allow_duplicate=True),
+     Output("user-input", "value", allow_duplicate=True)],
+    [Input({"type": "folder-confirm", "param": ALL}, "n_clicks")],
+    [State({"type": "folder-selector", "param": ALL}, "value"),
+     State({"type": "folder-confirm", "param": ALL}, "id"),
+     State("chat-store", "data"),
+     State("config-store", "data")],
+    prevent_initial_call=True
+)
+def handle_folder_selection(n_clicks, selected_folders, button_ids, chat_data, config):
+    """Handle folder selection from dropdown for rule creation"""
+    ctx = callback_context
+
+    logger.debug(f"Folder callback: clicks={n_clicks}, folders={selected_folders}")
+
+    # Check if any button was actually clicked
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+
+    # Get the triggered button info
+    triggered_id = ctx.triggered[0]["prop_id"]
+
+    if ".n_clicks" not in triggered_id:
+        raise dash.exceptions.PreventUpdate
+
+    # Check if any button was actually clicked (n_clicks not None)
+    if all(click is None for click in n_clicks):
+        raise dash.exceptions.PreventUpdate
+
+    # Parse the button ID to get param_name
+    try:
+        button_id_dict = json.loads(triggered_id.split(".")[0])
+        param_name = button_id_dict.get("param")
+
+        # Find the corresponding folder value
+        triggered_idx = None
+        for i, bid in enumerate(button_ids):
+            if bid.get("param") == param_name and n_clicks[i] is not None:
+                triggered_idx = i
+                break
+
+        if triggered_idx is None or not selected_folders[triggered_idx]:
+            logger.warning(f"No folder selected for {param_name}")
+            raise dash.exceptions.PreventUpdate
+
+        selected_folder = selected_folders[triggered_idx]
+
+    except dash.exceptions.PreventUpdate:
+        raise
+    except Exception as e:
+        logger.error(f"Error parsing folder selection: {e}")
+        raise dash.exceptions.PreventUpdate
+
+    logger.info(f"Folder selected via dropdown: {selected_folder}")
+
+    # Add user selection message
+    user_message = {
+        "role": "user",
+        "content": selected_folder,
+        "timestamp": datetime.now().strftime("%H:%M:%S")
+    }
+    chat_data.append(user_message)
+
+    # Use hardcoded session ID (same as main chat callback)
+    session_id = "web-chat-session"
+
+    # Get or create memory for this session
+    memory = session_manager.get_or_create_session(session_id)
+    
+    if memory:
+        # Trigger next question by calling router with special flag
+        try:
+            # Use async helper to invoke router
+            response = run_async(
+                invoke_router_async,
+                f"__FOLDER_SELECTED__:{selected_folder}",
+                session_id=session_id,
+                connection=config.get("connection"),
+                schema=config.get("schema"),
+                selected_tables=config.get("tables", [])
+            )
+
+            response_text = response.get("response", "Folder selected successfully!")
+
+            # Check for special formats in response
+            if response_text.startswith("FOLDER_DROPDOWN:"):
+                folder_data = json.loads(response_text.replace("FOLDER_DROPDOWN:", ""))
+                folders = folder_data.get("folders", [])
+                question = folder_data.get("question", "Select a folder:")
+
+                agent_message = {
+                    "role": "folder_dropdown",
+                    "content": question,
+                    "folders": folders,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+            else:
+                agent_message = {
+                    "role": "agent",
+                    "content": response_text,
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+                chat_data.append(agent_message)
+
+        except Exception as e:
+            logger.error(f"Error after folder selection: {e}")
+            error_message = {
+                "role": "error",
+                "content": f"Error: {str(e)}",
+                "timestamp": datetime.now().strftime("%H:%M:%S")
+            }
+            chat_data.append(error_message)
+    else:
+        logger.warning(f"Session '{session_id}' could not be created during folder selection")
         error_message = {
             "role": "error",
             "content": "Session not initialized. Please start a new conversation by typing a message first.",
