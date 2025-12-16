@@ -139,8 +139,16 @@ class ExecuteSqlStrategy(StageStrategy):
             
             logger.info(f"Using connection: {memory.connection} (ID: {connection_id})")
             
-            execute_query = params.get("execute_query", False)
-            write_count = params.get("write_count", False)
+            # Sanitize boolean parameters - LLM may return strings like "required" instead of booleans
+            def to_bool(val):
+                if val is True or val is False:
+                    return val
+                if isinstance(val, str):
+                    return val.lower() in ("true", "yes", "1")
+                return False
+            
+            execute_query = to_bool(params.get("execute_query", False))
+            write_count = to_bool(params.get("write_count", False))
             
             read_sql_vars = ReadSqlVariables(
                 query=memory.last_sql,
@@ -152,8 +160,8 @@ class ExecuteSqlStrategy(StageStrategy):
             if execute_query:
                 read_sql_vars.result_schema = params.get("result_schema")
                 read_sql_vars.table_name = params.get("table_name")
-                read_sql_vars.drop_before_create = params.get("drop_before_create", False)
-                read_sql_vars.only_dataset_columns = params.get("only_dataset_columns", False)
+                read_sql_vars.drop_before_create = to_bool(params.get("drop_before_create", False))
+                read_sql_vars.only_dataset_columns = to_bool(params.get("only_dataset_columns", False))
                 logger.info(f"ReadSQL with execute_query=true: schema={read_sql_vars.result_schema}, table={read_sql_vars.table_name}")
             
             if write_count:
