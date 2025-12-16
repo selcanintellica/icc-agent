@@ -174,7 +174,8 @@ class ExecuteSqlStrategy(StageStrategy):
             request = ReadSqlLLMRequest(
                 rights={"owner": "184431757886694"},
                 props={"active": "true", "name": job_name, "description": ""},
-                variables=[read_sql_vars]
+                variables=[read_sql_vars],
+                folder=memory.job_folder
             )
             
             result = await read_sql_job(request)

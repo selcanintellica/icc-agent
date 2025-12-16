@@ -340,7 +340,8 @@ class WriteDataHandler(BaseStageHandler):
             request = WriteDataLLMRequest(
                 rights={"owner": "184431757886694"},
                 props={"active": "true", "name": job_name, "description": ""},
-                variables=[write_data_vars]
+                variables=[write_data_vars],
+                folder=memory.job_folder
             )
             
             result = await write_data_job(request)

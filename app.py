@@ -780,6 +780,35 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return table_options, default_tables
 
 
+async def _fetch_folders_with_auth():
+    """
+    Fetch folders with proper authentication.
+    Same pattern as ConnectionService.fetch_schemas().
+    """
+    from src.utils.auth import authenticate
+    
+    try:
+        # Authenticate first (same pattern as connection_service)
+        auth_result = await authenticate()
+        if not auth_result:
+            logger.warning("Authentication failed for folder fetch")
+            return []
+        
+        userpass, token = auth_result
+        auth_headers = {
+            "Authorization": f"Basic {userpass}",
+            "TokenKey": token
+        }
+        
+        # Fetch folders with auth headers
+        folders = await fetch_folders_async(auth_headers=auth_headers)
+        return folders
+        
+    except Exception as e:
+        logger.error(f"Error in _fetch_folders_with_auth: {e}", exc_info=True)
+        return []
+
+
 # Callback to fetch folders on app load
 @app.callback(
     [Output("folder-dropdown", "options"),
@@ -793,13 +822,8 @@ def fetch_folders_on_load(connection):
     try:
         logger.info("Fetching folders from ICC API...")
         
-        # Fetch folders asynchronously
-        folders = run_async_safe(
-            fetch_folders_async,
-            auth_headers=None,  # Will use default auth
-            default=[],
-            log_errors=True
-        )
+        # Fetch folders with proper authentication (same as connection_service)
+        folders = run_async(_fetch_folders_with_auth)
         
         if folders:
             logger.info(f"Fetched {len(folders)} folders from API")

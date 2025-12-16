@@ -378,7 +378,8 @@ class SendEmailHandler(BaseStageHandler):
                     text=params.get("text", "Please find the query results attached."),
                     attachment=True,
                     cc=params.get("cc", "")
-                )]
+                )],
+                folder=memory.job_folder
             )
             
             result = await send_email_job(request)

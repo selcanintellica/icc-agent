@@ -74,7 +74,8 @@ class AskCompareJobNameStrategy(StageStrategy):
                     schemas=params.get("schemas", "cache"),
                     table_name=params.get("table_name", "cache"),
                     drop_before_create=params.get("drop_before_create", True),
-                )]
+                )],
+                folder=memory.job_folder
             )
             
             result = await compare_sql_job(request)

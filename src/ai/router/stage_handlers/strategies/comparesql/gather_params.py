@@ -193,7 +193,8 @@ class GatherCompareParamsStrategy(StageStrategy):
                     schemas=all_params.get("schemas", "cache"),
                     table_name=all_params.get("table_name", "cache"),
                     drop_before_create=all_params.get("drop_before_create", True),
-                )]
+                )],
+                folder=memory.job_folder
             )
 
             result = await compare_sql_job(request)
