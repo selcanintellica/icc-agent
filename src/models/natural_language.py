@@ -85,10 +85,10 @@ class SendEmailLLMRequest(BaseLLMRequest):
             "subject": var.subject,
             "text": var.text,
             "attachment": "true" if var.attachment else "false",
+            # Always include CC field - server expects it even when empty
+            # (server calls .split() on it, so missing field causes NullPointerException)
+            "cc": var.cc if var.cc else "",
         }
-        # Only include CC if it has a value (API rejects empty string as invalid email)
-        if var.cc and var.cc.strip():
-            result["cc"] = var.cc
         return result
 
 
