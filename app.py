@@ -14,6 +14,13 @@ from dotenv import load_dotenv
 load_dotenv(override=True)  # override=True forces .env to override system variables
 
 import os
+import sys
+
+# Fix Unicode encoding for Windows console (prevent emoji errors)
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
 import dash
 from dash import dcc, html, Input, Output, State, callback_context, ALL, MATCH
 import dash_bootstrap_components as dbc
