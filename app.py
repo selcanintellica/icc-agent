@@ -25,11 +25,8 @@ import dash
 from dash import dcc, html, Input, Output, State, callback_context, ALL, MATCH
 import dash_bootstrap_components as dbc
 from datetime import datetime
-import uuid
-import asyncio
 import json
 import logging
-import traceback
 from typing import Optional
 
 # Configure logging to see agent actions
@@ -59,14 +56,16 @@ print("="*60 + "\n")
 # ICC Agent imports - Using Staged Router (Refactored)
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
-from src.utils.connection_api_client import populate_memory_connections
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.utils.async_helper import run_async, run_async_safe
 from src.services import (
     get_connection_service,
     get_session_manager,
     get_ui_formatter,
-    get_router_service
+    get_router_service,
+    get_auth_service,
+    init_dropdown_handler,
+    get_dropdown_handler
 )
 from src.errors import (
     ICCBaseError,
@@ -99,14 +98,21 @@ connection_service = get_connection_service()
 session_manager = get_session_manager()
 ui_formatter = get_ui_formatter()
 router_service = get_router_service()
-initial_config = connection_service.get_initial_config()
 
-initial_connections = initial_config["connections"]
-initial_connection = initial_config["initial_connection"]
-initial_schemas = initial_config["schemas"]
-initial_schema = initial_config["initial_schema"]
-initial_tables = initial_config["tables"]
-initial_table_selection = initial_config["initial_tables"]
+# Note: dropdown_handler will be initialized after invoke_router_async is defined
+
+# Get initial configuration with null safety
+initial_config = connection_service.get_initial_config()
+if not initial_config:
+    logging.error("Failed to load initial configuration")
+    initial_config = {}
+
+initial_connections = initial_config.get("connections", [])
+initial_connection = initial_config.get("initial_connection")
+initial_schemas = initial_config.get("schemas", [])
+initial_schema = initial_config.get("initial_schema")
+initial_tables = initial_config.get("tables", [])
+initial_table_selection = initial_config.get("initial_tables", [])
 
 
 def create_map_table_modal():
@@ -382,162 +388,6 @@ def format_message(role, content, timestamp=None, error_info=None,  **kwargs):
 
 
 # Legacy implementation kept temporarily for reference
-def _format_message_legacy(role, content, timestamp=None, error_info=None,  **kwargs):
-    """Legacy format method - DO NOT USE, kept for reference only."""
-    if timestamp is None:
-        timestamp = datetime.now().strftime("%H:%M:%S")
-    
-    if role == "user":
-        return dbc.Card([
-            dbc.CardBody([
-                html.Div([
-                    html.Strong("You", className="text-primary"),
-                    html.Small(f" - {timestamp}", className="text-muted ms-2")
-                ]),
-                html.P(content, className="mb-0 mt-2")
-            ])
-        ], className="mb-3", style={"backgroundColor": "#e3f2fd"})
-    
-    elif role == "schema_dropdown":
-        schemas = kwargs.get("schemas", [])
-        param_name = kwargs.get("param_name", "")
-
-        return dbc.Card([
-            dbc.CardBody([
-                html.Div([
-                    html.Strong("🤖 ICC Agent", className="text-success"),
-                    html.Small(f" • {timestamp}", className="text-muted ms-2")
-                ]),
-                html.P(content, className="mb-2 mt-2"),
-                dcc.Dropdown(
-                    id={"type": "schema-selector", "param": param_name},
-                    options=[{"label": schema, "value": schema} for schema in schemas],
-                    placeholder="Select a schema...",
-                    className="mt-2",
-                    style={"marginBottom": "10px"}
-                ),
-                dbc.Button(
-                    "Confirm Selection",
-                    id={"type": "schema-confirm", "param": param_name},
-                    color="primary",
-                    size="sm",
-                    className="mt-2"
-                )
-            ])
-        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
-
-    elif role == "connection_dropdown":
-        connections = kwargs.get("connections", [])
-        param_name = kwargs.get("param_name", "")
-
-        return dbc.Card([
-            dbc.CardBody([
-                html.Div([
-                    html.Strong("🤖 ICC Agent", className="text-success"),
-                    html.Small(f" • {timestamp}", className="text-muted ms-2")
-                ]),
-                html.P(content, className="mb-2 mt-2"),
-                dcc.Dropdown(
-                    id={"type": "connection-selector", "param": param_name},
-                    options=[{"label": conn, "value": conn} for conn in connections],
-                    placeholder="Select a connection...",
-                    className="mt-2",
-                    style={"marginBottom": "10px"}
-                ),
-                dbc.Button(
-                    "Confirm Selection",
-                    id={"type": "connection-confirm", "param": param_name},
-                    color="primary",
-                    size="sm",
-                    className="mt-2"
-                )
-            ])
-        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
-
-    elif role == "agent":
-        # Check if this is an error message (starts with "Error:")
-        is_error_response = content.startswith("Error:")
-
-        if is_error_response:
-            # Format error response with better styling
-            error_text = content[6:].strip()  # Remove "Error:" prefix
-            return dbc.Card([
-                dbc.CardBody([
-                    html.Div([
-                        html.Strong("ICC Agent", className="text-warning"),
-                        html.Small(f" - {timestamp}", className="text-muted ms-2")
-                    ]),
-                    dbc.Alert([
-                        html.Strong("Notice: "),
-                        html.Span(error_text, style={"whiteSpace": "pre-wrap"})
-                    ], color="warning", className="mb-0 mt-2")
-                ])
-            ], className="mb-3", style={"backgroundColor": "#fff3cd"})
-
-        return dbc.Card([
-            dbc.CardBody([
-                html.Div([
-                    html.Strong("ICC Agent", className="text-success"),
-                    html.Small(f" - {timestamp}", className="text-muted ms-2")
-                ]),
-                html.P(content, className="mb-0 mt-2", style={"whiteSpace": "pre-wrap"})
-            ])
-        ], className="mb-3", style={"backgroundColor": "#f1f8e9"})
-    
-    elif role == "error":
-        # Structured error display
-        if error_info:
-            icon = error_info.get("icon", "[Error]")
-            is_retryable = error_info.get("is_retryable", False)
-            error_code = error_info.get("code", "")
-
-            # Add code badge if available
-            code_badge = ""
-            if error_code:
-                code_badge = html.Small(f" ({error_code})", className="text-muted")
-
-            alert_content = [
-                html.Strong(f"{icon} "),
-                content,
-            ]
-
-            if code_badge:
-                alert_content.append(code_badge)
-
-            if is_retryable:
-                alert_content.append(html.Br())
-                alert_content.append(html.Small("This may be a temporary issue - please try again.", className="text-muted"))
-
-            return dbc.Alert(
-                alert_content,
-                color="danger",
-                className="mb-3"
-            )
-
-        # Simple error without info
-        return dbc.Alert(
-            [
-                html.Strong("Error: "),
-                content
-            ],
-            color="danger",
-            className="mb-3"
-        )
-    
-    elif role == "tool":
-        return dbc.Card([
-            dbc.CardBody([
-                html.Div([
-                    html.Strong("Tool Call", className="text-info"),
-                    html.Small(f" - {timestamp}", className="text-muted ms-2")
-                ]),
-                html.Pre(
-                    content,
-                    className="mb-0 mt-2",
-                    style={"fontSize": "12px", "backgroundColor": "#263238", "color": "#aed581", "padding": "10px", "borderRadius": "5px"}
-                )
-            ])
-        ], className="mb-3")
 
 
 def create_mapping_row(idx, first_col, second_col, is_first_key, is_second_key):
@@ -584,29 +434,13 @@ async def invoke_router_async(user_message, session_id="default-session", connec
         
         # Get or create memory for this session using session_manager
         memory = session_manager.get_or_create_session(session_id)
-        
-        # Populate connections from API (falls back to static if fails)
+
+        # Populate connections from API using auth service (falls back to static if fails)
         try:
-            from src.utils.auth import authenticate
-            from src.utils.table_api_client import set_table_api_auth
-            
-            logger.info("Attempting to fetch connections from API")
-            
-            # Authenticate using the same pattern as other API calls
-            auth_result = await authenticate()
-            auth_headers = None
-            if auth_result:
-                userpass, token = auth_result
-                auth_headers = {"Authorization": f"Basic {userpass}", "TokenKey": token}
-                logger.info("Authentication successful for connection fetch")
-                
-                # Set auth headers for table API client (used by SQL agent)
-                set_table_api_auth(auth_headers)
-                logger.info("Configured table API client with authentication")
-            else:
-                logger.warning("Authentication failed, trying without auth")
-            
-            if await populate_memory_connections(memory, auth_headers=auth_headers):
+            auth_service = get_auth_service()
+            success = await auth_service.populate_memory_connections(memory)
+
+            if success:
                 conn_count = len(memory.connections)
                 logger.info(f"Populated {conn_count} connections from API")
                 if conn_count > 0:
@@ -679,6 +513,10 @@ async def invoke_router_async(user_message, session_id="default-session", connec
             "error": icc_error.user_message,
             "error_info": error_info
         }
+
+
+# Initialize dropdown handler now that invoke_router_async is defined
+dropdown_handler = init_dropdown_handler(session_manager, invoke_router_async)
 
 
 # Callback to update schema dropdown when connection changes
@@ -975,16 +813,19 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
         else:
             # Router returns a simple text response
             response_text = response.get("response", "")
+            if not response_text:
+                response_text = ""
+
             current_stage = response.get("stage", "unknown")
-            
+
             print(f"\nRouter response: {response_text[:200]}...")
             print(f"Current stage: {current_stage}")
-            
+
             logger.info(f"Router response: {response_text[:100]}...")
             logger.info(f"Current stage: {current_stage}")
-            
+
             # Check if this is a SCHEMA_DROPDOWN response
-            if response_text.startswith("SCHEMA_DROPDOWN:"):
+            if response_text and response_text.startswith("SCHEMA_DROPDOWN:"):
                 schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
                 schemas = schema_data.get("schemas", [])
                 param_name = schema_data.get("param_name", "")
@@ -1004,7 +845,7 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 return chat_display, chat_data, "", "", False, map_data, [], [], None
 
             # Check if this is a CONNECTION_DROPDOWN response
-            elif response_text.startswith("CONNECTION_DROPDOWN:"):
+            elif response_text and response_text.startswith("CONNECTION_DROPDOWN:"):
                 connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
                 connections = connection_data.get("connections", [])
                 param_name = connection_data.get("param_name", "")
@@ -1024,7 +865,7 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 return chat_display, chat_data, "", "", False, map_data, [], [], None
 
             # Check if this is a FOLDER_DROPDOWN response (for rule creation)
-            elif response_text.startswith("FOLDER_DROPDOWN:"):
+            elif response_text and response_text.startswith("FOLDER_DROPDOWN:"):
                 folder_data = json.loads(response_text.replace("FOLDER_DROPDOWN:", ""))
                 folders = folder_data.get("folders", [])
                 question = folder_data.get("question", "Select a folder:")
@@ -1042,7 +883,7 @@ def update_chat(send_clicks, submit, confirm_clicks, cancel_clicks,
                 return chat_display, chat_data, "", "", False, map_data, [], [], None
 
             # Check if this is a MAP_TABLE_POPUP response
-            elif response_text.startswith("MAP_TABLE_POPUP:"):
+            elif response_text and response_text.startswith("MAP_TABLE_POPUP:"):
                 popup_data = json.loads(response_text.replace("MAP_TABLE_POPUP:", ""))
                 first_cols = popup_data.get("first_columns", [])
                 second_cols = popup_data.get("second_columns", [])
@@ -1306,137 +1147,56 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
     ctx = callback_context
 
     # Check if any button was actually clicked
-    if not ctx.triggered:
+    if not ctx.triggered or all(click is None for click in n_clicks):
         raise dash.exceptions.PreventUpdate
 
-    # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-
     if ".n_clicks" not in triggered_id:
         raise dash.exceptions.PreventUpdate
-    
-    # Check if any button was actually clicked (n_clicks not None)
-    if all(click is None for click in n_clicks):
-        raise dash.exceptions.PreventUpdate
-    
-    # Only log when we have a real click
-    logger.info(f"🔘 Schema callback triggered")
-    logger.info(f"   n_clicks: {n_clicks}")
-    logger.info(f"   selected_schemas: {selected_schemas}")
-    logger.info(f"   button_ids: {button_ids}")
-    logger.info(f"   triggered_id: {triggered_id}")
 
-    # Parse the button ID to get param_name
-    try:
-        button_id_dict = json.loads(triggered_id.split(".")[0])
-        param_name = button_id_dict.get("param")
+    logger.info(f"🔘 Schema callback triggered: {triggered_id}")
 
-        # Find the corresponding schema value - check n_clicks to find actual clicked button
-        triggered_idx = None
-        for i, bid in enumerate(button_ids):
-            if bid.get("param") == param_name and n_clicks[i] is not None:
-                triggered_idx = i
-                break
+    # Parse selection using dropdown handler
+    selection = dropdown_handler.parse_selection(
+        triggered_id, n_clicks, selected_schemas, button_ids
+    )
 
-        if triggered_idx is None or not selected_schemas[triggered_idx]:
-            logger.warning(f"No schema selected for {param_name}")
-            raise dash.exceptions.PreventUpdate
-
-        selected_schema = selected_schemas[triggered_idx]
-
-    except Exception as e:
-        logger.error(f"Error parsing schema selection: {e}")
+    if not selection:
         raise dash.exceptions.PreventUpdate
 
-    logger.debug(f"Schema selected via dropdown: {selected_schema} for param: {param_name}")
+    param_name = selection["param_name"]
+    selected_schema = selection["selected_value"]
+    logger.debug(f"Schema selected: {selected_schema} for param: {param_name}")
 
-    # Add user selection message
-    user_message = {
-        "role": "user",
-        "content": selected_schema,
-        "timestamp": datetime.now().strftime("%H:%M:%S")
-    }
-    chat_data.append(user_message)
+    # Add user message
+    chat_data.append(dropdown_handler.create_user_message(selected_schema))
 
-    # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
-    # Get or create memory for this session
-    memory = session_manager.get_or_create_session(session_id)
-    
-    # Directly assign the parameter in memory WITHOUT calling LLM
-    if memory:
-        memory.gathered_params[param_name] = selected_schema
-        logger.info(f"Directly assigned {param_name}={selected_schema} (bypassed LLM)")
+    try:
+        # Process selection and get response
+        response = run_async(
+            dropdown_handler.process_selection,
+            "SCHEMA",
+            selected_schema,
+            param_name,
+            session_id,
+            config
+        )
 
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__SCHEMA_SELECTED__:{selected_schema}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
-            )
+        # Format response
+        agent_message = dropdown_handler.format_response(response)
+        chat_data.append(agent_message)
 
-            response_text = response.get("response", "Schema selected successfully!")
-
-            # Check for special formats
-            if response_text.startswith("SCHEMA_DROPDOWN:"):
-                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
-                schemas = schema_data.get("schemas", [])
-                param_name_new = schema_data.get("param_name", "")
-                question = schema_data.get("question", "Which schema should I use?")
-
-                agent_message = {
-                    "role": "schema_dropdown",
-                    "content": question,
-                    "schemas": schemas,
-                    "param_name": param_name_new,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-            elif response_text.startswith("CONNECTION_DROPDOWN:"):
-                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
-                connections = connection_data.get("connections", [])
-                param_name_new = connection_data.get("param_name", "")
-                question = connection_data.get("question", "Which connection should I use?")
-
-                agent_message = {
-                    "role": "connection_dropdown",
-                    "content": question,
-                    "connections": connections,
-                    "param_name": param_name_new,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-            else:
-                agent_message = {
-                    "role": "agent",
-                    "content": response_text,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-
-        except Exception as e:
-            logger.error(f"Error after schema selection: {e}")
-            error_message = {
-                "role": "error",
-                "content": f"Error: {str(e)}",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(error_message)
-    else:
-        # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' could not be created during schema selection")
-        error_message = {
-            "role": "error",
-            "content": "Session not initialized. Please start a new conversation by typing a message first.",
-            "timestamp": datetime.now().strftime("%H:%M:%S")
-        }
-        chat_data.append(error_message)
+    except ValueError as e:
+        # Session not initialized
+        logger.warning(f"Session error: {e}")
+        chat_data.append(dropdown_handler.create_error_message(
+            "Session not initialized. Please start a new conversation by typing a message first."
+        ))
+    except Exception as e:
+        logger.error(f"Error after schema selection: {e}")
+        chat_data.append(dropdown_handler.create_error_message(f"Error: {str(e)}"))
 
     chat_display = [format_message(**msg) for msg in chat_data]
     return chat_display, chat_data, ""
@@ -1458,145 +1218,63 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
     """Handle connection selection from dropdown WITHOUT using LLM"""
     ctx = callback_context
 
-    # Connection callback (reduced logging verbosity)
-    logger.debug(f"🔘 Connection callback: clicks={n_clicks}, connections={selected_connections}")
-
     # Check if any button was actually clicked
-    if not ctx.triggered:
-        logger.warning("No trigger context")
+    if not ctx.triggered or all(click is None for click in n_clicks):
         raise dash.exceptions.PreventUpdate
 
-    # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-    logger.debug(f"   triggered_id: {triggered_id}")
-
     if ".n_clicks" not in triggered_id:
-        logger.warning("Not a button click")
         raise dash.exceptions.PreventUpdate
 
-    # Parse the button ID to get param_name
-    try:
-        button_id_dict = json.loads(triggered_id.split(".")[0])
-        param_name = button_id_dict.get("param")
+    logger.debug(f"🔘 Connection callback triggered: {triggered_id}")
 
-        # Find the corresponding connection value - check n_clicks to find actual clicked button
-        triggered_idx = None
-        for i, bid in enumerate(button_ids):
-            if bid.get("param") == param_name and n_clicks[i] is not None:
-                triggered_idx = i
-                break
+    # Parse selection using dropdown handler
+    selection = dropdown_handler.parse_selection(
+        triggered_id, n_clicks, selected_connections, button_ids
+    )
 
-        if triggered_idx is None:
-            # This can happen during initial render or race conditions - not an error
-            logger.debug(f"No triggered button found for {param_name}, likely initial render")
-            raise dash.exceptions.PreventUpdate
-
-        if not selected_connections[triggered_idx]:
-            logger.warning(f"No connection selected for {param_name}")
-            raise dash.exceptions.PreventUpdate
-
-        selected_connection = selected_connections[triggered_idx]
-
-    except dash.exceptions.PreventUpdate:
-        raise
-    except Exception as e:
-        logger.error(f"Error parsing connection selection: {e}")
+    if not selection:
         raise dash.exceptions.PreventUpdate
 
-    logger.debug(f"Connection selected via dropdown: {selected_connection} for param: {param_name}")
+    param_name = selection["param_name"]
+    selected_connection = selection["selected_value"]
+    logger.debug(f"Connection selected: {selected_connection} for param: {param_name}")
 
-    # Add user selection message
-    user_message = {
-        "role": "user",
-        "content": selected_connection,
-        "timestamp": datetime.now().strftime("%H:%M:%S")
-    }
-    chat_data.append(user_message)
+    # Add user message
+    chat_data.append(dropdown_handler.create_user_message(selected_connection))
 
-    # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
-    # Get or create memory for this session
-    memory = session_manager.get_or_create_session(session_id)
-    
-    # Directly assign the parameter in memory WITHOUT calling LLM
-    if memory:
-        memory.gathered_params[param_name] = selected_connection
-        logger.info(f"Directly assigned {param_name}={selected_connection} (bypassed LLM)")
+    try:
+        # Custom memory update for connection: clear available_schemas to trigger FETCH_SCHEMAS
+        def update_memory_for_connection(memory):
+            memory.available_schemas = []
+            logger.info(f"Cleared available_schemas to trigger schema fetch for {selected_connection}")
 
-        # After connection selection, need to fetch schemas for that connection
-        # Clear available_schemas so validator will trigger FETCH_SCHEMAS
-        memory.available_schemas = []
-        logger.info(f"Cleared available_schemas to trigger schema fetch for {selected_connection}")
+        # Process selection and get response
+        response = run_async(
+            dropdown_handler.process_selection,
+            "CONNECTION",
+            selected_connection,
+            param_name,
+            session_id,
+            config,
+            update_memory_for_connection
+        )
 
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__CONNECTION_SELECTED__:{selected_connection}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
-            )
+        # Format response
+        agent_message = dropdown_handler.format_response(response)
+        chat_data.append(agent_message)
 
-            response_text = response.get("response", "Connection selected successfully!")
-
-            # Check for special formats
-            if response_text.startswith("SCHEMA_DROPDOWN:"):
-                schema_data = json.loads(response_text.replace("SCHEMA_DROPDOWN:", ""))
-                schemas = schema_data.get("schemas", [])
-                param_name_new = schema_data.get("param_name", "")
-                question = schema_data.get("question", "Which schema should I use?")
-
-                agent_message = {
-                    "role": "schema_dropdown",
-                    "content": question,
-                    "schemas": schemas,
-                    "param_name": param_name_new,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-            elif response_text.startswith("CONNECTION_DROPDOWN:"):
-                connection_data = json.loads(response_text.replace("CONNECTION_DROPDOWN:", ""))
-                connections = connection_data.get("connections", [])
-                param_name_new = connection_data.get("param_name", "")
-                question = connection_data.get("question", "Which connection should I use?")
-
-                agent_message = {
-                    "role": "connection_dropdown",
-                    "content": question,
-                    "connections": connections,
-                    "param_name": param_name_new,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-            else:
-                agent_message = {
-                    "role": "agent",
-                    "content": response_text,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-
-        except Exception as e:
-            logger.error(f"Error after connection selection: {e}")
-            error_message = {
-                "role": "error",
-                "content": f"Error: {str(e)}",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(error_message)
-    else:
-        # Session not initialized - provide user feedback
-        logger.warning(f"Session '{session_id}' could not be created during connection selection")
-        error_message = {
-            "role": "error",
-            "content": "Session not initialized. Please start a new conversation by typing a message first.",
-            "timestamp": datetime.now().strftime("%H:%M:%S")
-        }
-        chat_data.append(error_message)
+    except ValueError as e:
+        # Session not initialized
+        logger.warning(f"Session error: {e}")
+        chat_data.append(dropdown_handler.create_error_message(
+            "Session not initialized. Please start a new conversation by typing a message first."
+        ))
+    except Exception as e:
+        logger.error(f"Error after connection selection: {e}")
+        chat_data.append(dropdown_handler.create_error_message(f"Error: {str(e)}"))
 
     chat_display = [format_message(**msg) for msg in chat_data]
     return chat_display, chat_data, ""
@@ -1618,114 +1296,57 @@ def handle_folder_selection(n_clicks, selected_folders, button_ids, chat_data, c
     """Handle folder selection from dropdown for rule creation"""
     ctx = callback_context
 
-    logger.debug(f"Folder callback: clicks={n_clicks}, folders={selected_folders}")
-
     # Check if any button was actually clicked
-    if not ctx.triggered:
+    if not ctx.triggered or all(click is None for click in n_clicks):
         raise dash.exceptions.PreventUpdate
 
-    # Get the triggered button info
     triggered_id = ctx.triggered[0]["prop_id"]
-
     if ".n_clicks" not in triggered_id:
         raise dash.exceptions.PreventUpdate
 
-    # Check if any button was actually clicked (n_clicks not None)
-    if all(click is None for click in n_clicks):
+    logger.debug(f"🔘 Folder callback triggered: {triggered_id}")
+
+    # Parse selection using dropdown handler
+    selection = dropdown_handler.parse_selection(
+        triggered_id, n_clicks, selected_folders, button_ids
+    )
+
+    if not selection:
         raise dash.exceptions.PreventUpdate
 
-    # Parse the button ID to get param_name
-    try:
-        button_id_dict = json.loads(triggered_id.split(".")[0])
-        param_name = button_id_dict.get("param")
+    param_name = selection["param_name"]
+    selected_folder = selection["selected_value"]
+    logger.info(f"Folder selected: {selected_folder}")
 
-        # Find the corresponding folder value
-        triggered_idx = None
-        for i, bid in enumerate(button_ids):
-            if bid.get("param") == param_name and n_clicks[i] is not None:
-                triggered_idx = i
-                break
+    # Add user message
+    chat_data.append(dropdown_handler.create_user_message(selected_folder))
 
-        if triggered_idx is None or not selected_folders[triggered_idx]:
-            logger.warning(f"No folder selected for {param_name}")
-            raise dash.exceptions.PreventUpdate
-
-        selected_folder = selected_folders[triggered_idx]
-
-    except dash.exceptions.PreventUpdate:
-        raise
-    except Exception as e:
-        logger.error(f"Error parsing folder selection: {e}")
-        raise dash.exceptions.PreventUpdate
-
-    logger.info(f"Folder selected via dropdown: {selected_folder}")
-
-    # Add user selection message
-    user_message = {
-        "role": "user",
-        "content": selected_folder,
-        "timestamp": datetime.now().strftime("%H:%M:%S")
-    }
-    chat_data.append(user_message)
-
-    # Use hardcoded session ID (same as main chat callback)
     session_id = "web-chat-session"
 
-    # Get or create memory for this session
-    memory = session_manager.get_or_create_session(session_id)
-    
-    if memory:
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__FOLDER_SELECTED__:{selected_folder}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", [])
-            )
+    try:
+        # Process selection and get response
+        response = run_async(
+            dropdown_handler.process_selection,
+            "FOLDER",
+            selected_folder,
+            param_name,
+            session_id,
+            config
+        )
 
-            response_text = response.get("response", "Folder selected successfully!")
+        # Format response
+        agent_message = dropdown_handler.format_response(response)
+        chat_data.append(agent_message)
 
-            # Check for special formats in response
-            if response_text.startswith("FOLDER_DROPDOWN:"):
-                folder_data = json.loads(response_text.replace("FOLDER_DROPDOWN:", ""))
-                folders = folder_data.get("folders", [])
-                question = folder_data.get("question", "Select a folder:")
-
-                agent_message = {
-                    "role": "folder_dropdown",
-                    "content": question,
-                    "folders": folders,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-            else:
-                agent_message = {
-                    "role": "agent",
-                    "content": response_text,
-                    "timestamp": datetime.now().strftime("%H:%M:%S")
-                }
-                chat_data.append(agent_message)
-
-        except Exception as e:
-            logger.error(f"Error after folder selection: {e}")
-            error_message = {
-                "role": "error",
-                "content": f"Error: {str(e)}",
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-            chat_data.append(error_message)
-    else:
-        logger.warning(f"Session '{session_id}' could not be created during folder selection")
-        error_message = {
-            "role": "error",
-            "content": "Session not initialized. Please start a new conversation by typing a message first.",
-            "timestamp": datetime.now().strftime("%H:%M:%S")
-        }
-        chat_data.append(error_message)
+    except ValueError as e:
+        # Session not initialized
+        logger.warning(f"Session error: {e}")
+        chat_data.append(dropdown_handler.create_error_message(
+            "Session not initialized. Please start a new conversation by typing a message first."
+        ))
+    except Exception as e:
+        logger.error(f"Error after folder selection: {e}")
+        chat_data.append(dropdown_handler.create_error_message(f"Error: {str(e)}"))
 
     chat_display = [format_message(**msg) for msg in chat_data]
     return chat_display, chat_data, ""

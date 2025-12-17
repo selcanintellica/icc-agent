@@ -9,7 +9,7 @@ from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import read_sql_job
 from src.ai.router.utils.connection_fetcher import ConnectionFetcher
-from src.models.natural_language import ReadSqlLLMRequest, ReadSqlVariables
+from src.models import ReadSqlLLMRequest, ReadSqlVariables
 from src.errors import (
     DuplicateJobNameError,
     UnknownConnectionError,

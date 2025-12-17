@@ -11,7 +11,7 @@ from typing import List, Optional
 import uuid
 import logging
 
-from src.models.natural_language import (
+from src.models import (
     SendEmailLLMRequest,
     ReadSqlLLMRequest,
     WriteDataLLMRequest,

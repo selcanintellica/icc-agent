@@ -34,7 +34,7 @@ class ConnectionFetcher:
         logger.info("Fetching all available connections")
         
         try:
-            from src.utils.connection_api_client import ConnectionAPIClient
+            from api_clients.connection_api_client import ConnectionAPIClient
             from src.utils.auth import authenticate
             
             userpass, token = await authenticate()
@@ -74,7 +74,7 @@ class ConnectionFetcher:
         logger.info(f"Fetching schemas for connection: {connection_name}")
         
         try:
-            from src.utils.connection_api_client import fetch_schemas_for_connection
+            from api_clients.connection_api_client import fetch_schemas_for_connection
             from src.utils.auth import authenticate
             
             connection_id = memory.get_connection_id(connection_name)

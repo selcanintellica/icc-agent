@@ -16,7 +16,7 @@ from src.ai.router.utils.connection_fetcher import ConnectionFetcher
 from src.ai.router.global_command_handler import GlobalCommandHandler
 from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 from src.ai.toolkits.icc_toolkit import write_data_job
-from src.models.natural_language import WriteDataLLMRequest, WriteDataVariables, ColumnSchema
+from src.models import WriteDataLLMRequest, WriteDataVariables, ColumnSchema
 from src.errors import (
     ICCBaseError,
     UnknownConnectionError,

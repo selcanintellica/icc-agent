@@ -8,7 +8,7 @@ Extracts connection-related business logic from app.py following SOLID principle
 
 import logging
 from typing import Optional, Dict, Any, List, Tuple
-from src.utils.connection_api_client import ICCAPIClient
+from src.api_clients.connection_api_client import ICCAPIClient
 from src.utils.auth import authenticate
 from src.utils.config_loader import get_config_loader
 

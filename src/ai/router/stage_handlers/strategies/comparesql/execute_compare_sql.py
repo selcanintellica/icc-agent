@@ -4,7 +4,7 @@ import logging
 from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHandlerResult
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
-from src.models.natural_language import CompareSqlLLMRequest, CompareSqlVariables
+from src.models import CompareSqlLLMRequest, CompareSqlVariables
 from src.ai.toolkits.icc_toolkit import compare_sql_job
 from src.errors import (
     ICCBaseError,

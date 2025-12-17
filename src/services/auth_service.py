@@ -56,15 +56,15 @@ class AuthenticationService:
     async def get_auth_headers(self, use_cache: bool = True) -> dict:
         """
         Get HTTP headers with authentication.
-        
+
         Args:
             use_cache: Whether to use cached credentials if available
-            
+
         Returns:
             Dictionary of headers with Authorization and TokenKey
         """
         auth_result = await self.get_auth_credentials(use_cache)
-        
+
         if auth_result:
             userpass, token = auth_result
             return {
@@ -74,6 +74,53 @@ class AuthenticationService:
         else:
             logger.warning("No authentication credentials available, returning empty headers")
             return {}
+
+    async def populate_memory_connections(self, memory) -> bool:
+        """
+        Populate memory with connections from API.
+
+        Extracted from app.py invoke_router_async function.
+
+        Args:
+            memory: Memory object to populate with connections
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            logger.info("Attempting to fetch connections from API")
+
+            # Get auth headers
+            auth_headers = await self.get_auth_headers()
+            if not auth_headers:
+                logger.warning("Cannot populate connections without authentication")
+                return False
+
+            # Import here to avoid circular dependencies
+            from src.api_clients.connection_api_client import ICCAPIClient
+            from src.ai.router.utils.connection_fetcher import set_table_api_auth
+
+            # Set auth for table API
+            set_table_api_auth(auth_headers)
+
+            # Fetch connections
+            api_client = ICCAPIClient(auth_headers=auth_headers)
+            connections = await api_client.fetch_connections()
+
+            if connections:
+                logger.info(f"Fetched {len(connections)} connections from API")
+                # Populate memory
+                memory.connection_manager.available_connections = connections
+                logger.info("Successfully populated memory with API connections")
+                return True
+            else:
+                logger.warning("No connections returned from API")
+                return False
+
+        except Exception as e:
+            logger.error(f"Error populating connections from API: {e}")
+            logger.info("Falling back to static configuration")
+            return False
 
 
 # Singleton instance for convenience

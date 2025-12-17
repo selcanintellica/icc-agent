@@ -8,7 +8,7 @@ import logging
 from typing import Optional
 from pydantic import BaseModel
 
-from src.models.wire import WirePayload
+from src.models import WirePayload
 from .builders import get_builder_registry, BuilderRegistry
 
 logger = logging.getLogger(__name__)

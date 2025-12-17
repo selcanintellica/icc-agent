@@ -15,7 +15,7 @@ from src.ai.router.job_agent import call_job_agent
 from src.ai.router.global_command_handler import GlobalCommandHandler
 from src.ai.router.utils.edit_target_resolver import EditTargetResolver
 from src.ai.toolkits.icc_toolkit import send_email_job
-from src.models.natural_language import SendEmailLLMRequest, SendEmailVariables
+from src.models import SendEmailLLMRequest, SendEmailVariables
 from src.errors import (
     ICCBaseError,
     UnknownConnectionError,

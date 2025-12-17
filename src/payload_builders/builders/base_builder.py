@@ -9,8 +9,8 @@ from typing import Any, Dict, List
 from pydantic import BaseModel
 import logging
 
-from src.models.wire import WirePayload, WireVariable, WireProps
-from src.models.definition_map import (
+from src.models import WirePayload, WireVariable, WireProps
+from src.models.validation.definition_map import (
     DEFAULT_PRIORITY,
     DEFAULT_ACTIVE,
     DEFAULT_SKIP,
