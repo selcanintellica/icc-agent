@@ -59,6 +59,14 @@ class ChatMessageResponse(BaseModel):
         None,
         description="Dropdown options if requires_dropdown is True"
     )
+    requires_mapping: Optional[bool] = Field(
+        False,
+        description="Whether response requires column mapping (for compare SQL)"
+    )
+    mapping_data: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Column mapping data (first_columns, second_columns, auto_matched, pre_mappings)"
+    )
     error: Optional[ErrorDetail] = Field(
         None,
         description="Error details if request failed"

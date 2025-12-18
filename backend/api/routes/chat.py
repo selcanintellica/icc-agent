@@ -16,6 +16,7 @@ from backend.api.models import (
     ChatMessageResponse,
     CreateSessionRequest,
     SessionResponse,
+    SubmitMappingRequest,
     ErrorDetail
 )
 
@@ -96,12 +97,14 @@ async def send_message(
                 )
             )
         
-        # Parse response for dropdown indicators
+        # Parse response for dropdown indicators and map table
         response_text = result["response"]
         requires_dropdown = False
         dropdown_type = None
         dropdown_options = None
-        
+        requires_mapping = False
+        mapping_data = None
+
         # Check for dropdown indicators in response
         if "CONNECTION_DROPDOWN:" in response_text:
             requires_dropdown = True
@@ -110,21 +113,37 @@ async def send_message(
             json_str = response_text.split("CONNECTION_DROPDOWN:", 1)[1]
             dropdown_options = json.loads(json_str)
             response_text = "Please select a database connection:"
-        
+
         elif "SCHEMA_DROPDOWN:" in response_text:
             requires_dropdown = True
             dropdown_type = "schema"
             json_str = response_text.split("SCHEMA_DROPDOWN:", 1)[1]
             dropdown_options = json.loads(json_str)
             response_text = "Please select a schema:"
-        
+
         elif "TABLE_DROPDOWN:" in response_text:
             requires_dropdown = True
             dropdown_type = "table"
             json_str = response_text.split("TABLE_DROPDOWN:", 1)[1]
             dropdown_options = json.loads(json_str)
             response_text = "Please select tables:"
-        
+
+        elif "MAP_TABLE_POPUP:" in response_text:
+            requires_mapping = True
+            json_str = response_text.split("MAP_TABLE_POPUP:", 1)[1]
+            mapping_data = json.loads(json_str)
+
+            # Build user-friendly message
+            first_count = len(mapping_data.get("first_columns", []))
+            second_count = len(mapping_data.get("second_columns", []))
+            auto_matched = mapping_data.get("auto_matched", False)
+            pre_mappings_count = len(mapping_data.get("pre_mappings", []))
+
+            if auto_matched and pre_mappings_count > 0:
+                response_text = f"Map Table: Please map columns between your two queries. {pre_mappings_count} columns auto-matched based on identical names."
+            else:
+                response_text = f"Map Table: Please map columns between your two queries. First query has {first_count} columns, second query has {second_count} columns."
+
         # Build response
         return ChatMessageResponse(
             session_id=request.session_id,
@@ -134,7 +153,9 @@ async def send_message(
             job_context=memory.job_context.to_dict() if hasattr(memory, 'job_context') else {},
             requires_dropdown=requires_dropdown,
             dropdown_type=dropdown_type,
-            dropdown_options=dropdown_options
+            dropdown_options=dropdown_options,
+            requires_mapping=requires_mapping,
+            mapping_data=mapping_data
         )
     
     except ICCBaseError as e:
@@ -157,6 +178,117 @@ async def send_message(
         return ChatMessageResponse(
             session_id=request.session_id,
             response="An unexpected error occurred. Please try again.",
+            error=ErrorDetail(
+                code="INTERNAL_ERROR",
+                message=str(e),
+                details={"error_type": type(e).__name__},
+                category="internal"
+            )
+        )
+
+
+@router.post("/submit-mapping", response_model=ChatMessageResponse)
+async def submit_mapping(
+    request: SubmitMappingRequest,
+    session_manager = Depends(get_session_manager_dependency),
+    router_service = Depends(get_router_service_dependency)
+) -> ChatMessageResponse:
+    """
+    Submit column mappings for compare SQL operation.
+
+    After receiving a MAP_TABLE_POPUP response, the UI should present
+    the column mapping interface and then submit the user's mappings
+    using this endpoint to continue the conversation.
+
+    **Parameters:**
+    - **session_id**: UUID for session tracking
+    - **column_mappings**: List of column mappings between queries
+    - **key_mappings**: List of key columns for joining
+    - **connection**: (Optional) Database connection ID
+    - **schema_name**: (Optional) Database schema name
+    - **tables**: (Optional) List of table names
+
+    **Returns:**
+    - Agent's response after processing the mappings
+    """
+    try:
+        logger.info(f"Processing mapping submission for session {request.session_id}")
+
+        # Get session memory
+        memory = session_manager.get_or_create_session(request.session_id)
+
+        # Build mapping JSON in the format expected by the router
+        mapping_payload = {
+            "key_mappings": [
+                {"FirstKey": km.first_key, "SecondKey": km.second_key}
+                for km in request.key_mappings
+            ],
+            "column_mappings": [
+                {"FirstMappedColumn": cm.first_column, "SecondMappedColumn": cm.second_column}
+                for cm in request.column_mappings
+            ]
+        }
+
+        mapping_json = json.dumps(mapping_payload)
+        logger.debug(f"Mapping JSON: {mapping_json}")
+
+        # Invoke router with mapping data
+        result = await router_service.invoke_router(
+            user_input=mapping_json,
+            memory=memory,
+            connection=request.connection,
+            schema=request.schema_name,
+            selected_tables=request.tables
+        )
+
+        if not result.get("success", False):
+            # Handle error
+            error_info = result.get("error_info", {})
+            logger.error(f"Router error: {result.get('error')}")
+
+            return ChatMessageResponse(
+                session_id=request.session_id,
+                response=error_info.get("message", "An error occurred processing mappings"),
+                stage=memory.stage.value if hasattr(memory, 'stage') else None,
+                error=ErrorDetail(
+                    code=error_info.get("code", "UNKNOWN"),
+                    message=error_info.get("message", "Unknown error"),
+                    details=error_info.get("details"),
+                    category=error_info.get("category", "unknown")
+                )
+            )
+
+        # Return success response
+        response_text = result["response"]
+
+        return ChatMessageResponse(
+            session_id=request.session_id,
+            response=response_text,
+            stage=memory.stage.value if hasattr(memory, 'stage') else None,
+            gathered_params=memory.gathered_params if hasattr(memory, 'gathered_params') else {},
+            job_context=memory.job_context.to_dict() if hasattr(memory, 'job_context') else {}
+        )
+
+    except ICCBaseError as e:
+        logger.error(f"ICC error in submit_mapping: {e}", exc_info=True)
+
+        return ChatMessageResponse(
+            session_id=request.session_id,
+            response=str(e),
+            error=ErrorDetail(
+                code=e.code.value,
+                message=str(e),
+                details=e.details,
+                category=e.category.value
+            )
+        )
+
+    except Exception as e:
+        logger.error(f"Unexpected error in submit_mapping: {e}", exc_info=True)
+
+        return ChatMessageResponse(
+            session_id=request.session_id,
+            response="An unexpected error occurred while processing mappings.",
             error=ErrorDetail(
                 code="INTERNAL_ERROR",
                 message=str(e),

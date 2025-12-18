@@ -6,7 +6,10 @@ from backend.api.models.request import (
     ChatMessageRequest,
     CreateSessionRequest,
     GetSchemasRequest,
-    GetTablesRequest
+    GetTablesRequest,
+    SubmitMappingRequest,
+    ColumnMapping,
+    KeyMapping
 )
 
 from backend.api.models.response import (
@@ -28,6 +31,9 @@ __all__ = [
     "CreateSessionRequest",
     "GetSchemasRequest",
     "GetTablesRequest",
+    "SubmitMappingRequest",
+    "ColumnMapping",
+    "KeyMapping",
     # Response models
     "ChatMessageResponse",
     "SessionResponse",

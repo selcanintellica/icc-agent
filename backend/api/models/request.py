@@ -99,11 +99,114 @@ class GetTablesRequest(BaseModel):
         description="Schema name",
         min_length=1
     )
-    
+
     class Config:
         json_schema_extra = {
             "example": {
                 "connection_id": "ORACLE_10",
                 "schema_name": "SALES"
+            }
+        }
+
+
+class ColumnMapping(BaseModel):
+    """
+    Single column mapping between two queries.
+    """
+    first_column: str = Field(
+        ...,
+        description="Column name from first query",
+        min_length=1,
+        alias="FirstMappedColumn"
+    )
+    second_column: str = Field(
+        ...,
+        description="Column name from second query",
+        min_length=1,
+        alias="SecondMappedColumn"
+    )
+
+    class Config:
+        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "FirstMappedColumn": "customer_id",
+                "SecondMappedColumn": "cust_id"
+            }
+        }
+
+
+class KeyMapping(BaseModel):
+    """
+    Key mapping for joining two queries.
+    """
+    first_key: str = Field(
+        ...,
+        description="Key column from first query",
+        min_length=1,
+        alias="FirstKey"
+    )
+    second_key: str = Field(
+        ...,
+        description="Key column from second query",
+        min_length=1,
+        alias="SecondKey"
+    )
+
+    class Config:
+        populate_by_name = True
+        json_schema_extra = {
+            "example": {
+                "FirstKey": "customer_id",
+                "SecondKey": "cust_id"
+            }
+        }
+
+
+class SubmitMappingRequest(BaseModel):
+    """
+    Request model for submitting column mappings.
+    """
+    session_id: str = Field(
+        ...,
+        description="Session ID for maintaining conversation context",
+        min_length=1
+    )
+    column_mappings: List[ColumnMapping] = Field(
+        ...,
+        description="List of column mappings between the two queries",
+        min_items=1
+    )
+    key_mappings: List[KeyMapping] = Field(
+        default_factory=list,
+        description="List of key mappings for joining the two queries"
+    )
+    connection: Optional[str] = Field(
+        None,
+        description="Database connection ID (optional)"
+    )
+    schema_name: Optional[str] = Field(
+        None,
+        description="Database schema name (optional)"
+    )
+    tables: Optional[List[str]] = Field(
+        None,
+        description="List of selected table names (optional)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "session_id": "550e8400-e29b-41d4-a716-446655440000",
+                "column_mappings": [
+                    {"FirstMappedColumn": "customer_id", "SecondMappedColumn": "cust_id"},
+                    {"FirstMappedColumn": "name", "SecondMappedColumn": "customer_name"}
+                ],
+                "key_mappings": [
+                    {"FirstKey": "customer_id", "SecondKey": "cust_id"}
+                ],
+                "connection": "ORACLE_10",
+                "schema_name": "SALES",
+                "tables": ["customers", "orders"]
             }
         }
