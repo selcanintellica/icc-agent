@@ -87,6 +87,18 @@ class ConfirmJobStrategy(StageStrategy):
         if any(user_lower.startswith(prefix) for prefix in ["edit ", "change ", "modify "]):
             return await self._handle_edit(memory, user_input)
 
+        # Check if this looks like a new job name (after duplicate name error)
+        # If user provides a simple string (no special commands), treat it as a new job name
+        if user_input and not any(c in user_input for c in [',', '=', ':', ';']) and len(user_input.split()) <= 3:
+            logger.info(f"User may be providing a new job name after error: {user_input}")
+            # Clear the old name and update with new one
+            memory.gathered_params['name'] = user_input.strip()
+            # Re-execute the job with the new name
+            if self.execution_callback:
+                return await self.execution_callback(memory)
+            else:
+                return await self._show_summary(memory)
+
         # Invalid input - re-show summary with hint
         return await self._show_summary(memory, hint="Please say 'yes' to confirm, 'edit <parameter>' to modify, or 'cancel' to abort.")
 
@@ -179,7 +191,8 @@ class ConfirmJobStrategy(StageStrategy):
 
         summary += f"- Subject: {params.get('subject', 'Not set')}\n"
 
-        body = params.get('body', '')
+        # Email body is stored as 'text' not 'body'
+        body = params.get('text', params.get('body', ''))
         body_preview = body[:100] + "..." if len(body) > 100 else body
         summary += f"- Body: {body_preview}\n"
 
@@ -291,12 +304,42 @@ class ConfirmJobStrategy(StageStrategy):
         if any(keyword in param_name for keyword in ["cc", "carbon copy"]) and self.job_type != "send_email":
             return await self._show_summary(memory, hint="CC is only available for SendEmail jobs.")
 
-        # Handle other parameter edits via EditTargetResolver
+        # Handle other parameter edits by transitioning back to parameter gathering with LLM
         from src.ai.router.utils.edit_target_resolver import EditTargetResolver
         resolver = EditTargetResolver()
         resolution = resolver.resolve(param_name, memory)
 
         if resolution:
+            # Clear the parameter and transition back to gathering stage
+            # The LLM will re-ask for the parameter and validate the user's input
+
+            # Clear confirmation substate
+            memory.confirmation_substate = None
+
+            # Get the appropriate stage based on job type
+            # For read_sql and compare_sql, if SQL already exists, go to EXECUTE stage
+            # Otherwise go to the initial question stage
+            from src.ai.router.context.stage_context import Stage
+            if self.job_type == "read_sql":
+                # If SQL already exists, go directly to parameter gathering (EXECUTE_SQL)
+                if memory.last_sql:
+                    memory.stage = Stage.EXECUTE_SQL
+                else:
+                    memory.stage = Stage.ASK_SQL_METHOD
+            elif self.job_type == "write_data":
+                memory.stage = Stage.NEED_WRITE_OR_EMAIL
+            elif self.job_type == "send_email":
+                memory.stage = Stage.NEED_WRITE_OR_EMAIL
+            elif self.job_type == "compare_sql":
+                # If both SQLs exist, go directly to parameter gathering (EXECUTE_COMPARE_SQL)
+                if memory.first_sql and memory.second_sql:
+                    memory.stage = Stage.EXECUTE_COMPARE_SQL
+                else:
+                    memory.stage = Stage.ASK_FIRST_SQL_METHOD
+
+            # Clear last_question to force LLM to re-validate and ask
+            memory.last_question = None
+
             return self._create_result(
                 memory,
                 resolution.get("message"),
@@ -318,6 +361,9 @@ class ConfirmJobStrategy(StageStrategy):
         - selecting_wc_schema → show schema dropdown
         - entering_wc_table → ask for table name
         - editing_cc → ask for CC emails
+
+        Note: Other parameter edits (table, job name, etc.) transition back to
+        parameter gathering stage where the LLM handles re-collection and validation.
         """
         substate = memory.confirmation_substate
         user_lower = user_input.lower().strip()

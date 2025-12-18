@@ -34,11 +34,15 @@ class ConnectionFetcher:
         logger.info("Fetching all available connections")
         
         try:
-            from api_clients.connection_api_client import ConnectionAPIClient
+            from src.api_clients.connection_api_client import ICCAPIClient
             from src.utils.auth import authenticate
-            
+
             userpass, token = await authenticate()
-            client = ConnectionAPIClient(userpass=userpass, token=token)
+            auth_headers = {
+                "Authorization": f"Basic {userpass}",
+                "TokenKey": token
+            }
+            client = ICCAPIClient(auth_headers=auth_headers)
             connections_dict = await client.fetch_connections()
             
             memory.connections = connections_dict
@@ -63,27 +67,45 @@ class ConnectionFetcher:
     async def fetch_schemas(connection_name: str, memory: Memory) -> Dict[str, Any]:
         """
         Fetch schemas for a specific connection and store in memory.
-        
+
         Args:
             connection_name: Name of the connection
             memory: Conversation memory to store schemas
-            
+
         Returns:
             Dict with success status, message, and fetched schemas
         """
         logger.info(f"Fetching schemas for connection: {connection_name}")
-        
+
         try:
-            from api_clients.connection_api_client import fetch_schemas_for_connection
+            from src.api_clients.connection_api_client import fetch_schemas_for_connection
             from src.utils.auth import authenticate
-            
+
             connection_id = memory.get_connection_id(connection_name)
+
+            # If connection_id is None, connections dictionary might be empty - fetch it first
             if not connection_id:
-                return {
-                    "success": False,
-                    "message": f"Unknown connection: {connection_name}",
-                    "schemas": []
-                }
+                if not memory.connections:
+                    logger.info("Connections dictionary is empty, fetching connections first...")
+                    fetch_result = await ConnectionFetcher.fetch_connections(memory)
+
+                    if not fetch_result["success"]:
+                        return {
+                            "success": False,
+                            "message": f"Unable to fetch connections: {fetch_result['message']}",
+                            "schemas": []
+                        }
+
+                    # Retry getting connection_id after fetching
+                    connection_id = memory.get_connection_id(connection_name)
+
+                # If still not found, connection truly doesn't exist
+                if not connection_id:
+                    return {
+                        "success": False,
+                        "message": f"Unknown connection: {connection_name}",
+                        "schemas": []
+                    }
             
             userpass, token = await authenticate()
             auth_headers = {

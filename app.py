@@ -56,8 +56,6 @@ print("="*60 + "\n")
 # ICC Agent imports - Using Staged Router (Refactored)
 from src.ai.router import handle_turn, Memory
 from src.utils.config_loader import get_config_loader
-from src.utils.connection_api_client import populate_memory_connections
-from src.utils.folder_api_client import fetch_folders as fetch_folders_async
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.utils.async_helper import run_async, run_async_safe
 from src.services import (
@@ -626,35 +624,6 @@ def update_tables_dropdown(selected_connection, selected_schema):
         return table_options, default_tables
 
 
-async def _fetch_folders_with_auth():
-    """
-    Fetch folders with proper authentication.
-    Same pattern as ConnectionService.fetch_schemas().
-    """
-    from src.utils.auth import authenticate
-
-    try:
-        # Authenticate first (same pattern as connection_service)
-        auth_result = await authenticate()
-        if not auth_result:
-            logger.warning("Authentication failed for folder fetch")
-            return []
-
-        userpass, token = auth_result
-        auth_headers = {
-            "Authorization": f"Basic {userpass}",
-            "TokenKey": token
-        }
-
-        # Fetch folders with auth headers
-        folders = await fetch_folders_async(auth_headers=auth_headers)
-        return folders
-
-    except Exception as e:
-        logger.error(f"Error in _fetch_folders_with_auth: {e}", exc_info=True)
-        return []
-
-
 # Callback to fetch folders on app load
 @app.callback(
     [Output("folder-dropdown", "options"),
@@ -663,13 +632,17 @@ async def _fetch_folders_with_auth():
     [Input("connection-dropdown", "value")],  # Trigger on connection change (or app load)
     prevent_initial_call=False
 )
-def fetch_folders_on_load(connection):
+def fetch_folders_on_load(_connection):
     """Fetch available folders from ICC API on app load"""
     try:
         logger.info("Fetching folders from ICC API...")
 
-        # Fetch folders with proper authentication (same as connection_service)
-        folders = run_async(_fetch_folders_with_auth)
+        # Use connection service (follows our architecture pattern)
+        folders = run_async_safe(
+            connection_service.fetch_folders,
+            default=[],
+            log_errors=True
+        )
 
         if folders:
             logger.info(f"Fetched {len(folders)} folders from API")
@@ -1299,26 +1272,16 @@ def handle_schema_selection(n_clicks, selected_schemas, button_ids, chat_data, c
 
     session_id = "web-chat-session"
 
-    # Get or create memory for this session
-    memory = session_manager.get_or_create_session(session_id)
-    
-    # Directly assign the parameter in memory WITHOUT calling LLM
-    if memory:
-        memory.gathered_params[param_name] = selected_schema
-        logger.info(f"Directly assigned {param_name}={selected_schema} (bypassed LLM)")
-
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__SCHEMA_SELECTED__:{selected_schema}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", []),
-                folder_id=config.get("folder_id")
-            )
+    try:
+        # Process selection and get response
+        response = run_async(
+            dropdown_handler.process_selection,
+            "SCHEMA",
+            selected_schema,
+            param_name,
+            session_id,
+            config
+        )
 
         # Format response
         agent_message = dropdown_handler.format_response(response)
@@ -1395,20 +1358,8 @@ def handle_connection_selection(n_clicks, selected_connections, button_ids, chat
             param_name,
             session_id,
             config,
-            update_memory_for_connection,
+            update_memory_for_connection
         )
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__CONNECTION_SELECTED__:{selected_connection}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", []),
-                folder_id=config.get("folder_id")
-            )
 
         # Format response
         agent_message = dropdown_handler.format_response(response)
@@ -1481,22 +1432,6 @@ def handle_folder_selection(n_clicks, selected_folders, button_ids, chat_data, c
             session_id,
             config
         )
-    # Get or create memory for this session
-    memory = session_manager.get_or_create_session(session_id)
-
-    if memory:
-        # Trigger next question by calling router with special flag
-        try:
-            # Use async helper to invoke router
-            response = run_async(
-                invoke_router_async,
-                f"__FOLDER_SELECTED__:{selected_folder}",
-                session_id=session_id,
-                connection=config.get("connection"),
-                schema=config.get("schema"),
-                selected_tables=config.get("tables", []),
-                folder_id=config.get("folder_id")
-            )
 
         # Format response
         agent_message = dropdown_handler.format_response(response)

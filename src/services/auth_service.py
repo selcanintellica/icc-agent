@@ -98,7 +98,7 @@ class AuthenticationService:
 
             # Import here to avoid circular dependencies
             from src.api_clients.connection_api_client import ICCAPIClient
-            from src.ai.router.utils.connection_fetcher import set_table_api_auth
+            from src.api_clients.table_api_client import set_table_api_auth
 
             # Set auth for table API
             set_table_api_auth(auth_headers)

@@ -163,7 +163,8 @@ class DropdownHandler:
             session_id=session_id,
             connection=config.get("connection"),
             schema=config.get("schema"),
-            selected_tables=config.get("tables", [])
+            selected_tables=config.get("tables", []),
+            folder_id=config.get("folder_id")
         )
 
         return response
