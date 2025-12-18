@@ -8,7 +8,8 @@ Extracts router invocation logic from app.py following SOLID principles:
 
 import logging
 from typing import Dict, Any, Optional, List
-from src.ai.router import handle_turn, Memory
+from src.ai.router.memory import Memory
+
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class RouterService:
         Returns:
             Dict with response and optional error information
         """
+        from ai.router.router_orchestrator import handle_turn
         try:
             # Populate memory with connection info if provided
             if connection and schema and selected_tables:

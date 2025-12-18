@@ -54,7 +54,8 @@ print("LOGGING ENABLED - You should see agent actions below")
 print("="*60 + "\n")
 
 # ICC Agent imports - Using Staged Router (Refactored)
-from src.ai.router import handle_turn, Memory
+from ai.router.router_orchestrator import handle_turn
+from src.ai.router.memory import Memory
 from src.utils.config_loader import get_config_loader
 from src.utils.prompt_logger import enable_prompt_logging, is_prompt_logging_enabled
 from src.utils.async_helper import run_async, run_async_safe

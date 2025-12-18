@@ -10,7 +10,7 @@ import logging
 
 from httpx import AsyncClient
 
-from .auth_service import AuthenticationService, get_auth_service
+from src.services.auth_service import AuthenticationService, get_auth_service
 from src.utils.config import API_CONFIG
 
 logger = logging.getLogger(__name__)
