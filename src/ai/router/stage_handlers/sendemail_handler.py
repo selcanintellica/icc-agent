@@ -378,7 +378,8 @@ class SendEmailHandler(BaseStageHandler):
                     text=params.get("text", "Please find the query results attached."),
                     attachment=True,
                     cc=params.get("cc", "")
-                )]
+                )],
+                folder=memory.job_folder
             )
             
             result = await send_email_job(request)
@@ -386,7 +387,7 @@ class SendEmailHandler(BaseStageHandler):
             
             if result.get("message") == "Success":
                 job_id = result.get("job_id")
-                job_folder = "3023602439587835"
+                job_folder = memory.job_folder  # Use session-level folder from config
                 
                 # Track job for rule creation
                 memory.add_created_job(

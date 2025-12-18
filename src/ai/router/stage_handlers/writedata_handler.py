@@ -340,7 +340,8 @@ class WriteDataHandler(BaseStageHandler):
             request = WriteDataLLMRequest(
                 rights={"owner": "184431757886694"},
                 props={"active": "true", "name": job_name, "description": ""},
-                variables=[write_data_vars]
+                variables=[write_data_vars],
+                folder=memory.job_folder
             )
             
             result = await write_data_job(request)
@@ -349,7 +350,7 @@ class WriteDataHandler(BaseStageHandler):
 
             if result.get("message") == "Success":
                 job_id = result.get("job_id")
-                job_folder = "3023602439587835"
+                job_folder = memory.job_folder  # Use session-level folder from config
                 # Track output table info for send_email query generation
                 memory.output_table_info = {
                     "schema": schemas,

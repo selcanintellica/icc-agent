@@ -276,10 +276,19 @@ class ParameterValidator:
                 "question": "What should the email body say?"
             }
 
-        # Set default for cc if not specified (optional parameter)
+        # Ask for CC if not specified - user can skip by typing 'none', 'skip', or leaving empty
         if "cc" not in params or params.get("cc") is None:
+            logger.debug("Missing: cc - asking user")
+            return {
+                "action": "ASK",
+                "question": "Who should I CC on this email? (comma-separated emails, or type 'none' to skip)"
+            }
+
+        # Handle skip responses for CC
+        cc_value = params.get("cc", "").strip().lower()
+        if cc_value in ("none", "skip", "no", "n/a", "-"):
             params["cc"] = ""
-            logger.debug("Set cc default: empty string")
+            logger.debug("User skipped CC field")
 
         # Validate 'cc' email format if provided
         if params.get("cc"):

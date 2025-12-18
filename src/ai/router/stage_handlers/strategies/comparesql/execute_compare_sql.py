@@ -74,14 +74,15 @@ class AskCompareJobNameStrategy(StageStrategy):
                     schemas=params.get("schemas", "cache"),
                     table_name=params.get("table_name", "cache"),
                     drop_before_create=params.get("drop_before_create", True),
-                )]
+                )],
+                folder=memory.job_folder
             )
             
             result = await compare_sql_job(request)
             
             if result.get("message") == "Success":
                 job_id = result.get("job_id")
-                job_folder = "3023602439587835"
+                job_folder = memory.job_folder  # Use session-level folder from config
                 
                 memory.last_job_id = job_id
                 
