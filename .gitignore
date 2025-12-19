@@ -170,3 +170,5 @@ data/test_connections_*.json
 *.txt
 *.jsonl
 nul
+*.gemini
+*.claude

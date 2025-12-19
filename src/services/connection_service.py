@@ -8,7 +8,7 @@ Extracts connection-related business logic from app.py following SOLID principle
 
 import logging
 from typing import Optional, Dict, Any, List, Tuple
-from src.utils.connection_api_client import ICCAPIClient
+from src.api_clients.connection_api_client import ICCAPIClient
 from src.utils.auth import authenticate
 from src.utils.config_loader import get_config_loader
 
@@ -209,6 +209,45 @@ class ConnectionService:
             "table_options": self._config_loader.get_table_options(initial_connection, initial_schema) if (initial_connection and initial_schema) else [],
         }
     
+    async def fetch_folders(self) -> List[Dict[str, Any]]:
+        """
+        Fetch available folders from ICC API with authentication.
+
+        Returns:
+            List of folder dicts with 'id' and 'name' keys, empty list on error
+        """
+        try:
+            logger.info("Fetching folders from ICC API...")
+
+            # Authenticate
+            auth_result = await authenticate()
+            if not auth_result:
+                logger.warning("Authentication failed for folder fetch")
+                return []
+
+            userpass, token = auth_result
+            auth_headers = {
+                "Authorization": f"Basic {userpass}",
+                "TokenKey": token
+            }
+
+            # Import here to avoid circular dependency
+            from src.api_clients.folder_api_client import fetch_folders as fetch_folders_async
+
+            # Fetch folders with auth headers
+            folders = await fetch_folders_async(auth_headers=auth_headers)
+
+            if folders:
+                logger.info(f"Successfully fetched {len(folders)} folders from API")
+                return folders
+            else:
+                logger.warning("No folders returned from API")
+                return []
+
+        except Exception as e:
+            logger.error(f"Error fetching folders: {e}", exc_info=True)
+            return []
+
     def clear_cache(self) -> None:
         """Clear the connection ID cache."""
         self._connection_id_cache.clear()

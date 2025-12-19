@@ -21,10 +21,11 @@ dependencies = [
     "motor>=3.7.1",
     "pymongo>=4.15.1",
     "python-dotenv>=1.0.1",
-    "dash", 
+    "dash",
     "dash_bootstrap_components",
     "pydantic[email]",
-    "loguru"
+    "loguru",
+    "dependency-injector>=4.42.0"
 ]
 
 

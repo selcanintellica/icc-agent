@@ -13,7 +13,7 @@ from typing import Dict, Any, Protocol
 from abc import ABC, abstractmethod
 
 from src.ai.toolkits.icc_toolkit import read_sql_job, write_data_job, send_email_job, compare_sql_job
-from src.models.natural_language import (
+from src.models import (
     ReadSqlLLMRequest,
     ReadSqlVariables,
     WriteDataLLMRequest,

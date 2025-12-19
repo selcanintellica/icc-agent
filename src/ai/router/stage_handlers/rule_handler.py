@@ -11,12 +11,12 @@ from typing import Dict, Any, List, Optional
 from src.ai.router.stage_handlers.base_handler import BaseStageHandler, StageHandlerResult
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
-from src.utils.folder_api_client import (
+from src.api_clients.folder_api_client import (
     fetch_folders,
     format_folders_for_display,
     get_folder_by_selection
 )
-from src.models.rule import RuleBuilder, RulePayload
+from src.models import RuleBuilder, RulePayload
 from src.repositories.rule_repository import save_rule
 from src.errors import (
     ICCBaseError,

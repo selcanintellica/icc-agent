@@ -4,7 +4,7 @@ import logging
 from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHandlerResult
 from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
-from src.models.query import QueryPayload
+from src.models import QueryPayload
 from src.repositories.query_repository import QueryRepository
 from httpx import AsyncClient
 from src.utils.auth import authenticate

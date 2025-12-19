@@ -17,7 +17,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.ai.router.prompts import SQLGenerationPrompt
-from src.utils.table_api_client import fetch_table_definitions
+from src.api_clients.table_api_client import fetch_table_definitions
 from src.utils.retry import retry, RetryPresets, RetryExhaustedError
 from src.errors import (
     LLMError,

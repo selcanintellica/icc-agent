@@ -109,26 +109,6 @@ async def log_requests(request: Request, call_next):
         raise
 
 
-# Global exception handler for unhandled errors
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """
-    Catch all unhandled exceptions and log them with full details.
-    """
-    logger.error(f"Global exception handler called for {request.method} {request.url}", exc_info=True)
-    logger.error(f"Exception type: {type(exc).__name__}")
-    logger.error(f"Exception message: {str(exc)}")
-    
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": str(exc),
-            "type": type(exc).__name__,
-            "path": str(request.url)
-        }
-    )
-
-
 # CORS Configuration - allow frontend from different origins
 app.add_middleware(
     CORSMiddleware,
@@ -146,18 +126,18 @@ async def global_exception_handler(request: Request, exc: Exception):
     Handle all unhandled exceptions and return structured error response.
     """
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    
+
     from src.errors import ErrorHandler
-    error_info = ErrorHandler.handle_error(exc)
-    
+    icc_error = ErrorHandler.handle(exc, {"path": str(request.url)})
+
     return JSONResponse(
         status_code=500,
         content={
             "error": {
-                "code": error_info.code.value,
-                "message": error_info.message,
-                "details": error_info.details,
-                "category": error_info.category.value
+                "code": icc_error.error_code.value if hasattr(icc_error, 'error_code') else "UNKNOWN",
+                "message": icc_error.user_message,
+                "details": icc_error.details if hasattr(icc_error, 'details') else {},
+                "category": icc_error.error_code.category.value if hasattr(icc_error, 'error_code') else "UNKNOWN"
             }
         }
     )

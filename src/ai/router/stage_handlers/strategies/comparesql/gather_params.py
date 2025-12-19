@@ -8,7 +8,7 @@ from src.ai.router.memory import Memory
 from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
 from src.ai.router.utils.connection_fetcher import ConnectionFetcher
-from src.models.natural_language import CompareSqlLLMRequest, CompareSqlVariables
+from src.models import CompareSqlLLMRequest, CompareSqlVariables
 from src.ai.toolkits.icc_toolkit import compare_sql_job
 from src.errors import (
     ICCBaseError,
@@ -193,7 +193,8 @@ class GatherCompareParamsStrategy(StageStrategy):
                     schemas=all_params.get("schemas", "cache"),
                     table_name=all_params.get("table_name", "cache"),
                     drop_before_create=all_params.get("drop_before_create", True),
-                )]
+                )],
+                folder=memory.job_folder
             )
 
             result = await compare_sql_job(request)
@@ -203,7 +204,7 @@ class GatherCompareParamsStrategy(StageStrategy):
             if result.get("message") == "Success":
                 memory.last_job_id = result.get("job_id")
                 memory.last_job_name = job_name
-                memory.last_job_folder = "3023602439587835"
+                memory.last_job_folder = memory.job_folder  # Use session-level folder from config
 
                 memory.output_table_info = {
                     "schema": all_params.get("schemas", "cache"),

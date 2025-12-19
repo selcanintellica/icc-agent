@@ -9,8 +9,8 @@ import logging
 from typing import List, Optional
 from httpx import AsyncClient
 
-from src.models.query import QueryPayload, QueryResponse
-from src.models.save_job_response import APIResponse
+from src.models import QueryPayload, QueryResponse
+from src.models import APIResponse
 from src.utils.config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
 

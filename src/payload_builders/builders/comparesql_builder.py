@@ -8,8 +8,8 @@ import logging
 from typing import Any, Dict, List
 from pydantic import BaseModel
 
-from src.models.wire import WireVariable
-from src.models.definition_map import TEMPLATES
+from src.models import WireVariable
+from src.models.validation.definition_map import TEMPLATES
 from .base_builder import WirePayloadBuilder
 
 logger = logging.getLogger(__name__)

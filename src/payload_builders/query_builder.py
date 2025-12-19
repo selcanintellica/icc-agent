@@ -7,8 +7,8 @@ Builds query payloads with injected ConnectionResolver.
 import logging
 from typing import Optional
 
-from src.models.query import QueryPayload
-from src.models.natural_language import SendEmailLLMRequest, ReadSqlLLMRequest
+from src.models import QueryPayload
+from src.models import SendEmailLLMRequest, ReadSqlLLMRequest
 from .services.connection_resolver import ConnectionResolver
 
 logger = logging.getLogger(__name__)

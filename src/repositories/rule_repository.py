@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 
 import httpx
 
-from src.models.rule import RulePayload
+from src.models import RulePayload
 from src.utils.retry import retry, RetryPresets, RetryExhaustedError
 from src.errors import (
     ICCBaseError,
@@ -271,7 +271,7 @@ if __name__ == "__main__":
     """Test script for Rule repository."""
     import asyncio
     from src.utils.auth import authenticate
-    from src.models.rule import RuleBuilder
+    from src.models import RuleBuilder
     
     logging.basicConfig(level=logging.INFO)
     

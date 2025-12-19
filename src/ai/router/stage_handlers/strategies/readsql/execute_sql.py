@@ -9,7 +9,7 @@ from src.ai.router.context.stage_context import Stage
 from src.ai.router.job_agent import call_job_agent
 from src.ai.toolkits.icc_toolkit import read_sql_job
 from src.ai.router.utils.connection_fetcher import ConnectionFetcher
-from src.models.natural_language import ReadSqlLLMRequest, ReadSqlVariables
+from src.models import ReadSqlLLMRequest, ReadSqlVariables
 from src.errors import (
     DuplicateJobNameError,
     UnknownConnectionError,
@@ -139,8 +139,16 @@ class ExecuteSqlStrategy(StageStrategy):
             
             logger.info(f"Using connection: {memory.connection} (ID: {connection_id})")
             
-            execute_query = params.get("execute_query", False)
-            write_count = params.get("write_count", False)
+            # Sanitize boolean parameters - LLM may return strings like "required" instead of booleans
+            def to_bool(val):
+                if val is True or val is False:
+                    return val
+                if isinstance(val, str):
+                    return val.lower() in ("true", "yes", "1")
+                return False
+            
+            execute_query = to_bool(params.get("execute_query", False))
+            write_count = to_bool(params.get("write_count", False))
             
             read_sql_vars = ReadSqlVariables(
                 query=memory.last_sql,
@@ -152,8 +160,8 @@ class ExecuteSqlStrategy(StageStrategy):
             if execute_query:
                 read_sql_vars.result_schema = params.get("result_schema")
                 read_sql_vars.table_name = params.get("table_name")
-                read_sql_vars.drop_before_create = params.get("drop_before_create", False)
-                read_sql_vars.only_dataset_columns = params.get("only_dataset_columns", False)
+                read_sql_vars.drop_before_create = to_bool(params.get("drop_before_create", False))
+                read_sql_vars.only_dataset_columns = to_bool(params.get("only_dataset_columns", False))
                 logger.info(f"ReadSQL with execute_query=true: schema={read_sql_vars.result_schema}, table={read_sql_vars.table_name}")
             
             if write_count:
@@ -174,7 +182,8 @@ class ExecuteSqlStrategy(StageStrategy):
             request = ReadSqlLLMRequest(
                 rights={"owner": "184431757886694"},
                 props={"active": "true", "name": job_name, "description": ""},
-                variables=[read_sql_vars]
+                variables=[read_sql_vars],
+                folder=memory.job_folder
             )
             
             result = await read_sql_job(request)
@@ -183,7 +192,7 @@ class ExecuteSqlStrategy(StageStrategy):
             
             if result.get("message") == "Success":
                 job_id = result.get("job_id")
-                job_folder = "3023602439587835"
+                job_folder = memory.job_folder  # Use session-level folder from config
                 
                 memory.last_job_id = job_id
                 memory.last_job_name = job_name

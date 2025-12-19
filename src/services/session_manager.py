@@ -8,7 +8,7 @@ Extracts session-related business logic from app.py following SOLID principles:
 
 import logging
 from typing import Dict, Optional, Any
-from src.ai.router import Memory, create_memory
+from src.ai.router.memory import Memory, create_memory
 
 logger = logging.getLogger(__name__)
 

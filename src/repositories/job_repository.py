@@ -1,8 +1,8 @@
 import logging
 from typing import Optional
-from src.models.wire import WirePayload
-from src.models.query import QueryPayload
-from src.models.save_job_response import APIResponse, JobResponse
+from src.models import WirePayload
+from src.models import QueryPayload
+from src.models import APIResponse, JobResponse
 from src.utils.config import API_CONFIG
 from src.repositories.base_repository import BaseRepository
 
