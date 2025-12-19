@@ -1,1111 +1,1096 @@
-# ICC Agent - Developer Guide
+# Developer Guide - ICC Agent
 
-## Quick Start
+## Overview
+
+This guide provides detailed information for developers working on the ICC Agent system. It covers architecture patterns, coding standards, development workflows, and how to extend the system.
+
+## Table of Contents
+
+- [Getting Started](#getting-started)
+- [Architecture Overview](#architecture-overview)
+- [Design Patterns](#design-patterns)
+- [Code Organization](#code-organization)
+- [Development Workflow](#development-workflow)
+- [Adding New Features](#adding-new-features)
+- [Testing Strategy](#testing-strategy)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+
+## Getting Started
 
 ### Prerequisites
+
 - Python 3.11+
-- Ollama installed with `qwen3:8b` and `qwen2.5-coder:7b` models
-- Access to ICC backend API (connection API, job API)
-- Database connections configured in `db_config.json`
+- Ollama installed with models (qwen3:8b, qwen2.5-coder:7b)
+- Git
+- IDE (VS Code, PyCharm recommended)
 
-### Installation
+### Setup Development Environment
 
-```powershell
+#### Option A: Using uv (Recommended - Faster)
+
+```bash
 # Clone repository
-cd ICC_try
+git clone <repository-url>
+cd icc-agent
 
-# Install backend dependencies
-pip install -r requirements.txt
-# or
+# Install uv if not already installed
+curl -LsSf https://astral.sh/uv/install.sh | sh  # Linux/Mac
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"  # Windows
+
+# Sync dependencies (auto-creates .venv)
 uv sync
 
-# Verify Ollama models
-ollama list
+# Configure environment
+cp .env.example .env
+# Edit .env with your configuration
 
-# Should show:
-# qwen3:8b
-# qwen2.5-coder:7b
+# Run application
+uv run app.py
 ```
 
-### Running the Backend (Production)
+#### Option B: Using pip (Traditional)
 
-```powershell
-# Start Ollama (if not running)
-ollama serve
-
-# Option 1: Run directly
-uvicorn backend.main:app --host 0.0.0.0 --port 8000
-
-# Option 2: Use startup script
-.\scripts\start_backend.bat    # Windows
-# or
-./scripts/start_backend.sh     # Linux/Mac
-
-# Option 3: Docker
-docker-compose up -d
-
-# API available at: http://localhost:8000
-# API docs at: http://localhost:8000/docs
-```
-
-### Running the Test UI (Optional)
-
-The Dash UI is available for **testing purposes only**:
-
-```powershell
-# Install test UI dependencies
-pip install -r requirements-dev.txt
-
-# Run test UI
-python app.py
-
-# Open browser to http://localhost:8050
-```
-
-**Note**: Production integrations should use the FastAPI backend, not the Dash UI.
-
-### Configuration
-
-**Environment Variables** (optional):
 ```bash
-# Override default LLM models
-MODEL_NAME=qwen3:8b              # Job agent model
-SQL_MODEL_NAME=qwen2.5-coder:7b  # SQL agent model
+# Clone repository
+git clone <repository-url>
+cd icc-agent
 
-# Enable prompt logging (saves all LLM prompts to files)
-ENABLE_PROMPT_LOGGING=true
-PROMPT_LOG_DIR=prompt_logs
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\activate     # Windows
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set PYTHONPATH
+export PYTHONPATH=$(pwd)  # Linux/Mac
+$env:PYTHONPATH="$(pwd)"  # Windows PowerShell
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Run application
+python app.py
 ```
 
-**Prompt Logging** (for debugging and analysis):
-When enabled, all prompts sent to LLMs are saved to individual files:
-```
-prompt_logs/
-  session_20251203_143052/
-    0001_job_agent.txt
-    0002_sql_agent.txt
-    0003_job_agent.txt
-    all_prompts.jsonl
-```
+### Development Tools
 
-**db_config.json**:
+**Package Manager:**
+- **uv** (Recommended): Fast Python package installer and resolver
+  - Install: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - Usage: `uv sync`, `uv pip install package`, `uv run script.py`
+  - Benefits: 10-100x faster than pip, automatic .venv management
+- **pip** (Traditional): Standard Python package manager
+
+**Recommended VS Code Extensions:**
+- Python (Microsoft)
+- Pylance
+- Python Docstring Generator
+- GitLens
+
+**Recommended Settings:**
 ```json
 {
-  "connections": [
-    {
-      "id": "4976629955435844",
-      "name": "ORACLE_10",
-      "type": "oracle",
-      "schemas": [
-        {
-          "name": "SALES",
-          "tables": ["customers", "orders", "order_items", "products"]
-        },
-        {
-          "name": "HR",
-          "tables": ["employees", "departments"]
-        }
-      ]
-    }
-  ]
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": true,
+  "python.formatting.provider": "black",
+  "editor.formatOnSave": true,
+  "python.analysis.typeCheckingMode": "basic"
 }
 ```
 
-## Backend API Integration
+## Architecture Overview
 
-### Using the REST API
+### Architectural Layers
 
-The backend provides a complete REST API for external integrations. See main [README.md](../README.md) for full endpoint documentation and integration examples.
-
-**Quick Example** (Python):
-```python
-import requests
-
-# 1. Create session
-response = requests.post("http://localhost:8000/api/chat/sessions")
-session_id = response.json()["session_id"]
-
-# 2. Send message
-response = requests.post("http://localhost:8000/api/chat/message", json={
-    "session_id": session_id,
-    "message": "read customer data",
-    "connection": "ORACLE_10",
-    "schema_name": "SALES",
-    "tables": ["customers"]
-})
-
-result = response.json()
-print(f"Agent: {result['response']}")
-print(f"Stage: {result['stage']}")
-print(f"Params: {result['gathered_params']}")
-
-# 3. Continue conversation
-response = requests.post("http://localhost:8000/api/chat/message", json={
-    "session_id": session_id,
-    "message": "generate sql to select all customers"
-})
-
-# 4. Clean up
-requests.delete(f"http://localhost:8000/api/chat/sessions/{session_id}")
+```
+┌─────────────────────────────────────────────────────────┐
+│                   Presentation Layer                     │
+│                    (app.py - Dash UI)                    │
+└───────────────────────────┬─────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────┐
+│                     Service Layer                        │
+│              (src/services/ - Business Logic)            │
+│  • SessionManager       • ConnectionService              │
+│  • AuthService          • DropdownHandler                │
+└───────────────────────────┬─────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────┐
+│                      Core Layer                          │
+│            (src/ai/router/ - Orchestration)              │
+│  • Router Orchestrator (Singleton)                       │
+│  • Stage Handlers (Strategy Pattern)                     │
+│  • Memory Management (Composition)                       │
+└────────┬────────────────────────────────┬───────────────┘
+         │                                │
+┌────────▼──────────┐         ┌──────────▼───────────────┐
+│   LLM Agents      │         │   Data Access Layer      │
+│   (src/ai/agents) │         │   (src/api_clients,      │
+│                   │         │    src/repositories)     │
+└───────────────────┘         └──────────────────────────┘
 ```
 
-**Quick Example** (JavaScript):
-```javascript
-// 1. Create session
-const sessionResp = await fetch('http://localhost:8000/api/chat/sessions', {
-  method: 'POST'
-});
-const { session_id } = await sessionResp.json();
+### Key Concepts
 
-// 2. Send message
-const messageResp = await fetch('http://localhost:8000/api/chat/message', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    session_id,
-    message: 'read customer data',
-    connection: 'ORACLE_10',
-    schema_name: 'SALES',
-    tables: ['customers']
-  })
-});
+#### 1. Finite State Machine (FSM) Router
 
-const result = await messageResp.json();
-console.log('Agent:', result.response);
-console.log('Stage:', result.stage);
-```
-
-### Testing the API
-
-```powershell
-# Health check
-curl http://localhost:8000/api/health
-
-# List connections
-curl http://localhost:8000/api/connections
-
-# Create session
-curl -X POST http://localhost:8000/api/chat/sessions
-
-# Send message
-curl -X POST http://localhost:8000/api/chat/message \
-  -H "Content-Type: application/json" \
-  -d '{
-    "session_id": "your-session-id",
-    "message": "help"
-  }'
-
-# Run automated tests
-python tests/test_backend.py
-```
-
-### Docker Deployment
-
-```powershell
-# Build image
-docker build -t icc-agent-backend .
-
-# Run container
-docker run -d -p 8000:8000 --name icc-backend icc-agent-backend
-
-# Or use docker-compose
-docker-compose up -d
-
-# View logs
-docker logs -f icc-backend
-
-# Stop
-docker-compose down
-```
-
-See `DEPLOYMENT.md` and `TESTING.md` for complete deployment and testing guides.
-
-## Architecture Patterns
-
-### 1. Singleton Pattern for LLM Agents
-
-**When to Use**: Any resource that should be created once and reused
-**Why**: Prevents expensive reinitialization (LLM model loading)
-
-**Implementation**:
-```python
-# Module-level singleton
-_default_instance: Optional[MyClass] = None
-
-def get_default_instance() -> MyClass:
-    global _default_instance
-    if _default_instance is None:
-        logger.info("Creating singleton instance")
-        _default_instance = MyClass()
-    return _default_instance
-
-# Usage in app
-instance = get_default_instance()  # Creates on first call
-instance2 = get_default_instance()  # Reuses same instance
-```
-
-### 2. Dropdown Bypass Pattern
-
-**When to Use**: Any parameter with a fixed set of options
-**Why**: Faster, more reliable than LLM extraction
-
-**Implementation Steps**:
-
-1. **Validator returns FETCH action**:
-   ```python
-   def validate_params(tool_name, params, memory):
-       if "connection" not in params and memory.available_connections:
-           return ValidationResult(action="FETCH_CONNECTIONS")
-   ```
-
-2. **Handler formats dropdown response**:
-   ```python
-   if action.action_type == "FETCH_CONNECTIONS":
-       connections = memory.available_connections
-       return RouterResponse(
-           new_stage=current_stage,
-           message=f"CONNECTION_DROPDOWN:{json.dumps(connections)}"
-       )
-   ```
-
-3. **UI renders dropdown**:
-   ```python
-   if response.message.startswith("CONNECTION_DROPDOWN:"):
-       data = json.loads(response.message.split(":", 1)[1])
-       return render_dropdown(data, param_name="connection")
-   ```
-
-4. **UI sends selection with prefix**:
-   ```python
-   selection = f"__CONNECTION_SELECTED__:{selected_value}"
-   router.process_input(memory, selection)
-   ```
-
-5. **Router assigns directly**:
-   ```python
-   if user_input.startswith("__CONNECTION_SELECTED__:"):
-       value = user_input.split(":", 1)[1]
-       memory.gathered_params["connection"] = value
-       # Continue processing
-   ```
-
-### 3. Excluded Fields Pattern
-
-**When to Use**: Complex parameters need special formatting
-**Why**: Prevents duplicate variables in wire payloads
-
-**Implementation**:
-
-1. **Override in subclass**:
-   ```python
-   class MyBuilder(BaseBuilder):
-       def get_excluded_fields(self) -> List[str]:
-           return ["complex_field", "json_field"]
-   ```
-
-2. **Base builder skips excluded fields**:
-   ```python
-   def _build_base_variables(self, params, excluded_fields):
-       for key, value in params.items():
-           if key not in excluded_fields:
-               self.add_simple_variable(key, value)
-   ```
-
-3. **Subclass handles excluded fields**:
-   ```python
-   def build(self, params):
-       payload = super().build(params)  # Base adds non-excluded
-       
-       # Handle excluded fields with special formatting
-       if "json_field" in params:
-           json_str = json.dumps(params["json_field"])
-           payload.add_variable("json_def_id", json_str)
-       
-       return payload
-   ```
-
-### 4. Confirmation Word Filtering
-
-**When to Use**: After system messages where user might acknowledge
-**Why**: Prevents spurious parameter extraction
-
-**Implementation**:
-```python
-async def handle_stage(self, memory, user_input):
-    # Filter if no params gathered yet
-    if not memory.gathered_params and \
-       user_input.lower().strip() in CONFIRMATION_WORDS:
-        logger.info(f"Ignoring confirmation: {user_input}")
-        user_input = ""  # Clear input
-    
-    # Continue processing
-    action = call_job_agent(memory, user_input, tool_name)
-```
-
-**Confirmation Words List**:
-```python
-CONFIRMATION_WORDS = ["yes", "y", "ok", "okay", "sure", "correct", "right"]
-```
-
-## Adding a New Job Type
-
-### Complete Guide Available
-
-**See comprehensive guide**: [ADDING_NEW_JOB.md](ADDING_NEW_JOB.md)
-
-The complete 9-step guide covers:
-1. Defining stages and categories
-2. Creating strategy classes (Strategy Pattern)
-3. Writing job prompts
-4. Using LLM for parameter extraction (Job Agent)
-5. Creating stage handlers with strategy registry
-6. Registering in router
-7. Building wire payloads
-8. Adding request models
-9. Updating help system
-
-### Quick Reference: Agent Dependencies
-
-**Choose which agents your handler needs:**
-
-- **Need SQL generation?** → Include `sql_agent` parameter
-  - Example: ReadSQL, CompareSQL
-  - Handler will call `call_sql_agent()` to generate queries from natural language
-
-- **Need parameter extraction?** → Include `job_agent` parameter  
-  - Example: All handlers
-  - Handler will call `call_job_agent()` to gather user input
-
-- **Auto-generate query from data?** → No SQL agent needed
-  - Example: SendEmail (builds query from output_table_info)
-
-### Strategy Pattern Architecture
-
-**Current Architecture** (Strategy Pattern):
-- Each stage = one strategy class
-- Handler orchestrates strategies via registry
-- Strategies inherit from `StageStrategy` base class
-- Automatic help system integration
-
-**Example Strategy Structure**:
-```
-src/ai/router/stage_handlers/strategies/yourjob/
-  __init__.py
-  need_params.py        # NeedParamsStrategy
-  execute_job.py        # ExecuteJobStrategy
-```
-
-### Step 2: Create Strategy Classes
+The router uses a stage-based FSM approach:
 
 ```python
-# src/ai/router/stage_handlers/strategies/myjob/need_params.py
-from src.ai.router.stage_handlers.stage_strategy import StageStrategy, StageHandlerResult
+# Each conversation is in a specific stage
+Stage.ASK_JOB_TYPE → Stage.ASK_SQL_METHOD → Stage.NEED_USER_SQL →
+  Stage.EXECUTE_SQL → Stage.CONFIRM_READ_SQL_JOB → Stage.SHOW_RESULTS
+```
+
+Advantages:
+- **Predictable**: Always know what comes next
+- **Testable**: Each stage can be tested independently
+- **Maintainable**: Clear separation of concerns
+
+#### 2. Strategy Pattern for Stage Handlers
+
+Each stage has a dedicated strategy class:
+
+```python
+class AskSqlMethodStrategy(StageStrategy):
+    async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        # Handle this specific stage
+        pass
+```
+
+Benefits:
+- Easy to add new stages
+- Clear responsibility boundaries
+- Testable in isolation
+
+#### 3. Singleton Pattern for Performance
+
+```python
+# Router orchestrator is singleton - stays in memory
+_router_instance = None
+
+def get_router_instance():
+    global _router_instance
+    if _router_instance is None:
+        _router_instance = RouterOrchestrator(sql_agent, job_agent)
+    return _router_instance
+```
+
+Benefits:
+- LLM agents stay loaded (~1-2s response vs 10s cold start)
+- Consistent state management
+- Resource efficiency
+
+#### 4. Composition over Inheritance
+
+Memory object uses composition:
+
+```python
+class Memory:
+    connection_manager: ConnectionManager  # Handles connections/schemas
+    job_context: JobContext                # Manages job state
+    stage_context: StageContext            # Tracks conversation flow
+```
+
+Benefits:
+- Flexible and extensible
+- Clear separation of concerns
+- Easier to test
+
+## Design Patterns
+
+### 1. Service Layer Pattern
+
+**Purpose**: Separate business logic from UI
+
+**Example**:
+```python
+# app.py (UI layer)
+@app.callback(...)
+def send_message(message):
+    response = await invoke_router_async(message, session_id)
+    return response
+
+# src/services/session_manager.py (Service layer)
+class SessionManager:
+    def get_or_create_session(self, session_id: str) -> Memory:
+        # Business logic for session management
+```
+
+**When to use**:
+- Complex business logic
+- Reusable functionality
+- Need to test without UI
+
+### 2. Repository Pattern
+
+**Purpose**: Abstract data access
+
+**Example**:
+```python
+# src/repositories/base_repository.py
+class BaseRepository:
+    async def execute_request(self, method, url, **kwargs):
+        # Generic HTTP request handling
+
+# src/repositories/connection_repository.py
+class ConnectionRepository(BaseRepository):
+    async def fetch_connections(self):
+        return await self.execute_request("GET", "/connection/list")
+```
+
+**When to use**:
+- Database access
+- External API calls
+- Need to mock data access in tests
+
+### 3. Factory Pattern
+
+**Purpose**: Create objects without specifying exact class
+
+**Example**:
+```python
+# src/payload_builders/factory.py
+class PayloadFactory:
+    @staticmethod
+    def create_read_sql_payload(params: Dict[str, Any]) -> ReadSqlRequest:
+        # Build ReadSqlRequest from parameters
+```
+
+**When to use**:
+- Complex object construction
+- Multiple construction paths
+- Hide construction details
+
+### 4. Dependency Injection
+
+**Purpose**: Invert dependencies for testability
+
+**Example**:
+```python
+# src/container.py
+class Container:
+    def __init__(self):
+        self.auth_service = AuthService()
+        self.connection_service = ConnectionService(
+            auth_service=self.auth_service
+        )
+```
+
+**When to use**:
+- Need to swap implementations
+- Testing with mocks
+- Reduce coupling
+
+## Code Organization
+
+### Directory Structure
+
+```
+src/
+├── ai/
+│   ├── agents/                    # LLM agent singletons
+│   │   ├── sql_agent.py          # SQL generation agent
+│   │   └── job_agent.py          # Parameter extraction agent
+│   │
+│   ├── router/                    # Core routing logic
+│   │   ├── router_orchestrator.py  # Main FSM orchestrator
+│   │   ├── memory.py              # Conversation memory (composition)
+│   │   ├── job_agent.py           # LLM interaction for params
+│   │   │
+│   │   ├── context/               # Memory components
+│   │   │   ├── connection_manager.py
+│   │   │   ├── job_context.py
+│   │   │   └── stage_context.py
+│   │   │
+│   │   ├── stage_handlers/        # Stage-specific logic
+│   │   │   ├── base_handler.py
+│   │   │   ├── readsql_handler.py
+│   │   │   ├── writedata_handler.py
+│   │   │   ├── sendemail_handler.py
+│   │   │   ├── comparesql_handler.py
+│   │   │   │
+│   │   │   └── strategies/        # Strategy implementations
+│   │   │       ├── readsql/       # ReadSQL strategies
+│   │   │       ├── writedata/     # WriteData strategies
+│   │   │       ├── sendemail/     # SendEmail strategies
+│   │   │       ├── comparesql/    # CompareSQL strategies
+│   │   │       └── common/        # Shared strategies
+│   │   │
+│   │   ├── utils/                 # Router utilities
+│   │   │   ├── connection_fetcher.py
+│   │   │   └── edit_target_resolver.py
+│   │   │
+│   │   └── validators/            # Parameter validation
+│   │       └── parameter_validator.py
+│   │
+│   └── toolkits/                  # ICC API wrappers
+│       └── icc_toolkit.py
+│
+├── api_clients/                   # External API clients
+│   ├── connection_api_client.py   # ICC connection API
+│   └── table_api_client.py        # ICC table API
+│
+├── services/                      # Service layer
+│   ├── session_manager.py         # Session management
+│   ├── connection_service.py      # Connection metadata
+│   ├── auth_service.py            # Authentication
+│   └── dropdown_handler.py        # UI dropdown logic
+│
+├── repositories/                  # Data access layer
+│   ├── base_repository.py         # Base HTTP repository
+│   ├── connection_repository.py   # Connection data access
+│   └── folder_repository.py       # Folder data access
+│
+├── payload_builders/              # Request payload builders
+│   ├── factory.py                 # Payload factory
+│   ├── read_sql_builder.py        # ReadSQL payloads
+│   ├── write_data_builder.py      # WriteData payloads
+│   ├── send_email_builder.py      # SendEmail payloads
+│   └── compare_sql_builder.py     # CompareSQL payloads
+│
+├── models/                        # Data models
+│   ├── requests.py                # Request models
+│   └── responses.py               # Response models
+│
+├── errors/                        # Error handling
+│   ├── error_handler.py           # Global error handler
+│   └── icc_error.py               # Custom error types
+│
+└── utils/                         # Utilities
+    ├── auth.py                    # Authentication helpers
+    └── cache.py                   # Caching utilities
+```
+
+### Naming Conventions
+
+**Files**:
+- Use snake_case: `connection_service.py`
+- Group related files in directories
+
+**Classes**:
+- Use PascalCase: `ConnectionService`
+- Suffix with purpose: `*Handler`, `*Strategy`, `*Repository`
+
+**Functions/Methods**:
+- Use snake_case: `get_or_create_session()`
+- Use verbs for actions: `fetch`, `create`, `validate`
+
+**Constants**:
+- Use UPPER_SNAKE_CASE: `MAX_RETRIES`, `DEFAULT_TIMEOUT`
+
+**Private members**:
+- Prefix with underscore: `_internal_method()`, `_cache`
+
+## Development Workflow
+
+### Quick Reference: Common Commands
+
+**Using uv:**
+```bash
+# Install dependencies
+uv sync
+
+# Add new dependency
+uv pip install package-name
+
+# Run application
+uv run app.py
+
+# Run tests
+uv run pytest tests/
+
+# Run specific script
+uv run python scripts/migrate.py
+```
+
+**Using pip:**
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Add new dependency
+pip install package-name
+
+# Run application
+export PYTHONPATH=$(pwd) && python app.py
+
+# Run tests
+pytest tests/
+```
+
+### 1. Feature Development Process
+
+```bash
+# 1. Create feature branch
+git checkout -b feature/add-new-job-type
+
+# 2. Implement feature (see "Adding New Features")
+
+# 3. Test locally
+uv run app.py  # or: python app.py
+# Test in browser
+
+# 4. Run tests (if available)
+uv run pytest tests/  # or: pytest tests/
+
+# 5. Commit changes
+git add .
+git commit -m "feat: add new job type for bulk operations"
+
+# 6. Push and create PR
+git push origin feature/add-new-job-type
+```
+
+### 2. Bug Fix Process
+
+```bash
+# 1. Create bugfix branch
+git checkout -b fix/dropdown-selection-error
+
+# 2. Reproduce bug locally
+
+# 3. Add test case (if possible)
+
+# 4. Fix bug
+
+# 5. Verify fix
+
+# 6. Commit and push
+git commit -m "fix: resolve dropdown selection error in CompareSQL"
+git push origin fix/dropdown-selection-error
+```
+
+### 3. Code Review Checklist
+
+Before submitting PR:
+- [ ] Code follows SOLID principles
+- [ ] Proper error handling
+- [ ] Logging added for debugging
+- [ ] No hardcoded credentials
+- [ ] Docstrings for public methods
+- [ ] Type hints used
+- [ ] Tested manually
+- [ ] No console.log or debug prints
+
+## Adding New Features
+
+### Example: Adding a New Job Type
+
+Let's add a "BulkDelete" job type step-by-step.
+
+#### Step 1: Define Stages
+
+```python
+# src/ai/router/context/stage_context.py
+
+class Stage(Enum):
+    # ... existing stages ...
+    ASK_BULK_DELETE_METHOD = "ask_bulk_delete_method"
+    NEED_DELETE_CRITERIA = "need_delete_criteria"
+    CONFIRM_BULK_DELETE_JOB = "confirm_bulk_delete_job"
+    EXECUTE_BULK_DELETE = "execute_bulk_delete"
+```
+
+#### Step 2: Create Handler
+
+```python
+# src/ai/router/stage_handlers/bulkdelete_handler.py
+
+from src.ai.router.stage_handlers.base_handler import BaseStageHandler
 from src.ai.router.context.stage_context import Stage
-from src.ai.router.context.memory import Memory
 
-class NeedMyJobParamsStrategy(StageStrategy):
-    """Strategy for gathering my_job parameters"""
-    
-    def __init__(self, job_agent):
+class BulkDeleteHandler(BaseStageHandler):
+    """Handler for BulkDelete job flow."""
+
+    def __init__(self, job_agent=None):
         super().__init__()
         self.job_agent = job_agent
-    
-    async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
-        """Execute parameter gathering logic"""
-        # Call job agent
-        action = call_job_agent(memory, user_input, tool_name="my_job")
-        
-        if action.action_type == "ASK":
-            return self._create_result(
-                memory,
-                message=action.question,
-                new_stage=Stage.NEED_MY_JOB_PARAMS
-            )
-        
-        if action.action_type == "TOOL":
-            # Move to execution
-            return self._create_result(
-                memory,
-                message="Ready to execute!",
-                new_stage=Stage.EXECUTE_MY_JOB
-            )
-```
 
-### Step 3: Create Stage Handler with Registry
-
-```python
-# src/ai/router/stage_handlers/my_job_handler.py
-from .base_handler import BaseStageHandler, StageHandlerResult
-from src.ai.router.context.stage_context import Stage
-from src.ai.router.stage_handlers.stage_strategy import StageStrategyRegistry
-from .strategies.myjob.need_params import NeedMyJobParamsStrategy
-from .strategies.myjob.execute_job import ExecuteMyJobStrategy
-
-class MyJobHandler(BaseStageHandler):
-    # Define which stages this handler manages
-    MANAGED_STAGES = {
-        Stage.NEED_MY_JOB_PARAMS,
-        Stage.EXECUTE_MY_JOB,
-    }
-    
-    def __init__(self, sql_agent=None, job_agent=None):
-        # Only include agents you need
-        self.sql_agent = sql_agent  # If generating SQL from natural language
-        self.job_agent = job_agent  # If extracting parameters from user input
-        
-        # Create strategy registry
-        self.strategy_registry = StageStrategyRegistry()
-        
         # Register strategies
+        from .strategies.bulkdelete import (
+            AskDeleteMethodStrategy,
+            NeedDeleteCriteriaStrategy,
+            ConfirmDeleteStrategy,
+            ExecuteDeleteStrategy
+        )
+
         self.strategy_registry.register(
-            Stage.NEED_MY_JOB_PARAMS,
-            NeedMyJobParamsStrategy(job_agent=job_agent)
+            Stage.ASK_BULK_DELETE_METHOD,
+            AskDeleteMethodStrategy()
         )
         self.strategy_registry.register(
-            Stage.EXECUTE_MY_JOB,
-            ExecuteMyJobStrategy(job_agent=job_agent)
+            Stage.NEED_DELETE_CRITERIA,
+            NeedDeleteCriteriaStrategy()
         )
-    
+        self.strategy_registry.register(
+            Stage.CONFIRM_BULK_DELETE_JOB,
+            ConfirmDeleteStrategy(job_type="bulk_delete")
+        )
+        self.strategy_registry.register(
+            Stage.EXECUTE_BULK_DELETE,
+            ExecuteDeleteStrategy(self.job_agent)
+        )
+
     def can_handle(self, stage: Stage) -> bool:
-        """Check if this handler can process the given stage."""
-        return stage in self.MANAGED_STAGES
-    
+        return self.strategy_registry.has_strategy(stage)
+
     async def handle(self, memory: Memory, user_input: str) -> StageHandlerResult:
-        """Delegate to appropriate strategy"""
-        stage = memory.current_stage
-        
-        # Get strategy from registry
-        strategy = self.strategy_registry.get_strategy(stage)
-        
+        # Delegate to strategy
+        strategy = self.strategy_registry.get_strategy(memory.stage)
         if strategy:
-            # Strategy handles help automatically via handle_with_help()
-            return await strategy.handle_with_help(memory, user_input)
-        else:
-            logger.error(f"No strategy found for stage: {stage}")
+            return await strategy.execute(memory, user_input)
+
+        return self._create_result(
+            memory,
+            f"No strategy for stage: {memory.stage.value}",
+            is_error=True
+        )
+```
+
+#### Step 3: Create Strategies
+
+```python
+# src/ai/router/stage_handlers/strategies/bulkdelete/ask_delete_method.py
+
+from src.ai.router.stage_handlers.stage_strategy import (
+    StageStrategy,
+    StageHandlerResult
+)
+from src.ai.router.memory import Memory
+from src.ai.router.context.stage_context import Stage
+
+class AskDeleteMethodStrategy(StageStrategy):
+    """Ask user how they want to specify delete criteria."""
+
+    async def execute(self, memory: Memory, user_input: str) -> StageHandlerResult:
+        user_lower = user_input.lower().strip()
+
+        if "sql" in user_lower or "query" in user_lower:
+            memory.current_tool = "bulk_delete"
             return self._create_result(
                 memory,
-                message=f"Error: No handler for stage {stage.value}",
-                new_stage=Stage.ROUTER
+                "Provide SQL WHERE clause for deletion (e.g., WHERE status='INACTIVE'):",
+                Stage.NEED_DELETE_CRITERIA
+            )
+        elif "criteria" in user_lower or "condition" in user_lower:
+            memory.current_tool = "bulk_delete"
+            return self._create_result(
+                memory,
+                "Describe the deletion criteria in natural language:",
+                Stage.NEED_DELETE_CRITERIA
+            )
+        else:
+            return self._create_result(
+                memory,
+                "How would you like to specify what to delete?\n" +
+                "- 'sql' - Provide SQL WHERE clause\n" +
+                "- 'criteria' - Describe in natural language"
             )
 ```
 
-### Step 4: Create Job Prompt
+#### Step 4: Add to Router Orchestrator
 
 ```python
-# src/ai/router/prompts/job_prompts/my_job_prompt.py
-from typing import Dict, Any
+# src/ai/router/router_orchestrator.py
 
-class MyJobPrompt:
-    """Prompt configuration for my_job parameter extraction"""
-    
-    TOOL_NAME = "my_job"
-    
-    REQUIRED_PARAMS = ["name", "param1", "param2"]
-    
-    PARAM_DESCRIPTIONS = {
-        "name": "Job name",
-        "param1": "Description of param1",
-        "param2": "Description of param2"
-    }
-    
+class RouterOrchestrator:
+    def __init__(self, sql_agent=None, job_agent=None):
+        # ... existing code ...
+
+        # Add BulkDelete handler
+        from .stage_handlers.bulkdelete_handler import BulkDeleteHandler
+        bulk_delete_handler = BulkDeleteHandler(job_agent)
+        self.register_handler(bulk_delete_handler)
+```
+
+#### Step 5: Add Parameter Validation
+
+```python
+# src/ai/router/validators/parameter_validator.py
+
+class ParameterValidator:
     @staticmethod
-    def get_system_message(gathered_params: Dict[str, Any]) -> str:
-        """Build system message with parameter descriptions"""
-        return f"""Extract parameters for {MyJobPrompt.TOOL_NAME} job.
-        
-Required parameters:
-{MyJobPrompt._format_params()}
+    def validate_bulk_delete_params(params: Dict[str, Any], memory: Memory):
+        """Validate bulk_delete parameters."""
 
-IMPORTANT: Only extract actual values from user input.
-"""
+        if not params.get("name"):
+            return {"action": "ASK", "question": "What should I name this job?"}
 
-# Register in src/ai/router/prompts/prompt_manager.py
-from .job_prompts import MyJobPrompt
+        if not params.get("table"):
+            return {"action": "ASK", "question": "Which table to delete from?"}
 
-TOOL_PARAMS = {
-    "my_job": {
-        "required": MyJobPrompt.REQUIRED_PARAMS,
-        "descriptions": MyJobPrompt.PARAM_DESCRIPTIONS
-    }
-}
+        if not params.get("where_clause"):
+            return {"action": "ASK", "question": "What deletion criteria?"}
+
+        # All required params present
+        return None
 ```
 
-### Step 5: Create Payload Builder
-
-```python
-# src/payload_builders/builders/my_job_builder.py
-from .base_builder import BaseBuilder
-
-class MyJobBuilder(BaseBuilder):
-    def __init__(self):
-        super().__init__(template_id="123456789")
-    
-    def build(self, params: dict) -> WirePayload:
-        # Build base variables
-        payload = super().build(params)
-        
-        # Add job-specific variables
-        payload.add_variable("param1_def_id", params["param1"])
-        payload.add_variable("param2_def_id", params["param2"])
-        
-        return payload
-```
-
-### Step 6: Create Toolkit Function
+#### Step 6: Add ICC API Call
 
 ```python
 # src/ai/toolkits/icc_toolkit.py
 
-def execute_my_job(params: dict) -> dict:
-    """Execute my_job with given parameters"""
-    logger.info(f"Executing my_job with params: {params}")
-    
-    # Build payload
-    builder = MyJobBuilder()
-    payload = builder.build(params)
-    
-    # Call API
-    repository = JobRepository()
-    response = repository.create_job(payload)
-    
-    logger.info(f"✅ My job created: {response.job_id}")
-    
-    return {
-        "message": "Success",
-        "job_id": response.job_id,
-        "params": params
-    }
-```
+async def bulk_delete_job(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute bulk delete job via ICC API."""
 
-### Step 7: Register in Router
+    try:
+        # Build payload
+        payload = {
+            "name": params["name"],
+            "table": params["table"],
+            "whereClause": params["where_clause"],
+            "connectionId": params["connection_id"]
+        }
 
-```python
-# src/ai/router/router.py
-
-class RouterOrchestrator:
-    def __init__(self, config, sql_agent, job_agent):
-        # ...
-        # Register handler (router dispatches based on stage.can_handle)
-        self.handler_registry.register_handler(MyJobHandler(sql_agent, job_agent))
-```
-
-### Step 8: Add Entry Point
-
-```python
-# src/ai/router/stage_handlers/router_handler.py
-
-async def handle_router_stage(self, memory, user_input):
-    # Add to intent detection
-    if "my job" in user_input.lower():
-        memory.stage = Stage.NEED_MY_JOB_PARAMS
-        memory.current_job_type = "my_job"
-        return self._create_result(
-            memory,
-            message="Let's create a my_job job!",
-            new_stage=Stage.NEED_MY_JOB_PARAMS
+        # Call ICC API
+        response = await http_client.post(
+            "/jobs/bulk-delete",
+            json=payload
         )
+
+        return {
+            "success": True,
+            "job_id": response["jobId"],
+            "message": f"Deleted {response['rowsAffected']} rows"
+        }
+
+    except Exception as e:
+        logger.error(f"Bulk delete failed: {e}")
+        return {"success": False, "error": str(e)}
 ```
 
-### Step 9: Update Help System
-
-```python
-# src/ai/router/utils/help_handler.py
-
-def _get_stage_description(self, stage: Stage) -> str:
-    """Get human-readable stage description"""
-    descriptions = {
-        # ... existing descriptions ...
-        Stage.NEED_MY_JOB_PARAMS: "gathering parameters for your my_job job",
-        Stage.EXECUTE_MY_JOB: "executing your my_job job with the provided parameters",
-    }
-    return descriptions.get(stage, stage.value)
-```
-
-## Modifying Prompts
-
-### Job Agent Prompts
-
-**Location**: `src/ai/router/prompts/prompt_manager.py`
-
-**Structure**:
-```python
-def build_job_prompt(tool_name, gathered_params, last_question, user_input):
-    # System prompt
-    system = f"""Extract params for {tool_name} job.
-
-IGNORE: "ok", "okay", "yes", "no", "sure" - NOT parameter values!
-
-Required params:
-{format_required_params(tool_name)}
-
-IMPORTANT: Only extract actual values from user input.
-
-Output JSON: {{"action": "ASK"|"TOOL", "question": "...", "params": {{...}}}}
-"""
-    
-    # User prompt
-    user = f"""Last question: "{last_question}"
-User answer: "{user_input}"
-Current: {json.dumps(gathered_params)}
-Missing: {get_missing_params(tool_name, gathered_params)}
-
-Output JSON only:
-"""
-    
-    return system, user
-```
-
-**Tips**:
-- Keep prompts concise (fewer tokens = faster)
-- Be explicit about what NOT to extract
-- Use structured output format (JSON)
-- Include examples for complex cases
-- Avoid listing all available options (use dropdowns)
-
-### SQL Agent Prompts
-
-**Location**: `src/ai/router/sql_agent.py`
-
-**Structure**:
-```python
-def build_sql_prompt(user_request, schema, table_info):
-    prompt = f"""Generate SQL for: {user_request}
-
-Schema: {schema}
-Tables:
-{format_table_info(table_info)}
-
-Requirements:
-- Use correct table/column names from schema
-- Generate SELECT query only
-- No INSERT/UPDATE/DELETE
-- Use JOINs where appropriate
-
-Output: SQL query only, no explanation.
-"""
-    return prompt
-```
-
-**Tips**:
-- Provide schema context
-- Limit table info (only selected tables)
-- Be explicit about restrictions
-- Request SQL only (no explanations)
-- Set `num_predict` limit to prevent long outputs
-
-## Testing
-
-### Unit Tests
-
-**Test Handler Logic**:
-```python
-# tests/test_handlers.py
-import pytest
-from src.ai.router.stage_handlers.readsql_handler import ReadSQLHandler
-
-@pytest.mark.asyncio
-async def test_confirmation_filtering():
-    handler = ReadSQLHandler(sql_agent, job_agent)
-    memory = create_test_memory()
-    memory.stage = Stage.EXECUTE_SQL
-    memory.gathered_params = {}
-    
-    response = await handler.handle(memory, "okay")
-    
-    # Should not extract "okay" as parameter
-    assert "okay" not in memory.gathered_params.values()
-    # Should still be in same stage
-    assert response.new_stage == Stage.EXECUTE_SQL
-```
-
-**Test Parameter Validation**:
-```python
-def test_validator_fetch_connections():
-    memory = Memory()
-    memory.available_connections = [{"id": "123", "name": "ORACLE"}]
-    params = {}
-    
-    result = validate_params("read_sql", params, memory)
-    
-    assert result.action == "FETCH_CONNECTIONS"
-    assert result.missing_param == "connection"
-```
-
-**Test Payload Builders**:
-```python
-def test_excluded_fields():
-    builder = WriteDataBuilder()
-    params = {
-        "name": "test",
-        "columns": [{"columnName": "id"}],
-        "data_set": {...}
-    }
-    
-    payload = builder.build(params)
-    
-    # Check no duplicates
-    var_names = [v.definition_id for v in payload.variables]
-    assert len(var_names) == len(set(var_names))
-```
-
-### Integration Tests
-
-**Test Full Flow**:
-```python
-@pytest.mark.asyncio
-async def test_readsql_flow():
-    router = get_default_router_orchestrator()
-    memory = Memory()
-    
-    # Request data
-    r1 = await router.process_input(memory, "get customers")
-    assert r1.new_stage == Stage.CONFIRM_GENERATED_SQL
-    
-    # Confirm SQL
-    r2 = await router.process_input(memory, "yes")
-    assert r2.new_stage == Stage.EXECUTE_SQL
-    
-    # Provide job name
-    r3 = await router.process_input(memory, "customer_query")
-    assert r3.new_stage == Stage.SHOW_RESULTS
-    assert memory.job_context["job_id"]
-```
-
-### Manual Testing
-
-**Test Dropdown Flow**:
-```
-User: "write data to database"
-→ System: Shows connection dropdown
-User: Selects "ORACLE_10"
-→ System: Shows schema dropdown
-User: Selects "SALES"
-→ System: "What table?"
-User: "customers"
-→ System: Execute job
-```
-
-**Test Confirmation Filtering**:
-```
-User: "read from customers"
-→ System: "Here's the SQL... Looks good?"
-User: "yes"
-→ System: "Great! Executing..."
-User: "okay"
-→ System: "What should I name this job?" (doesn't extract "okay")
-User: "customer_data"
-→ System: "Job created!"
-```
-
-## Debugging
-
-### Enable Detailed Logging
+#### Step 7: Update UI
 
 ```python
 # app.py
-import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Add BulkDelete option to job type selection
+@app.callback(
+    Output('job-type-store', 'data'),
+    Input('bulk-delete-button', 'n_clicks')
+)
+def select_bulk_delete(n_clicks):
+    if n_clicks:
+        return {'job_type': 'bulk_delete'}
+```
+
+### Adding a New Strategy to Existing Handler
+
+If you just want to add a new stage to an existing job type:
+
+```python
+# 1. Add stage to Stage enum
+class Stage(Enum):
+    # ... existing ...
+    NEW_VALIDATION_STAGE = "new_validation_stage"
+
+# 2. Create strategy
+class NewValidationStrategy(StageStrategy):
+    async def execute(self, memory, user_input):
+        # Implementation
+        pass
+
+# 3. Register in handler
+handler.strategy_registry.register(
+    Stage.NEW_VALIDATION_STAGE,
+    NewValidationStrategy()
 )
 ```
 
-### Check LLM Status
+## Testing Strategy
 
-```powershell
-# Check loaded models
-ollama ps
-
-# Expected output (singleton working):
-# NAME                ID              SIZE    PROCESSOR    UNTIL
-# qwen3:8b          abc123...       5.5 GB  100% GPU     59 minutes from now
-# qwen2.5-coder:7b  def456...       4.7 GB  100% GPU     59 minutes from now
-
-# Check model info
-ollama show qwen3:8b
-ollama show qwen2.5-coder:7b
-```
-
-### Debug Router State
+### Unit Testing
 
 ```python
-# Add to router
-logger.info(f"📍 Current stage: {memory.stage.value}")
-logger.info(f"📋 Gathered params: {memory.gathered_params}")
-logger.info(f"💬 User input: {user_input}")
+# tests/test_connection_manager.py
+
+import pytest
+from src.ai.router.context.connection_manager import ConnectionManager
+
+def test_get_connection_id_exact_match():
+    """Test exact connection name match."""
+    manager = ConnectionManager()
+    manager.connections = {
+        "ORACLE_10": {"id": "conn-123", "db_type": "Oracle"}
+    }
+
+    assert manager.get_connection_id("ORACLE_10") == "conn-123"
+
+def test_get_connection_id_fuzzy_match():
+    """Test fuzzy matching with case insensitivity."""
+    manager = ConnectionManager()
+    manager.connections = {
+        "ORACLE_10": {"id": "conn-123", "db_type": "Oracle"}
+    }
+
+    # Should match despite case difference
+    assert manager.get_connection_id("oracle10") == "conn-123"
+
+def test_get_connection_id_not_found():
+    """Test return None for unknown connection."""
+    manager = ConnectionManager()
+    manager.connections = {}
+
+    assert manager.get_connection_id("UNKNOWN") is None
 ```
 
-### Debug Prompt Logging
+### Integration Testing
 
 ```python
-# Enable prompt logging in .env
-ENABLE_PROMPT_LOGGING=true
-PROMPT_LOG_DIR=prompt_logs
+# tests/test_router_flow.py
 
-# Check logged prompts
-# Each session creates a directory: prompt_logs/session_20251203_143052/
-# Individual files: 0001_job_agent.txt, 0002_sql_agent.txt, etc.
-# Combined log: all_prompts.jsonl
+import pytest
+from src.ai.router.router_orchestrator import handle_turn
+from src.ai.router.memory import create_memory
+
+@pytest.mark.asyncio
+async def test_readsql_flow():
+    """Test complete ReadSQL flow."""
+    memory = create_memory()
+
+    # Step 1: Select job type
+    result = await handle_turn(memory, "readsql")
+    assert result.next_stage == Stage.ASK_SQL_METHOD
+
+    # Step 2: Choose SQL method
+    result = await handle_turn(memory, "provide")
+    assert result.next_stage == Stage.NEED_USER_SQL
+
+    # Step 3: Provide SQL
+    result = await handle_turn(memory, "SELECT * FROM customers")
+    assert result.next_stage == Stage.EXECUTE_SQL
+
+    # Continue flow...
 ```
 
-**Prompt File Format:**
-```
-=== PROMPT ===
-Agent: job_agent
-Timestamp: 2025-12-03 14:30:52
+### Manual Testing Checklist
 
---- SYSTEM ---
-Extract params for read_sql job...
-
---- USER ---
-Last question: "What job name?"
-User answer: "customer_data"
-...
-
---- RESPONSE ---
-{"action": "TOOL", "params": {"name": "customer_data"}}
-
---- METADATA ---
-{"stage": "execute_sql", "tool": "read_sql"}
-```
-
-### Debug Dropdown Selection
-
-```python
-# Add to app.py callback
-logger.info(f"🔘 Dropdown callback triggered")
-logger.info(f"   n_clicks: {n_clicks}")
-logger.info(f"   selected_values: {selected_values}")
-logger.info(f"   triggered_id: {callback_context.triggered[0]['prop_id']}")
-```
-
-## Common Issues
-
-### Issue: LLM Reloading on Every Request
-
-**Symptoms**:
-- `ollama ps` shows model timer resetting to 59 minutes
-- Slow response times (5-10s)
-
-**Diagnosis**:
-```python
-# Check if singleton is working
-logger.info(f"🔧 Router instance ID: {id(router)}")
-logger.info(f"🔧 Job agent instance ID: {id(job_agent)}")
-# Should show same IDs across requests
-```
-
-**Solution**:
-- Ensure `get_default_router_orchestrator()` used
-- Check singleton globals not being reset
-- Verify `keep_alive="3600s"` configured
-
-### Issue: Confirmation Word Extracted as Parameter
-
-**Symptoms**:
-- User says "okay", system extracts it as job name
-
-**Diagnosis**:
-```python
-# Check gathered_params state
-logger.info(f"📋 Gathered params before filtering: {memory.gathered_params}")
-# Should be empty when filtering should trigger
-```
-
-**Solution**:
-- Add confirmation word filter to handler
-- Check filter applied before job_agent call
-- Ensure condition: `not memory.gathered_params`
-
-### Issue: Dropdown Not Appearing
-
-**Symptoms**:
-- System asks for connection in text instead of dropdown
-
-**Diagnosis**:
-```python
-# Check validator action
-logger.info(f"🔧 Validator action: {result.action}")
-# Should be FETCH_CONNECTIONS, not ASK
-```
-
-**Solution**:
-- Check `memory.available_connections` populated
-- Verify validator returns FETCH action
-- Ensure handler formats response correctly
-- Check UI parses dropdown format
-
-### Issue: JSON Serialization Error
-
-**Symptoms**:
-- `Object of type ColumnSchema is not JSON serializable`
-
-**Diagnosis**:
-```python
-# Check for duplicate variables
-var_names = [v.definition_id for v in payload.variables]
-logger.info(f"Variables: {var_names}")
-# Look for duplicates
-```
-
-**Solution**:
-- Implement `get_excluded_fields()` in builder
-- Return fields that need special handling
-- Ensure base builder skips excluded fields
-
-## Performance Optimization
-
-### Reduce Prompt Size
-
-**Before**:
-```python
-prompt = f"""Available connections:
-{format_all_connections(100+ connections)}  # 1000+ chars
-
-Select connection:
-"""
-```
-
-**After**:
-```python
-# Use dropdown instead
-return ValidationResult(action="FETCH_CONNECTIONS")
-```
-
-**Result**: ~1000 char reduction, faster response
-
-### Limit LLM Output
-
-```python
-ChatOllama(
-    model="qwen2.5-coder:7b",  # For SQL agent
-    # OR
-    model="qwen3:8b",           # For job agent
-)
-```
-
-### Cache Expensive Operations
-
-```python
-# Cache schemas per connection
-if connection_id not in memory.available_schemas:
-    schemas = fetch_schemas(connection_id)  # API call
-    memory.available_schemas[connection_id] = schemas
-else:
-    schemas = memory.available_schemas[connection_id]  # Instant
-```
-
-### Use Singleton Pattern
-
-```python
-# Instead of:
-def create_router():
-    return RouterOrchestrator(...)  # New instance every time
-
-# Use:
-def get_default_router():
-    global _default_router
-    if _default_router is None:
-        _default_router = RouterOrchestrator(...)
-    return _default_router  # Reuse instance
-```
+For each new feature:
+- [ ] Test happy path
+- [ ] Test error cases
+- [ ] Test edge cases (empty input, special characters)
+- [ ] Test back/reset commands
+- [ ] Test edit functionality
+- [ ] Test with different connections/schemas
 
 ## Best Practices
 
-### 1. Always Use Singletons for LLM Agents
-- Module-level globals
-- Check for None before creating
-- Log when creating new instances
+### 1. SOLID Principles
 
-### 2. Prefer Dropdowns Over LLM Extraction
-- Faster (no LLM call)
-- More reliable (no extraction errors)
-- Better UX (visual selection)
+**Single Responsibility**:
+```python
+# BAD: Handler does too much
+class Handler:
+    def fetch_data(self):
+        pass
+    def validate_data(self):
+        pass
+    def save_data(self):
+        pass
 
-### 3. Filter Confirmation Words
-- After any system confirmation message
-- Check `gathered_params` is empty
-- Clear `user_input` if match found
+# GOOD: Separate concerns
+class DataFetcher:
+    def fetch(self):
+        pass
 
-### 4. Use Excluded Fields for Complex Types
-- Override `get_excluded_fields()`
-- Handle excluded fields in subclass
-- Prevents duplicate variables
+class DataValidator:
+    def validate(self, data):
+        pass
 
-### 5. Keep Prompts Concise
-- Only essential information
-- Use examples sparingly
-- Avoid listing large datasets
-- Use structured output (JSON)
-
-### 6. Log Extensively in Development
-- Log stage transitions
-- Log parameter gathering
-- Log LLM calls and responses
-- Log dropdown interactions
-
-### 7. Test Edge Cases
-- Empty input
-- Confirmation words
-- Duplicate dropdown buttons
-- Missing parameters
-- Invalid selections
-
-## Deployment
-
-### Production Checklist
-
-- [ ] All tests passing
-- [ ] Logging configured (not DEBUG)
-- [ ] Error handling in place
-- [ ] keep_alive configured
-- [ ] Singleton pattern verified
-- [ ] Dropdowns tested for all job types
-- [ ] API endpoints accessible
-- [ ] Database connections configured
-- [ ] Ollama models available
-- [ ] Performance benchmarks met
-
-### Environment Variables
-
-```bash
-# .env
-OLLAMA_HOST=http://localhost:11434
-ICC_API_BASE=https://172.16.22.13:8084
-DB_CONFIG_PATH=db_config.json
-LOG_LEVEL=INFO
+class DataRepository:
+    def save(self, data):
+        pass
 ```
 
-### Monitoring
+**Open/Closed**:
+```python
+# Extend behavior without modifying existing code
+class BaseStrategy:
+    async def execute(self):
+        pass
+
+# Add new strategy without changing BaseStrategy
+class NewStrategy(BaseStrategy):
+    async def execute(self):
+        # New implementation
+        pass
+```
+
+**Dependency Inversion**:
+```python
+# Depend on abstractions, not concrete implementations
+class Service:
+    def __init__(self, repository: BaseRepository):
+        self.repository = repository  # Abstract
+```
+
+### 2. Error Handling
+
+Always handle errors gracefully:
 
 ```python
-# Add metrics
-from prometheus_client import Counter, Histogram
+# BAD: Unhandled exception crashes application
+def fetch_data():
+    return api_client.get("/data")
 
-request_count = Counter('router_requests_total', 'Total requests')
-response_time = Histogram('router_response_seconds', 'Response time')
-
-@response_time.time()
-async def process_input(memory, user_input):
-    request_count.inc()
-    # ... processing
+# GOOD: Proper error handling
+async def fetch_data() -> Dict[str, Any]:
+    try:
+        return await api_client.get("/data")
+    except httpx.HTTPError as e:
+        logger.error(f"API request failed: {e}", exc_info=True)
+        error = ErrorHandler.handle(e, {"context": "fetch_data"})
+        return {"success": False, "error": error.user_message}
 ```
+
+### 3. Logging
+
+Use appropriate log levels:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# DEBUG: Detailed flow information
+logger.debug(f"Processing stage: {memory.stage.value}")
+
+# INFO: Important milestones
+logger.info(f"Job created: {job_id}")
+
+# WARNING: Recoverable issues
+logger.warning(f"Connection slow, retrying...")
+
+# ERROR: Operation failures
+logger.error(f"Failed to execute job: {e}", exc_info=True)
+
+# CRITICAL: System-level failures
+logger.critical(f"Database unavailable")
+```
+
+### 4. Type Hints
+
+Always use type hints:
+
+```python
+from typing import Dict, List, Optional, Any
+
+def process_params(
+    params: Dict[str, Any],
+    connection: str,
+    schemas: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Process parameters for job execution.
+
+    Args:
+        params: Job parameters
+        connection: Connection name
+        schemas: Optional list of schemas
+
+    Returns:
+        Processed parameters dict
+    """
+    pass
+```
+
+### 5. Docstrings
+
+Document all public methods:
+
+```python
+def create_session(self, session_id: str) -> Memory:
+    """
+    Create or retrieve a conversation session.
+
+    This method implements session management with the following behavior:
+    - If session exists, returns existing memory
+    - If session is new, creates fresh memory with defaults
+
+    Args:
+        session_id: Unique session identifier
+
+    Returns:
+        Memory object for the session
+
+    Raises:
+        SessionError: If session creation fails
+
+    Example:
+        >>> manager = SessionManager()
+        >>> memory = manager.create_session("user-123")
+        >>> print(memory.stage)
+        Stage.ASK_JOB_TYPE
+    """
+    pass
+```
+
+### 6. Avoid Code Duplication (DRY)
+
+```python
+# BAD: Duplicated logic
+def fetch_schemas_for_readsql(connection):
+    # ... 10 lines of code ...
+
+def fetch_schemas_for_writedata(connection):
+    # ... same 10 lines of code ...
+
+# GOOD: Reusable utility
+class ConnectionFetcher:
+    @staticmethod
+    async def fetch_schemas(connection_name: str, memory: Memory):
+        # Single implementation
+        pass
+
+# Use everywhere
+result = await ConnectionFetcher.fetch_schemas(connection, memory)
+```
+
+### 7. Keep Functions Small
+
+```python
+# BAD: God function doing everything
+async def process_request(request):
+    # 200 lines of code
+    pass
+
+# GOOD: Break into smaller functions
+async def process_request(request):
+    validated = validate_request(request)
+    data = await fetch_data(validated)
+    result = transform_data(data)
+    return format_response(result)
+```
+
+## Troubleshooting
+
+### Common Development Issues
+
+#### 1. Import Errors
+
+```bash
+# Error: ModuleNotFoundError: No module named 'src'
+
+# Solution: Set PYTHONPATH
+export PYTHONPATH=$(pwd)  # Linux/Mac
+$env:PYTHONPATH="$(pwd)"  # Windows PowerShell
+```
+
+#### 2. Ollama Not Responding
+
+```python
+# Error: Connection refused to Ollama
+
+# Check Ollama is running
+ollama list
+
+# Restart Ollama
+ollama serve
+
+# Check model is loaded
+ollama pull qwen3:8b
+```
+
+#### 3. Memory State Issues
+
+```python
+# If memory state seems corrupted during development:
+
+# Option 1: Clear session
+session_manager.sessions.pop(session_id)
+
+# Option 2: Create fresh memory
+memory = create_memory()
+
+# Option 3: Reset specific fields
+memory.gathered_params = {}
+memory.last_question = None
+```
+
+#### 4. Strategy Not Found
+
+```python
+# Error: No strategy for stage: execute_sql
+
+# Check stage is registered in handler
+handler.strategy_registry.register(Stage.EXECUTE_SQL, ExecuteSqlStrategy())
+
+# Check stage name matches enum
+Stage.EXECUTE_SQL == memory.stage  # Should be True
+```
+
+### Debugging Tips
+
+**Enable Debug Logging**:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
+
+**Inspect Memory State**:
+```python
+def debug_memory(memory):
+    print(f"Stage: {memory.stage}")
+    print(f"Params: {memory.gathered_params}")
+    print(f"Tool: {memory.current_tool}")
+    print(f"Last Q: {memory.last_question}")
+```
+
+**Test LLM Directly**:
+```python
+from src.ai.agents.job_agent import call_job_agent
+
+memory = create_memory()
+memory.current_tool = "read_sql"
+action = call_job_agent(memory, "name it test123", tool_name="read_sql")
+print(action)
+```
+
+## Contributing Guidelines
+
+### Code Style
+
+- Follow PEP 8
+- Use type hints
+- Write docstrings for public APIs
+- Maximum line length: 100 characters
+- Use f-strings for formatting
+
+### Commit Messages
+
+Follow conventional commits:
+
+```
+feat: add bulk delete job type
+fix: resolve dropdown selection bug
+refactor: extract connection fetching to utility
+docs: update developer guide with examples
+test: add unit tests for parameter validator
+```
+
+### Pull Request Process
+
+1. Create feature branch from `main`
+2. Implement feature with tests
+3. Update documentation
+4. Create PR with clear description
+5. Address review comments
+6. Merge after approval
 
 ## Resources
 
-### Documentation
-- Architecture: `docs/ARCHITECTURE.md`
-- Technical Details: `docs/TECHNICAL_DETAILS.md`
-- This Guide: `docs/DEVELOPER_GUIDE.md`
+- **Project Documentation**: `docs/` folder
+- **Architecture Decisions**: `docs/HIGH_LEVEL_ARCHITECTURE.md`
+- **API Reference**: Code docstrings
+- **Ollama Docs**: https://ollama.ai/docs
 
-### External References
-- Ollama: https://ollama.ai
-- LangChain: https://python.langchain.com
-- Dash: https://dash.plotly.com
+---
 
-### Support
-- Check logs in application output
-- Use `ollama ps` to verify model status
-- Test individual components with unit tests
-- Review conversation history in memory
+**Document Version**: 1.0
+**Last Updated**: December 2025
