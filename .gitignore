@@ -171,4 +171,4 @@ data/test_connections_*.json
 *.jsonl
 nul
 *.gemini
-*.cloude
+*.claude
