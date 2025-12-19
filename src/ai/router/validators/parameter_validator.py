@@ -332,11 +332,11 @@ class ParameterValidator:
                     "question": "Fetching available schemas..."
                 }
             elif memory.available_schemas:
-                logger.debug("Missing: schemas (have cached list)")
-                schema_list = memory.get_schema_list_for_llm()
+                logger.debug("Missing: schemas (have cached list) - triggering dropdown")
                 return {
-                    "action": "ASK",
-                    "question": f"Which schema should I save the comparison results to?\n\nAvailable schemas:\n{schema_list}"
+                    "action": "FETCH_SCHEMAS",
+                    "connection": connection_name,
+                    "question": "Fetching schema dropdown..."
                 }
             else:
                 logger.debug("Missing: schemas (no cached list)")
